@@ -741,6 +741,12 @@ function recordShape(node: TreeSitterNode, output: MutableExplanation): void {
   }
   if (node.type === "pipeline") {
     output.shapes.add("pipeline");
+    if (hasDirectChildType(node, "|&")) {
+      output.shapes.add("stderr-pipeline");
+    }
+  }
+  if (node.type === "negated_command") {
+    output.shapes.add("negation");
   }
   if (node.type === "list") {
     if (hasDirectChildType(node, "&&")) {

@@ -97,6 +97,24 @@ describe("command authorization planner corpus", () => {
     expect(plan.units.every((unit) => unit.allowAlwaysEligible)).toBe(true);
   });
 
+  it.each(["grep needle missing-file |& cat", "! grep needle file && echo missing"])(
+    "makes unsupported pipeline modifiers prompt-only: %s",
+    async (command) => {
+      const plan = await planCommandForAuthorization({
+        dialect: "posix-shell",
+        command,
+      });
+
+      expect(plan.kind).toBe("prompt-only");
+      if (plan.kind !== "prompt-only") {
+        throw new Error(`expected prompt-only plan, got ${plan.kind}`);
+      }
+      expect(plan.promptOnlyReasons).toContain("unsupported-shell-syntax");
+      expect(plan.units.every((unit) => !unit.allowlistEligible)).toBe(true);
+      expect(plan.units.every((unit) => !unit.allowAlwaysEligible)).toBe(true);
+    },
+  );
+
   it("renders enforced POSIX commands from the planner tree", async () => {
     const plan = await planCommandForAuthorization({
       dialect: "posix-shell",

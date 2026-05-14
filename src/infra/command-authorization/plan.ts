@@ -732,6 +732,8 @@ function promptOnlyReasonsFromRisks(risks: readonly CommandRisk[]): CommandPromp
 }
 
 const UNSUPPORTED_RENDER_SHAPES = new Set<CommandShape>([
+  "stderr-pipeline",
+  "negation",
   "if",
   "for",
   "while",

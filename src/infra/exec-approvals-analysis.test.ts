@@ -341,6 +341,18 @@ describe("exec approvals shell analysis", () => {
         expectedAllowlistSatisfied: false,
       },
       {
+        allowlist: [{ pattern: "/usr/bin/grep" }, { pattern: "/usr/bin/cat" }],
+        command: "/usr/bin/grep needle missing-file |& /usr/bin/cat",
+        expectedAnalysisOk: false,
+        expectedAllowlistSatisfied: false,
+      },
+      {
+        allowlist: [{ pattern: "/usr/bin/grep" }, { pattern: "/usr/bin/echo" }],
+        command: "! /usr/bin/grep needle file && /usr/bin/echo missing",
+        expectedAnalysisOk: false,
+        expectedAllowlistSatisfied: false,
+      },
+      {
         allowlist: [{ pattern: "/usr/bin/ping" }],
         command: "ping 127.0.0.1 -n 1 & whoami",
         expectedAnalysisOk: false,

@@ -7,6 +7,8 @@ export type CommandContext =
 
 export type CommandShape =
   | "pipeline"
+  | "stderr-pipeline"
+  | "negation"
   | "and"
   | "or"
   | "sequence"
