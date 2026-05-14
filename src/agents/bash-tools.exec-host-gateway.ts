@@ -4,6 +4,7 @@ import { detectPolicyInlineEval } from "../infra/command-analysis/policy.js";
 import { renderAuthorizationShellCommand } from "../infra/command-authorization/index.js";
 import {
   addDurableCommandApproval,
+  canPersistExactCommandAllowAlways,
   type ExecAsk,
   resolveExecApprovalAllowedDecisions,
   type ExecSecurity,
@@ -512,7 +513,16 @@ export async function processGatewayAllowlist(
             platform: process.platform,
             strictInlineEval: params.strictInlineEval === true,
           });
-          if (patterns.length === 0) {
+          if (
+            patterns.length === 0 &&
+            (await canPersistExactCommandAllowAlways({
+              analysisOk,
+              commandText: params.command,
+              cwd: params.workdir,
+              env: params.env,
+              platform: process.platform,
+            }))
+          ) {
             addDurableCommandApproval(approvals.file, params.agentId, params.command);
           }
         }

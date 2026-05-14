@@ -6,8 +6,10 @@ import {
   type InterpreterInlineEvalHit,
 } from "../infra/command-analysis/inline-eval.js";
 import { detectPolicyInlineEval } from "../infra/command-analysis/policy.js";
+import type { CommandAuthorizationPlan } from "../infra/command-authorization/index.js";
 import {
   addDurableCommandApproval,
+  canPersistExactCommandAllowAlways,
   hasDurableExecApproval,
   persistAllowAlwaysPatterns,
   recordAllowlistMatchesUse,
@@ -18,7 +20,6 @@ import {
   type ExecCommandSegment,
   type ExecSecurity,
 } from "../infra/exec-approvals.js";
-import type { CommandAuthorizationPlan } from "../infra/command-authorization/index.js";
 import type { ExecHostRequest, ExecHostResponse, ExecHostRunResult } from "../infra/exec-host.js";
 import { resolveExecSafeBinRuntimePolicy } from "../infra/exec-safe-bin-runtime-policy.js";
 import {
@@ -664,7 +665,16 @@ async function executeSystemRunPhase(
           strictInlineEval: phase.strictInlineEval,
         })
       : [];
-    if (patterns.length === 0) {
+    if (
+      patterns.length === 0 &&
+      (await canPersistExactCommandAllowAlways({
+        analysisOk: phase.policy.analysisOk,
+        commandText: phase.commandText,
+        cwd: phase.cwd,
+        env: phase.env,
+        platform: process.platform,
+      }))
+    ) {
       addDurableCommandApproval(phase.approvals.file, phase.agentId, phase.commandText);
     }
   }

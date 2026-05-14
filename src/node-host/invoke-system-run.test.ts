@@ -1513,6 +1513,33 @@ describe("handleSystemRunInvoke mac app exec host routing", () => {
     }
   });
 
+  it("does not persist exact-command allow-always approvals for planner-rejected shell", async () => {
+    if (process.platform === "win32") {
+      return;
+    }
+
+    await withTempApprovalsHome({
+      approvals: createAllowlistOnMissApprovals(),
+      run: async () => {
+        const { runCommand, sendInvokeResult } = await runSystemInvoke({
+          preferMacAppExecHost: false,
+          command: ["/bin/sh", "-lc", "printf x > out.txt"],
+          rawCommand: "printf x > out.txt",
+          cwd: createFixtureDir("openclaw-exact-fallback-reject-"),
+          security: "allowlist",
+          ask: "on-miss",
+          approvalDecision: "allow-always",
+          approved: true,
+          runCommand: vi.fn(async () => createLocalRunResult("allow-always-ok")),
+        });
+
+        expect(runCommand).toHaveBeenCalledTimes(1);
+        expectInvokeOk(sendInvokeResult, { payloadContains: "allow-always-ok" });
+        expect(loadExecApprovals().agents?.main?.allowlist ?? []).toStrictEqual([]);
+      },
+    });
+  });
+
   it("persists benign awk allow-always approvals in strict inline-eval mode without reopening inline carriers", async () => {
     setRuntimeConfigSnapshot({
       tools: {

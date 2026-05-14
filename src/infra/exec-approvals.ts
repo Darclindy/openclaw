@@ -16,6 +16,7 @@ import {
 } from "./exec-approvals-allowlist.js";
 import type { ExecCommandSegment } from "./exec-approvals-analysis.js";
 import type { ExecAllowlistEntry } from "./exec-approvals.types.js";
+import { extractBindableShellWrapperInlineCommand } from "./exec-wrapper-resolution.js";
 import { assertNoSymlinkParentsSync } from "./fs-safe-advanced.js";
 import { expandHomePrefix, resolveRequiredHomeDir } from "./home-dir.js";
 import { requestJsonlSocket } from "./jsonl-socket.js";
@@ -1195,6 +1196,51 @@ export function addDurableCommandApproval(
   addAllowlistEntry(approvals, agentId, buildDurableCommandApprovalPattern(normalized), {
     source: "allow-always",
   });
+}
+
+function isRelativeExecutableToken(token: string | null): boolean {
+  if (!token || (!token.includes("/") && !token.includes("\\"))) {
+    return false;
+  }
+  const normalized = token.replace(/\\/g, "/");
+  return (
+    !normalized.startsWith("/") && !/^[A-Za-z]:\//u.test(normalized) && !normalized.startsWith("//")
+  );
+}
+
+export async function canPersistExactCommandAllowAlways(params: {
+  analysisOk?: boolean;
+  commandText?: string;
+  cwd?: string;
+  env?: NodeJS.ProcessEnv;
+  platform?: string | null;
+}): Promise<boolean> {
+  const commandText = params.commandText?.trim();
+  if (!commandText || params.analysisOk === false) {
+    return false;
+  }
+  if (params.platform === "win32") {
+    return true;
+  }
+  const plan = await planCommandForAuthorization(
+    { dialect: "posix-shell", command: commandText },
+    {
+      cwd: params.cwd,
+      env: params.env,
+      platform: params.platform,
+    },
+  );
+  return (
+    plan.kind === "analyzable" &&
+    plan.units.length > 0 &&
+    plan.units.every(
+      (unit) =>
+        unit.allowAlwaysEligible &&
+        unit.blockReasons.length === 0 &&
+        extractBindableShellWrapperInlineCommand(unit.argv) === null &&
+        !isRelativeExecutableToken(unit.executable),
+    )
+  );
 }
 
 export async function persistAllowAlwaysPatterns(params: {

@@ -15,6 +15,7 @@ type ExecApprovalsModule = typeof import("./exec-approvals.js");
 
 let addAllowlistEntry: ExecApprovalsModule["addAllowlistEntry"];
 let addDurableCommandApproval: ExecApprovalsModule["addDurableCommandApproval"];
+let canPersistExactCommandAllowAlways: ExecApprovalsModule["canPersistExactCommandAllowAlways"];
 let ensureExecApprovals: ExecApprovalsModule["ensureExecApprovals"];
 let evaluateShellAllowlist: ExecApprovalsModule["evaluateShellAllowlist"];
 let mergeExecApprovalsSocketDefaults: ExecApprovalsModule["mergeExecApprovalsSocketDefaults"];
@@ -36,6 +37,7 @@ beforeAll(async () => {
   ({
     addAllowlistEntry,
     addDurableCommandApproval,
+    canPersistExactCommandAllowAlways,
     ensureExecApprovals,
     evaluateShellAllowlist,
     mergeExecApprovalsSocketDefaults,
@@ -677,6 +679,38 @@ describe("exec approvals store helpers", () => {
       pattern: git,
       source: "allow-always",
     });
+  });
+
+  it("blocks exact-command allow-always fallback for unsafe POSIX shell", async () => {
+    if (process.platform === "win32") {
+      return;
+    }
+    const dir = createHomeDir();
+
+    for (const commandText of [
+      "$(cat /tmp/tool) --help",
+      "printf x > out.txt",
+      "echo 'unterminated",
+      "sh -c './tool'",
+    ]) {
+      await expect(
+        canPersistExactCommandAllowAlways({
+          commandText,
+          cwd: dir,
+          env: { PATH: process.env.PATH ?? "" },
+          platform: process.platform,
+        }),
+      ).resolves.toBe(false);
+    }
+  });
+
+  it("keeps exact-command allow-always fallback available for Windows shell text", async () => {
+    await expect(
+      canPersistExactCommandAllowAlways({
+        commandText: 'powershell -NoProfile -Command "Write-Output hi"',
+        platform: "win32",
+      }),
+    ).resolves.toBe(true);
   });
 
   it("keeps planner-backed allow-always persistence scoped to POSIX executable units", async () => {
