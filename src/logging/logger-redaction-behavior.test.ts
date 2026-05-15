@@ -44,8 +44,8 @@ afterEach(() => {
   } else {
     process.env.OPENCLAW_TEST_FILE_LOG = originalTestFileLog;
   }
-  resetDiagnosticEventsForTest();
   resetDiagnosticTraceContextForTest();
+  resetDiagnosticEventsForTest();
   resetLogger();
   setLoggerOverride(null);
 });
