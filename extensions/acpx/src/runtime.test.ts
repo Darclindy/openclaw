@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetPluginStateStoreForTests } from "../../../src/plugin-state/plugin-state-store.js";
+import { seedPluginStateEntriesForTests } from "../../../src/plugin-state/plugin-state-store.test-helpers.js";
 import {
   AcpRuntimeError,
   type AcpRuntime,
@@ -172,6 +173,49 @@ describe("AcpxRuntime fresh reset wrapper", () => {
         acpxRecordId: record.acpxRecordId,
       });
       await expect(store.load(record.name)).resolves.toBeUndefined();
+    } finally {
+      resetPluginStateStoreForTests();
+      await fs.rm(stateDir, { recursive: true, force: true });
+    }
+  });
+
+  it("persists a runtime session above the old plugin-wide row cap", async () => {
+    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-acpx-session-store-"));
+    process.env.OPENCLAW_STATE_DIR = stateDir;
+    resetPluginStateStoreForTests();
+
+    const store = createSqliteSessionStore();
+    const lastRecordId = "agent:codex:acp:oneshot:run-1000";
+
+    try {
+      seedPluginStateEntriesForTests(
+        Array.from({ length: 1_000 }, (_, entryIndex) => {
+          const acpxRecordId = `agent:codex:acp:oneshot:run-${entryIndex}`;
+          return {
+            pluginId: "acpx",
+            namespace: "runtime-sessions",
+            key: acpxRecordId,
+            value: {
+              name: `agent:codex:acp:oneshot-${entryIndex}`,
+              sessionKey: "agent:codex:acp:oneshot",
+              acpxRecordId,
+            },
+          };
+        }),
+      );
+
+      await store.save({
+        name: "agent:codex:acp:oneshot-overflow",
+        sessionKey: "agent:codex:acp:oneshot",
+        acpxRecordId: lastRecordId,
+      } as never);
+
+      await expect(store.load(lastRecordId)).resolves.toMatchObject({
+        acpxRecordId: lastRecordId,
+      });
+      await expect(store.load("agent:codex:acp:oneshot:run-999")).resolves.toMatchObject({
+        acpxRecordId: "agent:codex:acp:oneshot:run-999",
+      });
     } finally {
       resetPluginStateStoreForTests();
       await fs.rm(stateDir, { recursive: true, force: true });

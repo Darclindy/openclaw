@@ -228,7 +228,7 @@ describe("plugin state keyed store", () => {
     });
   });
 
-  it("registerIfAbsent preserves eviction and plugin row cap behavior", async () => {
+  it("registerIfAbsent preserves namespace eviction without capping sibling namespaces", async () => {
     await withPluginStateTestState(async () => {
       vi.useFakeTimers();
       const evicting = createPluginStateKeyedStore<number>("discord", {
@@ -261,10 +261,13 @@ describe("plugin state keyed store", () => {
         namespace: "limit",
         maxEntries: 1_001,
       });
-      await expectPluginStateStoreError(limited.registerIfAbsent("overflow", { overflow: true }), {
-        code: "PLUGIN_STATE_LIMIT_EXCEEDED",
+      const sibling = createPluginStateKeyedStore("limited-plugin", {
+        namespace: "sibling",
+        maxEntries: 10,
       });
-      await expect(limited.lookup("overflow")).resolves.toBeUndefined();
+      await expect(limited.registerIfAbsent("overflow", { overflow: true })).resolves.toBe(true);
+      await expect(limited.lookup("overflow")).resolves.toEqual({ overflow: true });
+      await expect(sibling.lookup("k-0")).resolves.toEqual({ sibling: true });
     });
   });
 
@@ -369,7 +372,7 @@ describe("plugin state keyed store", () => {
     });
   });
 
-  it("rejects when the per-plugin live row ceiling would be exceeded without evicting siblings", async () => {
+  it("applies entry limits per namespace without evicting siblings", async () => {
     await withPluginStateTestState(async () => {
       seedPluginStateEntriesForTests([
         ...Array.from({ length: 999 }, (_, entryIndex) => ({
@@ -395,14 +398,12 @@ describe("plugin state keyed store", () => {
         maxEntries: 10,
       });
 
-      await expectPluginStateStoreError(limitStore.register("overflow", { overflow: true }), {
-        code: "PLUGIN_STATE_LIMIT_EXCEEDED",
-      });
+      await expect(limitStore.register("overflow", { overflow: true })).resolves.toBeUndefined();
       await expect(siblingStore.lookup("k-0")).resolves.toEqual({
         namespaceIndex: 1,
         entryIndex: 0,
       });
-      await expect(limitStore.lookup("overflow")).resolves.toBeUndefined();
+      await expect(limitStore.lookup("overflow")).resolves.toEqual({ overflow: true });
     });
   });
 
