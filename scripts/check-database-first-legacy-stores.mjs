@@ -466,6 +466,8 @@ const allowedExactPaths = new Set([
   "extensions/memory-wiki/src/log-migration.ts",
   "extensions/codex/src/node-cli-sessions.ts",
   "src/agents/session-tool-result-guard.ts",
+  "src/agents/pi-embedded-runner/run/helpers.ts",
+  "src/infra/exec-approvals.ts",
   "src/infra/restart-sentinel.ts",
   "src/plugin-sdk/session-store-runtime.ts",
 ]);
