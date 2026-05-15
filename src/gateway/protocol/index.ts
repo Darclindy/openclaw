@@ -300,8 +300,6 @@ import {
   SessionsAbortParamsSchema,
   type SessionsCompactParams,
   SessionsCompactParamsSchema,
-  type SessionsCleanupParams,
-  SessionsCleanupParamsSchema,
   type SessionsCompactionBranchParams,
   SessionsCompactionBranchParamsSchema,
   type SessionsCompactionGetParams,
@@ -586,9 +584,6 @@ export const validateSecretsResolveResult = lazyCompile<SecretsResolveResult>(
   SecretsResolveResultSchema,
 );
 export const validateSessionsListParams = lazyCompile<SessionsListParams>(SessionsListParamsSchema);
-export const validateSessionsCleanupParams = lazyCompile<SessionsCleanupParams>(
-  SessionsCleanupParamsSchema,
-);
 export const validateSessionsPreviewParams = lazyCompile<SessionsPreviewParams>(
   SessionsPreviewParamsSchema,
 );
@@ -898,7 +893,6 @@ export {
   NodePendingEnqueueParamsSchema,
   NodePendingEnqueueResultSchema,
   SessionsListParamsSchema,
-  SessionsCleanupParamsSchema,
   SessionsPreviewParamsSchema,
   SessionsDescribeParamsSchema,
   SessionsResolveParamsSchema,
@@ -1174,7 +1168,6 @@ export type {
   NodePendingEnqueueParams,
   NodePendingEnqueueResult,
   SessionsListParams,
-  SessionsCleanupParams,
   SessionsPreviewParams,
   SessionsDescribeParams,
   SessionsResolveParams,
