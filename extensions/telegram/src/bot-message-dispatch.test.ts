@@ -1518,9 +1518,7 @@ describe("dispatchTelegramMessage draft streaming", () => {
       [historyKey, [{ sender: "Alice", body: "side chatter", timestamp: 1 }]],
     ]);
     const statusReactionController = createStatusReactionController();
-    loadSessionStore.mockReturnValue({
-      "agent:main:telegram:group:-100123": { reasoningLevel: "stream" },
-    });
+    sessionRows.value["agent:main:telegram:group:-100123"] = { reasoningLevel: "stream" };
     dispatchReplyWithBufferedBlockDispatcher.mockImplementation(async ({ replyOptions }) => {
       await replyOptions?.onReasoningStream?.({ text: "<think>ambient reasoning</think>" });
       await replyOptions?.onToolStart?.({ name: "exec", phase: "start" });
