@@ -92,6 +92,7 @@ describe("backupRestoreCommand", () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
@@ -118,6 +119,7 @@ describe("backupRestoreCommand", () => {
     await fs.writeFile(path.join(restoredStateDir, "state.txt"), "restored\n");
     await createSqliteDb(path.join(restoredStateDir, "state", "openclaw.sqlite"), "restored");
     await createBackupArchive({ archivePath, sourceStateDir, restoredStateDir });
+    vi.stubEnv("OPENCLAW_STATE_DIR", sourceStateDir);
 
     const runtime = createRuntime();
     const result = await backupRestoreCommand(runtime, { archive: archivePath, dryRun: true });
@@ -130,7 +132,7 @@ describe("backupRestoreCommand", () => {
     expect(await fs.readFile(path.join(sourceStateDir, "state.txt"), "utf8")).toBe("current\n");
   });
 
-  it("restores verified SQLite snapshots to their recorded source paths", async () => {
+  it("restores verified SQLite snapshots to the current state path", async () => {
     const sourceStateDir = path.join(tempDir, "state");
     const restoredStateDir = path.join(tempDir, "snapshot-state");
     const archivePath = path.join(tempDir, "backup.tar.gz");
@@ -141,6 +143,7 @@ describe("backupRestoreCommand", () => {
     await fs.writeFile(path.join(restoredStateDir, "state.txt"), "restored\n");
     await createSqliteDb(path.join(restoredStateDir, "state", "openclaw.sqlite"), "restored");
     await createBackupArchive({ archivePath, sourceStateDir, restoredStateDir });
+    vi.stubEnv("OPENCLAW_STATE_DIR", sourceStateDir);
 
     const runtime = createRuntime();
     const result = await backupRestoreCommand(runtime, { archive: archivePath, yes: true });
@@ -151,5 +154,45 @@ describe("backupRestoreCommand", () => {
     ]);
     expect(await fs.readFile(path.join(sourceStateDir, "state.txt"), "utf8")).toBe("restored\n");
     expect(readSqliteValue(path.join(sourceStateDir, "state", "openclaw.sqlite"))).toBe("restored");
+  });
+
+  it("does not trust archived source paths as restore destinations", async () => {
+    const currentStateDir = path.join(tempDir, "current-state");
+    const archivedSourceStateDir = path.join(tempDir, "archived-machine-state");
+    const restoredStateDir = path.join(tempDir, "snapshot-state");
+    const archivePath = path.join(tempDir, "backup.tar.gz");
+    await fs.mkdir(currentStateDir, { recursive: true });
+    await fs.writeFile(path.join(currentStateDir, "state.txt"), "current\n");
+    await createSqliteDb(path.join(currentStateDir, "state", "openclaw.sqlite"), "current");
+    await fs.mkdir(archivedSourceStateDir, { recursive: true });
+    await fs.writeFile(path.join(archivedSourceStateDir, "state.txt"), "archived-machine\n");
+    await fs.mkdir(restoredStateDir, { recursive: true });
+    await fs.writeFile(path.join(restoredStateDir, "state.txt"), "restored\n");
+    await createSqliteDb(path.join(restoredStateDir, "state", "openclaw.sqlite"), "restored");
+    await createBackupArchive({
+      archivePath,
+      sourceStateDir: archivedSourceStateDir,
+      restoredStateDir,
+    });
+    vi.stubEnv("OPENCLAW_STATE_DIR", currentStateDir);
+
+    const runtime = createRuntime();
+    const result = await backupRestoreCommand(runtime, { archive: archivePath, yes: true });
+
+    expect(result?.restoredAssets).toEqual([
+      expect.objectContaining({
+        kind: "state",
+        originalSourcePath: archivedSourceStateDir,
+        sourcePath: currentStateDir,
+        status: "restored",
+      }),
+    ]);
+    expect(await fs.readFile(path.join(currentStateDir, "state.txt"), "utf8")).toBe("restored\n");
+    expect(readSqliteValue(path.join(currentStateDir, "state", "openclaw.sqlite"))).toBe(
+      "restored",
+    );
+    expect(await fs.readFile(path.join(archivedSourceStateDir, "state.txt"), "utf8")).toBe(
+      "archived-machine\n",
+    );
   });
 });

@@ -3,8 +3,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import * as tar from "tar";
+import { resolveConfigPath, resolveOAuthDir, resolveStateDir } from "../config/config.js";
 import { type RuntimeEnv, writeRuntimeJson } from "../runtime.js";
 import { shortenHomePath, resolveUserPath } from "../utils.js";
+import { resolveBackupPlanFromDisk, type BackupAssetKind } from "./backup-shared.js";
 import { verifyBackupArchive } from "./backup-verify.js";
 
 export type BackupRestoreOptions = {
@@ -21,6 +23,7 @@ export type BackupRestoreResult = {
   verified: true;
   restoredAssets: Array<{
     kind: string;
+    originalSourcePath: string;
     sourcePath: string;
     archivePath: string;
     status: "planned" | "restored";
@@ -76,6 +79,80 @@ async function replacePathFromExtracted(params: {
   }
 }
 
+function normalizeRestoreAssetKind(kind: string): BackupAssetKind {
+  switch (kind) {
+    case "state":
+    case "config":
+    case "credentials":
+    case "workspace":
+      return kind;
+    default:
+      throw new Error(`Backup restore does not support asset kind: ${kind}`);
+  }
+}
+
+async function resolveWorkspaceRestoreTargets(): Promise<Set<string>> {
+  const plan = await resolveBackupPlanFromDisk({ includeWorkspace: true });
+  return new Set(plan.workspaceDirs.map((workspaceDir) => path.resolve(workspaceDir)));
+}
+
+async function resolveBackupRestoreTarget(params: {
+  kind: string;
+  sourcePath: string;
+  workspaceTargets?: Set<string>;
+}): Promise<string> {
+  const kind = normalizeRestoreAssetKind(params.kind);
+  switch (kind) {
+    case "state":
+      return path.resolve(resolveStateDir());
+    case "config":
+      return path.resolve(resolveConfigPath());
+    case "credentials":
+      return path.resolve(resolveOAuthDir());
+    case "workspace": {
+      const sourcePath = path.resolve(params.sourcePath);
+      const workspaceTargets = params.workspaceTargets ?? (await resolveWorkspaceRestoreTargets());
+      if (!workspaceTargets.has(sourcePath)) {
+        throw new Error(
+          `Backup workspace restore target is not in the current OpenClaw workspace configuration: ${params.sourcePath}`,
+        );
+      }
+      return sourcePath;
+    }
+  }
+}
+
+async function resolveBackupRestoreAssets(
+  assets: Array<{ kind: string; sourcePath: string; archivePath: string }>,
+): Promise<BackupRestoreResult["restoredAssets"]> {
+  const needsWorkspaceTargets = assets.some((asset) => asset.kind === "workspace");
+  const workspaceTargets = needsWorkspaceTargets
+    ? await resolveWorkspaceRestoreTargets()
+    : undefined;
+  const seenTargets = new Set<string>();
+  const restoredAssets: BackupRestoreResult["restoredAssets"] = [];
+  for (const asset of assets) {
+    const sourcePath = await resolveBackupRestoreTarget({
+      kind: asset.kind,
+      sourcePath: asset.sourcePath,
+      workspaceTargets,
+    });
+    const targetKey = path.resolve(sourcePath);
+    if (seenTargets.has(targetKey)) {
+      throw new Error(`Backup restore contains duplicate target path: ${sourcePath}`);
+    }
+    seenTargets.add(targetKey);
+    restoredAssets.push({
+      kind: asset.kind,
+      originalSourcePath: asset.sourcePath,
+      sourcePath,
+      archivePath: asset.archivePath,
+      status: "planned",
+    });
+  }
+  return restoredAssets;
+}
+
 function formatBackupRestoreSummary(result: BackupRestoreResult): string[] {
   const lines = [
     `Backup archive: ${result.archivePath}`,
@@ -118,21 +195,16 @@ export async function backupRestoreCommand(
       cwd: tempDir,
     });
     const { manifest } = verified;
-    const restoredAssets: BackupRestoreResult["restoredAssets"] = [];
-    for (const asset of manifest.assets) {
+    const restoredAssets = await resolveBackupRestoreAssets(manifest.assets);
+    for (const asset of restoredAssets) {
       const extractedPath = extractedArchivePath(tempDir, asset.archivePath);
       await fs.access(extractedPath);
-      restoredAssets.push({
-        kind: asset.kind,
-        sourcePath: asset.sourcePath,
-        archivePath: asset.archivePath,
-        status: dryRun ? "planned" : "restored",
-      });
       if (!dryRun) {
         await replacePathFromExtracted({
           extractedPath,
           targetPath: asset.sourcePath,
         });
+        asset.status = "restored";
       }
     }
 
