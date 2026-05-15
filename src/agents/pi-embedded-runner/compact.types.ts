@@ -10,6 +10,7 @@ import type { SkillSnapshot } from "../skills.js";
 export type CompactEmbeddedPiSessionParams = {
   sessionId: string;
   agentId?: string;
+  path?: string;
   runId?: string;
   sessionKey?: string;
   /** Session key used only for runtime policy/sandbox resolution. Defaults to sessionKey. */

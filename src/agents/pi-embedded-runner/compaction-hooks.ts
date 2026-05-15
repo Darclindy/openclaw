@@ -10,6 +10,7 @@ import { log } from "./logger.js";
 
 type TranscriptScope = {
   agentId: string;
+  path?: string;
   sessionId: string;
 };
 

@@ -34,6 +34,7 @@ export type ReadRecentSessionMessagesOptions = {
 
 export type SessionTranscriptReadScope = {
   agentId?: string;
+  path?: string;
   sessionId: string;
 };
 
@@ -57,6 +58,7 @@ function normalizeTailEntryString(value: unknown): string | undefined {
 
 function loadScopedTranscriptEvents(params: {
   agentId?: string;
+  path?: string;
   sessionId: string;
 }): unknown[] | undefined {
   if (!params.sessionId.trim()) {
@@ -65,6 +67,7 @@ function loadScopedTranscriptEvents(params: {
   try {
     const scope = resolveSqliteSessionTranscriptScope({
       agentId: params.agentId,
+      path: params.path,
       sessionId: params.sessionId,
     });
     if (!scope || !hasSqliteSessionTranscriptEvents(scope)) {
@@ -78,6 +81,7 @@ function loadScopedTranscriptEvents(params: {
 
 function loadScopedTranscriptTailEvents(params: {
   agentId?: string;
+  path?: string;
   maxBytes?: number;
   maxEvents: number;
   sessionId: string;
@@ -88,6 +92,7 @@ function loadScopedTranscriptTailEvents(params: {
   try {
     const scope = resolveSqliteSessionTranscriptScope({
       agentId: params.agentId,
+      path: params.path,
       sessionId: params.sessionId,
     });
     if (!scope || !hasSqliteSessionTranscriptEvents(scope)) {
@@ -409,10 +414,12 @@ export async function readRecentSessionMessagesWithStatsAsync(
 export function readRecentSessionTranscriptEvents(params: {
   sessionId: string;
   agentId?: string;
+  path?: string;
   maxEvents: number;
 }): { events: unknown[]; totalEvents: number } | null {
   const events = loadScopedTranscriptEvents({
     agentId: params.agentId,
+    path: params.path,
     sessionId: params.sessionId,
   });
   if (!events) {

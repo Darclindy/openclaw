@@ -35,6 +35,7 @@ export function shouldRotateCompactionTranscript(config?: OpenClawConfig): boole
 export async function rotateTranscriptAfterCompaction(params: {
   sessionManager: ReadonlySessionManagerForRotation;
   agentId: string;
+  path?: string;
   sessionId: string;
   now?: () => Date;
 }): Promise<CompactionTranscriptRotation> {
@@ -71,6 +72,7 @@ export async function rotateTranscriptAfterCompaction(params: {
   });
   replaceSqliteSessionTranscriptEvents({
     agentId,
+    path: params.path,
     sessionId,
     events: [header, ...successorEntries],
   });
@@ -87,6 +89,7 @@ export async function rotateTranscriptAfterCompaction(params: {
 
 export async function rotateSqliteTranscriptAfterCompaction(params: {
   agentId: string;
+  path?: string;
   sessionId: string;
   now?: () => Date;
 }): Promise<CompactionTranscriptRotation> {
@@ -97,6 +100,7 @@ export async function rotateSqliteTranscriptAfterCompaction(params: {
   return rotateTranscriptAfterCompaction({
     sessionManager: state,
     agentId: params.agentId,
+    path: params.path,
     sessionId: params.sessionId,
     ...(params.now ? { now: params.now } : {}),
   });
@@ -104,6 +108,7 @@ export async function rotateSqliteTranscriptAfterCompaction(params: {
 
 function loadTranscriptStateFromSqlite(params: {
   agentId: string;
+  path?: string;
   sessionId: string;
 }): TranscriptState | null {
   const sessionId = params.sessionId.trim();
@@ -111,7 +116,7 @@ function loadTranscriptStateFromSqlite(params: {
     return null;
   }
   const agentId = normalizeAgentId(params.agentId);
-  const events = loadSqliteSessionTranscriptEvents({ agentId, sessionId }).map(
+  const events = loadSqliteSessionTranscriptEvents({ agentId, path: params.path, sessionId }).map(
     (entry) => entry.event,
   );
   if (events.length === 0) {

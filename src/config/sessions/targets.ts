@@ -31,11 +31,12 @@ function resolveSessionDatabaseTarget(params: {
   };
 }
 
-function dedupeTargetsByAgentId(targets: SessionDatabaseTarget[]): SessionDatabaseTarget[] {
+function dedupeTargetsByDatabase(targets: SessionDatabaseTarget[]): SessionDatabaseTarget[] {
   const deduped = new Map<string, SessionDatabaseTarget>();
   for (const target of targets) {
-    if (!deduped.has(target.agentId)) {
-      deduped.set(target.agentId, target);
+    const key = `${target.agentId}\0${target.databasePath}`;
+    if (!deduped.has(key)) {
+      deduped.set(key, target);
     }
   }
   return [...deduped.values()];
@@ -103,7 +104,7 @@ export function resolveAllAgentSessionDatabaseTargetsSync(
   params: { env?: NodeJS.ProcessEnv } = {},
 ): SessionDatabaseTarget[] {
   const env = params.env ?? process.env;
-  return dedupeTargetsByAgentId([
+  return dedupeTargetsByDatabase([
     ...resolveSessionStoreDiscoveryState(cfg, env),
     ...resolveRegisteredAgentDatabaseTargets(env),
   ]);
@@ -120,7 +121,7 @@ export function resolveAgentSessionDatabaseTargetsSync(
   const registered = resolveRegisteredAgentDatabaseTargets(env).filter(
     (target) => normalizeAgentId(target.agentId) === requested,
   );
-  return dedupeTargetsByAgentId([...configured, ...registered]);
+  return dedupeTargetsByDatabase([...configured, ...registered]);
 }
 
 export async function resolveAllAgentSessionDatabaseTargets(

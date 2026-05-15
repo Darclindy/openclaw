@@ -243,6 +243,7 @@ function loadSessionRowsForTarget(target: ReturnType<typeof resolveGatewaySessio
 } {
   const entry = getSessionEntry({
     agentId: target.agentId,
+    path: target.databasePath,
     sessionKey: target.canonicalKey,
   });
   const store = entry ? { [target.canonicalKey]: entry } : {};
@@ -253,9 +254,14 @@ function loadSessionRowsForTarget(target: ReturnType<typeof resolveGatewaySessio
   };
 }
 
-function loadAgentSessionRows(agentId: string): Record<string, SessionEntry> {
+function loadAgentSessionRows(params: {
+  agentId: string;
+  databasePath: string;
+}): Record<string, SessionEntry> {
   return Object.fromEntries(
-    listSessionEntries({ agentId }).map(({ sessionKey, entry }) => [sessionKey, entry]),
+    listSessionEntries({ agentId: params.agentId, path: params.databasePath }).map(
+      ({ sessionKey, entry }) => [sessionKey, entry],
+    ),
   );
 }
 
@@ -428,10 +434,15 @@ function cloneCheckpointSessionEntry(params: {
 function ensureSessionTranscriptScope(params: {
   sessionId: string;
   agentId: string;
+  databasePath: string;
 }): { ok: true } | { ok: false; error: string } {
   try {
     if (
-      !hasSqliteSessionTranscriptEvents({ agentId: params.agentId, sessionId: params.sessionId })
+      !hasSqliteSessionTranscriptEvents({
+        agentId: params.agentId,
+        path: params.databasePath,
+        sessionId: params.sessionId,
+      })
     ) {
       const header = {
         type: "session",
@@ -442,6 +453,7 @@ function ensureSessionTranscriptScope(params: {
       };
       appendSqliteSessionTranscriptEvent({
         agentId: params.agentId,
+        path: params.databasePath,
         sessionId: params.sessionId,
         event: header,
       });
@@ -472,7 +484,7 @@ async function createAgentMainSessionForSend(params: {
     cfg: params.cfg,
     key: params.canonicalKey,
   });
-  const store = loadAgentSessionRows(target.agentId);
+  const store = loadAgentSessionRows(target);
   const patched = await applySessionsPatchToStore({
     cfg: params.cfg,
     store,
@@ -485,11 +497,13 @@ async function createAgentMainSessionForSend(params: {
   }
   upsertSessionEntry({
     agentId: target.agentId,
+    path: target.databasePath,
     sessionKey: target.canonicalKey,
     entry: patched.entry,
   });
   const ensured = ensureSessionTranscriptScope({
     agentId: target.agentId,
+    databasePath: target.databasePath,
     sessionId: patched.entry.sessionId,
   });
   if (!ensured.ok) {
@@ -1023,7 +1037,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
           continue;
         }
         const items = readSessionPreviewItemsFromTranscript(
-          { agentId: target.agentId, sessionId: entry.sessionId },
+          { agentId: target.agentId, path: target.databasePath, sessionId: entry.sessionId },
           limit,
           maxChars,
         );
@@ -1265,7 +1279,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       : buildDashboardSessionKey(agentId);
     const target = resolveGatewaySessionDatabaseTarget({ cfg, key });
     const targetAgentId = resolveAgentIdFromSessionKey(target.canonicalKey);
-    const createdStore = loadAgentSessionRows(target.agentId);
+    const createdStore = loadAgentSessionRows(target);
     const patched = await applySessionsPatchToStore({
       cfg,
       store: createdStore,
@@ -1291,6 +1305,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     if (created.ok) {
       upsertSessionEntry({
         agentId: target.agentId,
+        path: target.databasePath,
         sessionKey: target.canonicalKey,
         entry: created.entry,
       });
@@ -1302,10 +1317,12 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     const ensured = ensureSessionTranscriptScope({
       sessionId: created.entry.sessionId,
       agentId: targetAgentId,
+      databasePath: target.databasePath,
     });
     if (!ensured.ok) {
       deleteSessionEntry({
         agentId: target.agentId,
+        path: target.databasePath,
         sessionKey: target.canonicalKey,
       });
       respond(
@@ -1325,6 +1342,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     const messageSeq = initialMessage
       ? (await readSessionMessageCountAsync({
           agentId: target.agentId,
+          path: target.databasePath,
           sessionId: createdEntry.sessionId,
         })) + 1
       : undefined;
@@ -1452,6 +1470,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     }
     const branchedSession = await forkCompactionCheckpointTranscriptAsync({
       agentId: target.agentId,
+      path: target.databasePath,
       sourceSessionId: checkpoint.preCompaction.sessionId,
     });
     if (!branchedSession?.sessionId) {
@@ -1474,6 +1493,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
 
     upsertSessionEntry({
       agentId: target.agentId,
+      path: target.databasePath,
       sessionKey: nextKey,
       entry: nextEntry,
     });
@@ -1567,6 +1587,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     const target = resolveGatewaySessionDatabaseTarget({ cfg: loaded.cfg, key: canonicalKey });
     const restoredSession = await forkCompactionCheckpointTranscriptAsync({
       agentId: target.agentId,
+      path: target.databasePath,
       sourceSessionId: checkpoint.preCompaction.sessionId,
     });
     if (!restoredSession?.sessionId) {
@@ -1586,6 +1607,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
 
     upsertSessionEntry({
       agentId: target.agentId,
+      path: target.databasePath,
       sessionKey: canonicalKey,
       entry: nextEntry,
     });
@@ -1795,7 +1817,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
 
     const { cfg, target } = resolveGatewaySessionTargetFromKey(key, context.getRuntimeConfig());
     const loaded = loadSessionRowsForTarget(target);
-    const patchStore = loadAgentSessionRows(target.agentId);
+    const patchStore = loadAgentSessionRows(target);
     if (loaded.entry) {
       patchStore[target.canonicalKey] = loaded.entry;
     }
@@ -1812,6 +1834,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     }
     upsertSessionEntry({
       agentId: target.agentId,
+      path: target.databasePath,
       sessionKey: target.canonicalKey,
       entry: applied.entry,
     });
@@ -2010,6 +2033,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     const deleted = entry
       ? deleteSessionEntry({
           agentId: target.agentId,
+          path: target.databasePath,
           sessionKey: deleteKey,
         })
       : false;
@@ -2056,7 +2080,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       return;
     }
     const { messages } = await readRecentSessionMessagesWithStatsAsync(
-      { agentId: target.agentId, sessionId: entry.sessionId },
+      { agentId: target.agentId, path: target.databasePath, sessionId: entry.sessionId },
       {
         maxMessages: limit,
         maxLines: limit * 20 + 20,
@@ -2100,7 +2124,13 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       return;
     }
 
-    if (!hasSqliteSessionTranscriptEvents({ agentId: target.agentId, sessionId })) {
+    if (
+      !hasSqliteSessionTranscriptEvents({
+        agentId: target.agentId,
+        path: target.databasePath,
+        sessionId,
+      })
+    ) {
       respond(
         true,
         {
@@ -2136,6 +2166,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       const result = await compactEmbeddedPiSession({
         sessionId,
         agentId: target.agentId,
+        path: target.databasePath,
         sessionKey: target.canonicalKey,
         allowGatewaySubagentBinding: true,
         workspaceDir,
@@ -2156,6 +2187,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       if (result.ok && result.compacted) {
         await patchSessionEntry({
           agentId: target.agentId,
+          path: target.databasePath,
           sessionKey: target.canonicalKey,
           fallbackEntry: entry,
           update: (entryToUpdate) => {
@@ -2205,6 +2237,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     const tail = readRecentSessionTranscriptEvents({
       sessionId,
       agentId: target.agentId,
+      path: target.databasePath,
       maxEvents: maxLines,
     });
     const events = tail?.events ?? [];
@@ -2225,12 +2258,14 @@ export const sessionsHandlers: GatewayRequestHandlers = {
 
     replaceSqliteSessionTranscriptEvents({
       agentId: target.agentId,
+      path: target.databasePath,
       sessionId,
       events,
     });
 
     await patchSessionEntry({
       agentId: target.agentId,
+      path: target.databasePath,
       sessionKey: target.canonicalKey,
       fallbackEntry: entry,
       update: (entryToUpdate) => {

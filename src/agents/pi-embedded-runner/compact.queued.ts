@@ -73,7 +73,11 @@ export async function compactEmbeddedPiSession(
     agentId: params.agentId,
     config: params.config,
   });
-  const transcriptScope = { agentId: agentIds.sessionAgentId, sessionId: params.sessionId };
+  const transcriptScope = {
+    agentId: agentIds.sessionAgentId,
+    path: params.path,
+    sessionId: params.sessionId,
+  };
   const agentDir = params.agentDir ?? resolveAgentDir(params.config ?? {}, agentIds.sessionAgentId);
   const resolvedWorkspaceDir = resolveUserPath(params.workspaceDir);
   const contextEngine = await resolveContextEngine(params.config, {
@@ -161,6 +165,7 @@ export async function compactEmbeddedPiSession(
         checkpointSnapshot = engineOwnsCompaction
           ? await captureCompactionCheckpointSnapshotAsync({
               agentId: sessionAgentId,
+              path: params.path,
               sessionId: params.sessionId,
             })
           : null;
@@ -210,6 +215,7 @@ export async function compactEmbeddedPiSession(
         let postCompactionSessionId = delegatedSessionId ?? params.sessionId;
         let postCompactionTranscriptScope = {
           agentId: agentIds.sessionAgentId,
+          path: params.path,
           sessionId: postCompactionSessionId,
         };
         let postCompactionLeafId: string | undefined;
@@ -218,12 +224,14 @@ export async function compactEmbeddedPiSession(
             try {
               const rotation = await rotateSqliteTranscriptAfterCompaction({
                 agentId: agentIds.sessionAgentId,
+                path: params.path,
                 sessionId: params.sessionId,
               });
               if (rotation.rotated) {
                 postCompactionSessionId = rotation.sessionId ?? postCompactionSessionId;
                 postCompactionTranscriptScope = {
                   agentId: agentIds.sessionAgentId,
+                  path: params.path,
                   sessionId: postCompactionSessionId,
                 };
                 postCompactionLeafId = rotation.leafId;

@@ -4,10 +4,11 @@ import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { resetConfigRuntimeState } from "../config/config.js";
 import type { OpenClawConfig } from "../config/config.js";
-import type { SessionEntry } from "../config/sessions.js";
+import { upsertSessionEntry, type SessionEntry } from "../config/sessions.js";
 import { replaceSqliteSessionTranscriptEvents } from "../config/sessions/transcript-store.sqlite.js";
 import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
 import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../plugins/runtime.js";
+import { closeOpenClawAgentDatabasesForTest } from "../state/openclaw-agent-db.js";
 import { closeOpenClawStateDatabaseForTest } from "../state/openclaw-state-db.js";
 import { withStateDirEnv } from "../test-helpers/state-dir-env.js";
 import {
@@ -747,6 +748,45 @@ describe("gateway session utils", () => {
     } as OpenClawConfig;
     const target = resolveGatewaySessionDatabaseTarget({ cfg, key: "main" });
     expect(target.canonicalKey).toBe("agent:ops:main");
+  });
+
+  test("resolveGatewaySessionDatabaseTarget preserves registered database path for existing rows", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "session-target-registered-db-"));
+    const previousStateDir = process.env.OPENCLAW_STATE_DIR;
+    process.env.OPENCLAW_STATE_DIR = tmpDir;
+    try {
+      const databasePath = path.join(tmpDir, "retired", "openclaw-agent.sqlite");
+      const cfg = {
+        session: { mainKey: "main" },
+        agents: { list: [{ id: "main", default: true }] },
+      } as OpenClawConfig;
+      upsertSessionEntry({
+        agentId: "main",
+        path: databasePath,
+        sessionKey: "agent:main:archived",
+        entry: {
+          sessionId: "archived-session",
+          updatedAt: Date.parse("2026-05-01T00:00:00.000Z"),
+        },
+      });
+
+      const target = resolveGatewaySessionDatabaseTarget({
+        cfg,
+        key: "agent:main:archived",
+      });
+
+      expect(target.databasePath).toBe(databasePath);
+      expect(target.canonicalKey).toBe("agent:main:archived");
+    } finally {
+      closeOpenClawAgentDatabasesForTest();
+      closeOpenClawStateDatabaseForTest();
+      if (previousStateDir === undefined) {
+        delete process.env.OPENCLAW_STATE_DIR;
+      } else {
+        process.env.OPENCLAW_STATE_DIR = previousStateDir;
+      }
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 
   test("listAgentsForGateway rejects avatar symlink escapes outside workspace", () => {
