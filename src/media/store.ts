@@ -22,6 +22,7 @@ import type { DB as OpenClawStateKyselyDatabase } from "../state/openclaw-state-
 import {
   openOpenClawStateDatabase,
   runOpenClawStateWriteTransaction,
+  type OpenClawStateDatabaseOptions,
 } from "../state/openclaw-state-db.js";
 import { resolveConfigDir } from "../utils.js";
 import { basenameFromAnyPath, extnameFromAnyPath, nameFromAnyPath } from "./file-name.js";
@@ -189,6 +190,7 @@ function upsertMediaBlob(params: {
   id: string;
   buffer: Buffer;
   contentType?: string;
+  state?: OpenClawStateDatabaseOptions;
 }): void {
   const now = Date.now();
   runOpenClawStateWriteTransaction((database) => {
@@ -215,7 +217,7 @@ function upsertMediaBlob(params: {
           }),
         ),
     );
-  });
+  }, params.state);
 }
 
 export function setMediaStoreNetworkDepsForTest(deps?: {
@@ -579,6 +581,7 @@ async function writeSavedMediaBuffer(params: {
   id: string;
   buffer: Buffer;
   contentType?: string;
+  state?: OpenClawStateDatabaseOptions;
 }): Promise<string> {
   const safeSubdir = resolveMediaSubdir(params.subdir, "writeSavedMediaBuffer");
   resolveMediaRelativePath(params.id, params.subdir, "writeSavedMediaBuffer");
@@ -587,6 +590,7 @@ async function writeSavedMediaBuffer(params: {
     id: params.id,
     buffer: params.buffer,
     contentType: params.contentType,
+    state: params.state,
   });
   return await materializeMediaBufferPath({
     subdir: safeSubdir,
@@ -807,6 +811,7 @@ export async function saveMediaBufferWithId(params: {
   buffer: Buffer;
   contentType?: string;
   maxBytes?: number;
+  state?: OpenClawStateDatabaseOptions;
 }): Promise<SavedMedia> {
   const maxBytes = params.maxBytes ?? MAX_BYTES;
   if (params.buffer.byteLength > maxBytes) {
@@ -821,6 +826,7 @@ export async function saveMediaBufferWithId(params: {
     id: params.id,
     buffer: params.buffer,
     contentType: mime,
+    state: params.state,
   });
   return buildSavedMediaResult({
     dir,

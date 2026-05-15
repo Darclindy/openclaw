@@ -135,6 +135,7 @@ export async function importLegacyMediaFilesToSqlite(
         id: candidate.id,
         buffer,
         contentType,
+        state: { env },
       });
       result.imported += 1;
       await fs.rm(candidate.path, { force: true });

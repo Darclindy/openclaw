@@ -12,6 +12,10 @@ function resolveLegacyOutgoingRecordsDir(stateDir = resolveStateDir()): string {
   return path.join(stateDir, "media", "outgoing", "records");
 }
 
+function legacyManagedImageStateEnv(stateDir: string): NodeJS.ProcessEnv {
+  return { ...process.env, OPENCLAW_STATE_DIR: stateDir };
+}
+
 type LegacyManagedImageRecord = Omit<ManagedImageRecord, "original"> & {
   original?: Partial<ManagedImageRecord["original"]> & {
     path?: string;
@@ -48,6 +52,7 @@ async function importLegacyManagedImageRecord(
     id: mediaId,
     buffer,
     contentType: record.original.contentType ?? "application/octet-stream",
+    state: { env: legacyManagedImageStateEnv(stateDir) },
   });
   await writeManagedImageRecord(
     {

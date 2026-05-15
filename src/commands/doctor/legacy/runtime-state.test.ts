@@ -697,6 +697,62 @@ describe("maybeRepairLegacyRuntimeStateFiles", () => {
     });
   });
 
+  it("imports legacy media into the supplied state dir", async () => {
+    await withTempDir("openclaw-doctor-media-env-", async (rootDir) => {
+      const defaultStateDir = path.join(rootDir, "default-state");
+      const targetStateDir = path.join(rootDir, "target-state");
+      const env = {
+        ...process.env,
+        OPENCLAW_STATE_DIR: targetStateDir,
+        OPENCLAW_TEST_FAST: "1",
+      };
+      await withEnvAsync(
+        { ...process.env, OPENCLAW_STATE_DIR: defaultStateDir, OPENCLAW_TEST_FAST: "1" },
+        async () => {
+          const legacyMediaDir = path.join(targetStateDir, "media", "inbound");
+          await fs.mkdir(legacyMediaDir, { recursive: true });
+          await fs.writeFile(path.join(legacyMediaDir, "legacy-media.txt"), "legacy media", "utf8");
+
+          await maybeRepairLegacyRuntimeStateFiles({
+            prompter: { shouldRepair: true },
+            env,
+          });
+
+          const targetDatabase = openOpenClawStateDatabase({ env });
+          const targetDb = getNodeSqliteKysely<OpenClawStateKyselyDatabase>(targetDatabase.db);
+          const targetRow = executeSqliteQueryTakeFirstSync(
+            targetDatabase.db,
+            targetDb
+              .selectFrom("media_blobs")
+              .select(["id", "size_bytes"])
+              .where("subdir", "=", "inbound")
+              .where("id", "=", "legacy-media.txt"),
+          );
+          expect(targetRow).toMatchObject({
+            id: "legacy-media.txt",
+            size_bytes: "legacy media".length,
+          });
+
+          const defaultDatabase = openOpenClawStateDatabase({ env: process.env });
+          const defaultDb = getNodeSqliteKysely<OpenClawStateKyselyDatabase>(defaultDatabase.db);
+          expect(
+            executeSqliteQueryTakeFirstSync(
+              defaultDatabase.db,
+              defaultDb
+                .selectFrom("media_blobs")
+                .select(["id"])
+                .where("subdir", "=", "inbound")
+                .where("id", "=", "legacy-media.txt"),
+            ),
+          ).toBeUndefined();
+          await expect(
+            fs.stat(path.join(legacyMediaDir, "legacy-media.txt")),
+          ).rejects.toMatchObject({ code: "ENOENT" });
+        },
+      );
+    });
+  });
+
   it("imports memory-core dreaming checkpoint files from configured workspaces", async () => {
     await withTempDir("openclaw-doctor-memory-core-state-", async (rootDir) => {
       const stateDir = path.join(rootDir, "state");
