@@ -169,9 +169,11 @@ function getPluginBindingGlobalState(): PluginBindingGlobalState {
   return pluginBindingGlobalState;
 }
 
-function pluginBindingApprovalDbOptions(): OpenClawStateDatabaseOptions {
+function pluginBindingApprovalDbOptions(
+  env: NodeJS.ProcessEnv = process.env,
+): OpenClawStateDatabaseOptions {
   return {
-    env: { ...process.env, OPENCLAW_STATE_DIR: resolveStateDir(process.env) },
+    env: { ...env, OPENCLAW_STATE_DIR: resolveStateDir(env) },
   };
 }
 
@@ -432,7 +434,10 @@ function loadApprovalsFromSqlite(): PluginBindingApprovalsFile {
   }
 }
 
-export function writePluginBindingApprovalsSnapshot(file: PluginBindingApprovalsFile): void {
+export function writePluginBindingApprovalsSnapshot(
+  file: PluginBindingApprovalsFile,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
   const normalized = normalizePluginBindingApprovalsSnapshot(file);
   const rows = normalized.approvals.map(pluginBindingApprovalToRow);
   runOpenClawStateWriteTransaction((database) => {
@@ -476,7 +481,7 @@ export function writePluginBindingApprovalsSnapshot(file: PluginBindingApprovals
           ),
       );
     }
-  }, pluginBindingApprovalDbOptions());
+  }, pluginBindingApprovalDbOptions(env));
   const state = getPluginBindingGlobalState();
   state.approvalsCache = normalized;
   state.approvalsLoaded = true;

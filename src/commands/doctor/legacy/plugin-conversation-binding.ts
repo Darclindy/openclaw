@@ -9,16 +9,18 @@ import {
 
 const LEGACY_APPROVALS_PATH = "~/.openclaw/plugin-binding-approvals.json";
 
-function resolveLegacyApprovalsPath(): string {
-  if (process.env.OPENCLAW_STATE_DIR?.trim()) {
-    return path.join(resolveStateDir(process.env), "plugin-binding-approvals.json");
+function resolveLegacyApprovalsPath(env: NodeJS.ProcessEnv = process.env): string {
+  if (env.OPENCLAW_STATE_DIR?.trim()) {
+    return path.join(resolveStateDir(env), "plugin-binding-approvals.json");
   }
-  return expandHomePrefix(LEGACY_APPROVALS_PATH);
+  return expandHomePrefix(LEGACY_APPROVALS_PATH, { env });
 }
 
-export function legacyPluginBindingApprovalFileExists(): boolean {
+export function legacyPluginBindingApprovalFileExists(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
   try {
-    return fs.statSync(resolveLegacyApprovalsPath()).isFile();
+    return fs.statSync(resolveLegacyApprovalsPath(env)).isFile();
   } catch (error) {
     if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
       return false;
@@ -27,18 +29,20 @@ export function legacyPluginBindingApprovalFileExists(): boolean {
   }
 }
 
-export function importLegacyPluginBindingApprovalFileToSqlite(): {
+export function importLegacyPluginBindingApprovalFileToSqlite(
+  env: NodeJS.ProcessEnv = process.env,
+): {
   imported: boolean;
   approvals: number;
 } {
-  const filePath = resolveLegacyApprovalsPath();
-  if (!legacyPluginBindingApprovalFileExists()) {
+  const filePath = resolveLegacyApprovalsPath(env);
+  if (!legacyPluginBindingApprovalFileExists(env)) {
     return { imported: false, approvals: 0 };
   }
   const file = normalizePluginBindingApprovalsSnapshot(
     JSON.parse(fs.readFileSync(filePath, "utf8")) as unknown,
   );
-  writePluginBindingApprovalsSnapshot(file);
+  writePluginBindingApprovalsSnapshot(file, env);
   try {
     fs.unlinkSync(filePath);
   } catch {

@@ -196,7 +196,7 @@ async function probeLegacyRuntimeStateFiles(params: {
     configHealth: await legacyConfigHealthFileExists(baseDir),
     managedImages: await legacyManagedOutgoingImageRecordFilesExist(baseDir),
     mediaFiles: await legacyMediaFilesExist(env),
-    pluginBindingApprovals: legacyPluginBindingApprovalFileExists(),
+    pluginBindingApprovals: legacyPluginBindingApprovalFileExists(env),
     installedPluginIndex: legacyInstalledPluginIndexFileExists({ env, stateDir: baseDir }),
     subagents: legacySubagentRegistryFileExists(env),
     tuiLastSession: await legacyTuiLastSessionFileExists({ stateDir: baseDir }),
@@ -380,7 +380,7 @@ export async function maybeRepairLegacyRuntimeStateFiles(params: {
   }
   if (probe.pluginBindingApprovals) {
     await runImport("Plugin binding approvals", () => {
-      const result = importLegacyPluginBindingApprovalFileToSqlite();
+      const result = importLegacyPluginBindingApprovalFileToSqlite(env);
       if (result.imported) {
         changes.push(`- Imported ${result.approvals} plugin binding approval(s) into SQLite.`);
       }
