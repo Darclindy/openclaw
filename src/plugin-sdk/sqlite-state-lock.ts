@@ -176,6 +176,46 @@ function releaseOpenClawStateLock(params: {
   }, params.options);
 }
 
+function renewOpenClawStateLock(params: {
+  key: string;
+  owner: string;
+  scope: string;
+  staleMs: number;
+  options: OpenClawStateDatabaseOptions;
+}): boolean {
+  const now = Date.now();
+  const expiresAt = now + params.staleMs;
+  return runOpenClawStateWriteTransaction((database) => {
+    const db = getNodeSqliteKysely<LockDatabase>(database.db);
+    const row = executeSqliteQueryTakeFirstSync(
+      database.db,
+      db
+        .selectFrom("state_leases")
+        .select(["owner", "expires_at", "payload_json"])
+        .where("scope", "=", params.scope)
+        .where("lease_key", "=", params.key),
+    );
+    const current = parseLockValue(row);
+    if (current?.owner !== params.owner) {
+      return false;
+    }
+    executeSqliteQuerySync(
+      database.db,
+      db
+        .updateTable("state_leases")
+        .set({
+          expires_at: expiresAt,
+          heartbeat_at: now,
+          payload_json: JSON.stringify({ owner: params.owner, expiresAt }),
+          updated_at: now,
+        })
+        .where("scope", "=", params.scope)
+        .where("lease_key", "=", params.key),
+    );
+    return true;
+  }, params.options);
+}
+
 export async function withOpenClawStateLock<T>(
   key: string,
   options: OpenClawStateLockOptions,
@@ -200,9 +240,21 @@ export async function withOpenClawStateLock<T>(
         options: databaseOptions,
       })
     ) {
+      const renewEveryMs = Math.max(1, Math.floor(staleMs / 2));
+      const renewal = setInterval(() => {
+        renewOpenClawStateLock({
+          key,
+          owner,
+          scope,
+          staleMs,
+          options: databaseOptions,
+        });
+      }, renewEveryMs);
+      renewal.unref?.();
       try {
         return await task();
       } finally {
+        clearInterval(renewal);
         releaseOpenClawStateLock({ key, owner, scope, options: databaseOptions });
       }
     }

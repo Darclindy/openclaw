@@ -890,6 +890,10 @@
       "types": "./dist/plugin-sdk/channel-pairing.d.ts",
       "default": "./dist/plugin-sdk/channel-pairing.js"
     },
+    "./plugin-sdk/channel-pairing-paths": {
+      "types": "./dist/plugin-sdk/channel-pairing-paths.d.ts",
+      "default": "./dist/plugin-sdk/channel-pairing-paths.js"
+    },
     "./plugin-sdk/channel-policy": {
       "types": "./dist/plugin-sdk/channel-policy.d.ts",
       "default": "./dist/plugin-sdk/channel-policy.js"
@@ -909,6 +913,10 @@
     "./plugin-sdk/context-visibility-runtime": {
       "types": "./dist/plugin-sdk/context-visibility-runtime.d.ts",
       "default": "./dist/plugin-sdk/context-visibility-runtime.js"
+    },
+    "./plugin-sdk/file-lock": {
+      "types": "./dist/plugin-sdk/file-lock.d.ts",
+      "default": "./dist/plugin-sdk/file-lock.js"
     },
     "./plugin-sdk/fetch-runtime": {
       "types": "./dist/plugin-sdk/fetch-runtime.d.ts",
