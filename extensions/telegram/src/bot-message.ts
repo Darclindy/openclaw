@@ -94,7 +94,6 @@ export const createTelegramMessageProcessor = (deps: TelegramMessageProcessorDep
           resolvePinnedMainDmOwnerFromAllowlist: telegramDeps.resolvePinnedMainDmOwnerFromAllowlist,
         }
       : {}),
-    resolveStorePath: telegramDeps.resolveStorePath,
   };
   const contextRuntime = telegramDeps.recordChannelActivity
     ? { recordChannelActivity: telegramDeps.recordChannelActivity }

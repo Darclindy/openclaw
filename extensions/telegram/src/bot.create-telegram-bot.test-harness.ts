@@ -392,7 +392,6 @@ export const telegramBotDepsForTest: TelegramBotDeps = {
   getSessionEntry: getSessionEntryMock,
   listSessionEntries: listSessionEntriesMock,
   patchSessionEntry: patchSessionEntryMock,
-  resolveStorePath: () => "",
   readSessionUpdatedAt: () => undefined,
   recordInboundSession: recordInboundSessionMock as TelegramBotDeps["recordInboundSession"],
   recordChannelActivity: vi.fn() as TelegramBotDeps["recordChannelActivity"],

@@ -17,6 +17,7 @@ import {
   resolveDefaultModelForAgent,
   resolveModelRefFromString,
 } from "./model-selection.js";
+import { isOpenAIProvider, OPENAI_CODEX_PROVIDER_ID } from "./openai-codex-routing.js";
 import {
   completeSimple,
   type Api,

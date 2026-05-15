@@ -771,7 +771,7 @@ export function installSessionToolResultGuard(
       suppressNextUserMessagePersistence = false;
       return undefined;
     }
-    const result = originalAppend(finalMessage as never);
+    const result = appendMessageAndCacheTranscriptSeq(finalMessage);
 
     if (opts?.sessionId || opts?.sessionKey) {
       emitSessionTranscriptUpdate({
@@ -779,8 +779,8 @@ export function installSessionToolResultGuard(
         ...(opts?.sessionId ? { sessionId: opts.sessionId } : {}),
         sessionKey: opts?.sessionKey,
         message: finalMessage,
-        messageId: typeof result === "string" ? result : undefined,
-        ...(messageSeq !== undefined ? { messageSeq } : {}),
+        messageId: result.entryId,
+        ...(result.messageSeq !== undefined ? { messageSeq: result.messageSeq } : {}),
       });
     }
 
@@ -799,7 +799,7 @@ export function installSessionToolResultGuard(
       );
     }
 
-    return result;
+    return result.entryId;
   };
 
   // Monkey-patch appendMessage with our guarded version.
