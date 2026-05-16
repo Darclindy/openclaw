@@ -12,6 +12,7 @@ import {
   type MockInstance,
   vi,
 } from "vitest";
+import { importLegacyChannelPairingFilesToSqlite } from "../commands/doctor/legacy/channel-pairing.js";
 import { resolveOAuthDir } from "../config/paths.js";
 import { executeSqliteQuerySync, getNodeSqliteKysely } from "../infra/kysely-sync.js";
 import { DEFAULT_ACCOUNT_ID } from "../routing/session-key.js";
@@ -268,27 +269,36 @@ async function expectPendingPairingRequestsIsolatedByAccount(params: {
 describe("pairing store", () => {
   it("skips malformed persisted pairing requests while approving valid codes", async () => {
     await withTempStateDir(async (stateDir) => {
-      const now = new Date().toISOString();
-      writeJsonFixture(resolvePairingFilePath(stateDir, "telegram"), {
-        version: 1,
-        requests: [
-          {
-            id: "bad-code",
-            code: { nested: "bad" },
-            createdAt: now,
-            lastSeenAt: now,
-          },
-          {
-            id: "1001",
-            code: "ABCDEFGH",
-            createdAt: now,
-            lastSeenAt: now,
-            meta: {
-              accountId: "yy",
-              ignored: { nested: "bad" },
+      const now = new Date("2026-05-16T05:20:00.000Z").toISOString();
+      const oauthDir = resolveOAuthDir(process.env, stateDir);
+      fsSync.mkdirSync(oauthDir, { recursive: true });
+      fsSync.writeFileSync(
+        path.join(oauthDir, "telegram-pairing.json"),
+        `${JSON.stringify({
+          version: 1,
+          requests: [
+            {
+              id: "bad-code",
+              code: { nested: "bad" },
+              createdAt: now,
+              lastSeenAt: now,
             },
-          },
-        ],
+            {
+              id: "1001",
+              code: "ABCDEFGH",
+              createdAt: now,
+              lastSeenAt: now,
+              meta: {
+                accountId: "yy",
+                ignored: { nested: "bad" },
+              },
+            },
+          ],
+        })}\n`,
+      );
+
+      await expect(importLegacyChannelPairingFilesToSqlite(process.env)).resolves.toMatchObject({
+        requests: 1,
       });
 
       await expect(
