@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { DatabaseSync } from "node:sqlite";
+import type { Selectable } from "kysely";
 import {
   listAgentIds,
   resolveAgentWorkspaceDir,
@@ -34,6 +36,7 @@ import {
   isRescuePendingOperation,
 } from "../../crestodian/rescue-pending-state.js";
 import { executeSqliteQuerySync, getNodeSqliteKysely } from "../../infra/kysely-sync.js";
+import { requireNodeSqlite } from "../../infra/node-sqlite.js";
 import { normalizeConversationRef } from "../../infra/outbound/session-binding-normalization.js";
 import type { SessionBindingRecord } from "../../infra/outbound/session-binding.types.js";
 import { isWithinDir } from "../../infra/path-safety.js";
@@ -1350,6 +1353,26 @@ function collectCoreLegacyStateMigrationPlans(params: {
       },
     ];
   });
+  const pluginStateSqlitePath = resolveLegacyPluginStateSqlitePath(params.stateDir);
+  if (fileExists(pluginStateSqlitePath)) {
+    plans.push({
+      kind: "custom",
+      label: "Plugin state sidecar SQLite",
+      sourcePath: pluginStateSqlitePath,
+      targetTable: "plugin_state_entries",
+      recordCount: countLegacyPluginStateSqliteRecords(pluginStateSqlitePath),
+      apply: () => {
+        const result = importLegacyPluginStateSqliteToUnified(pluginStateSqlitePath, params.env);
+        return {
+          changes:
+            result.imported > 0
+              ? [`Imported ${result.imported} legacy plugin-state row(s) into SQLite plugin state`]
+              : [],
+          warnings: result.warnings,
+        };
+      },
+    });
+  }
   const acpxGatewayInstancePath = path.join(params.stateDir, "gateway-instance-id");
   if (fileExists(acpxGatewayInstancePath)) {
     plans.push({
@@ -1862,10 +1885,94 @@ type CurrentConversationBindingsMigrationDatabase = Pick<
   "current_conversation_bindings"
 >;
 type PluginStateMigrationDatabase = Pick<OpenClawStateKyselyDatabase, "plugin_state_entries">;
+type PluginStateMigrationRow = Selectable<OpenClawStateKyselyDatabase["plugin_state_entries"]>;
 
 const CLAWHUB_SKILL_STATE_OWNER_ID = "core:clawhub-skills";
 const CLAWHUB_SKILL_STATE_NAMESPACE = "skill-installs";
 const DEFAULT_CLAWHUB_URL = "https://clawhub.ai";
+const LEGACY_PLUGIN_STATE_SIDECAR_SUFFIXES = ["", "-shm", "-wal"] as const;
+
+function resolveLegacyPluginStateSqlitePath(stateDir: string): string {
+  return path.join(stateDir, "plugin-state", "state.sqlite");
+}
+
+function readLegacyPluginStateSqliteRows(sourcePath: string): {
+  rows: PluginStateMigrationRow[];
+  warnings: string[];
+} {
+  let sourceDb: DatabaseSync | undefined;
+  try {
+    const sqlite = requireNodeSqlite();
+    sourceDb = new sqlite.DatabaseSync(sourcePath, { readOnly: true });
+    const db = getNodeSqliteKysely<PluginStateMigrationDatabase>(sourceDb);
+    const rows = executeSqliteQuerySync(
+      sourceDb,
+      db
+        .selectFrom("plugin_state_entries")
+        .select(["plugin_id", "namespace", "entry_key", "value_json", "created_at", "expires_at"])
+        .orderBy("plugin_id", "asc")
+        .orderBy("namespace", "asc")
+        .orderBy("entry_key", "asc"),
+    ).rows;
+    return { rows, warnings: [] };
+  } catch (error) {
+    return {
+      rows: [],
+      warnings: [`Failed reading legacy plugin-state SQLite (${sourcePath}): ${String(error)}`],
+    };
+  } finally {
+    sourceDb?.close();
+  }
+}
+
+function countLegacyPluginStateSqliteRecords(sourcePath: string): number | undefined {
+  const result = readLegacyPluginStateSqliteRows(sourcePath);
+  return result.warnings.length === 0 ? result.rows.length : undefined;
+}
+
+function removeLegacyPluginStateSqliteFiles(sourcePath: string): void {
+  for (const suffix of LEGACY_PLUGIN_STATE_SIDECAR_SUFFIXES) {
+    fs.rmSync(`${sourcePath}${suffix}`, { force: true });
+  }
+  removeDirIfEmpty(path.dirname(sourcePath));
+}
+
+function importLegacyPluginStateSqliteToUnified(
+  sourcePath: string,
+  env: NodeJS.ProcessEnv,
+): { imported: number; warnings: string[] } {
+  const result = readLegacyPluginStateSqliteRows(sourcePath);
+  if (result.warnings.length > 0) {
+    return { imported: 0, warnings: result.warnings };
+  }
+
+  if (result.rows.length > 0) {
+    runOpenClawStateWriteTransaction(
+      (stateDatabase) => {
+        const db = getNodeSqliteKysely<PluginStateMigrationDatabase>(stateDatabase.db);
+        for (const row of result.rows) {
+          executeSqliteQuerySync(
+            stateDatabase.db,
+            db
+              .insertInto("plugin_state_entries")
+              .values(row)
+              .onConflict((conflict) =>
+                conflict.columns(["plugin_id", "namespace", "entry_key"]).doUpdateSet({
+                  value_json: (eb) => eb.ref("excluded.value_json"),
+                  created_at: (eb) => eb.ref("excluded.created_at"),
+                  expires_at: (eb) => eb.ref("excluded.expires_at"),
+                }),
+              ),
+          );
+        }
+      },
+      { env },
+    );
+  }
+
+  removeLegacyPluginStateSqliteFiles(sourcePath);
+  return { imported: result.rows.length, warnings: [] };
+}
 
 function collectLegacyMigrationSources(detected: LegacyStateDetection): MigrationSourceReport[] {
   const sources: MigrationSourceReport[] = [];

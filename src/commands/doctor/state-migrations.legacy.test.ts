@@ -7,6 +7,7 @@ import type { OpenClawConfig } from "../../config/config.js";
 import { loadSqliteSessionEntries } from "../../config/sessions/session-entries.sqlite.js";
 import { loadSqliteSessionTranscriptEvents } from "../../config/sessions/transcript-store.sqlite.js";
 import { executeSqliteQuerySync, getNodeSqliteKysely } from "../../infra/kysely-sync.js";
+import { requireNodeSqlite } from "../../infra/node-sqlite.js";
 import { closeOpenClawAgentDatabasesForTest } from "../../state/openclaw-agent-db.js";
 import type { DB as OpenClawStateKyselyDatabase } from "../../state/openclaw-state-db.generated.js";
 import {
@@ -139,6 +140,59 @@ function createEnv(stateDir: string): NodeJS.ProcessEnv {
     ...process.env,
     OPENCLAW_STATE_DIR: stateDir,
   };
+}
+
+async function createLegacyPluginStateSqlite(
+  stateDir: string,
+  rows: Array<{
+    pluginId: string;
+    namespace: string;
+    key: string;
+    valueJson: string;
+    createdAt: number;
+    expiresAt?: number | null;
+  }>,
+): Promise<string> {
+  const sqlitePath = path.join(stateDir, "plugin-state", "state.sqlite");
+  await fs.mkdir(path.dirname(sqlitePath), { recursive: true });
+  const sqlite = requireNodeSqlite();
+  const db = new sqlite.DatabaseSync(sqlitePath);
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS plugin_state_entries (
+        plugin_id  TEXT    NOT NULL,
+        namespace  TEXT    NOT NULL,
+        entry_key  TEXT    NOT NULL,
+        value_json TEXT    NOT NULL,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER,
+        PRIMARY KEY (plugin_id, namespace, entry_key)
+      );
+    `);
+    const statement = db.prepare(`
+      INSERT INTO plugin_state_entries (
+        plugin_id,
+        namespace,
+        entry_key,
+        value_json,
+        created_at,
+        expires_at
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    for (const row of rows) {
+      statement.run(
+        row.pluginId,
+        row.namespace,
+        row.key,
+        row.valueJson,
+        row.createdAt,
+        row.expiresAt ?? null,
+      );
+    }
+  } finally {
+    db.close();
+  }
+  return sqlitePath;
 }
 
 async function createLegacyStateFixture(params?: { includePreKey?: boolean }) {
@@ -326,6 +380,82 @@ describe("state migrations", () => {
     ).resolves.toBe('["123","456"]\n');
     await expectMissingPath(resolveLegacyChannelAllowFromPath("chatapp", env, "default"));
     await expectMissingPath(resolveLegacyChannelAllowFromPath("chatapp", env, "beta"));
+  });
+
+  it("imports legacy plugin-state sidecar SQLite rows into unified state", async () => {
+    const root = await createTempDir();
+    const stateDir = path.join(root, ".openclaw");
+    const env = createEnv(stateDir);
+    const cfg = createConfig();
+    const legacyPluginStatePath = await createLegacyPluginStateSqlite(stateDir, [
+      {
+        pluginId: "discord",
+        namespace: "components",
+        key: "interaction:1",
+        valueJson: '{"ok":true}',
+        createdAt: 1000,
+      },
+      {
+        pluginId: "github-copilot",
+        namespace: "token-cache",
+        key: "default",
+        valueJson: '{"token":"redacted"}',
+        createdAt: 2000,
+        expiresAt: 3000,
+      },
+    ]);
+
+    const detected = await detectLegacyStateMigrations({
+      cfg,
+      env,
+      homedir: () => root,
+    });
+
+    expect(detected.preview).toEqual([
+      `- Plugin state sidecar SQLite: ${legacyPluginStatePath} → SQLite`,
+    ]);
+
+    const result = await runLegacyStateMigrations({
+      detected,
+      now: () => 1234,
+    });
+
+    expect(result.warnings).toStrictEqual([]);
+    expect(result.changes).toEqual([
+      "Imported 2 legacy plugin-state row(s) into SQLite plugin state",
+    ]);
+
+    const stateDatabase = openOpenClawStateDatabase({ env });
+    const db = getNodeSqliteKysely<PluginStateTestDatabase>(stateDatabase.db);
+    const rows = executeSqliteQuerySync(
+      stateDatabase.db,
+      db
+        .selectFrom("plugin_state_entries")
+        .select(["plugin_id", "namespace", "entry_key", "value_json", "created_at", "expires_at"])
+        .orderBy("plugin_id", "asc")
+        .orderBy("namespace", "asc")
+        .orderBy("entry_key", "asc"),
+    ).rows;
+
+    expect(rows).toEqual([
+      {
+        plugin_id: "discord",
+        namespace: "components",
+        entry_key: "interaction:1",
+        value_json: '{"ok":true}',
+        created_at: 1000,
+        expires_at: null,
+      },
+      {
+        plugin_id: "github-copilot",
+        namespace: "token-cache",
+        entry_key: "default",
+        value_json: '{"token":"redacted"}',
+        created_at: 2000,
+        expires_at: 3000,
+      },
+    ]);
+    await expectMissingPath(legacyPluginStatePath);
   });
 
   it("migrates legacy sessions for every configured agent", async () => {
