@@ -1180,9 +1180,9 @@ describe("dispatchTelegramMessage draft streaming", () => {
       "Ja. Hier nochmal sauber Schritt fuer Schritt. Einen API Key kopiert man...";
     const context = createContext();
     context.ctxPayload.SessionKey = "agent:default:telegram:direct:123";
-    loadSessionStore.mockReturnValue({
+    sessionRows.value = {
       "agent:default:telegram:direct:123": { sessionId: "s1" },
-    });
+    };
     readLatestAssistantTextFromSessionTranscript.mockResolvedValue({
       text: fullAnswer,
       timestamp: Date.now() + 1_000,
