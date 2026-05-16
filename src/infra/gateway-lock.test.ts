@@ -114,6 +114,25 @@ function resolveLockIdentity(env: NodeJS.ProcessEnv) {
   return __testing.resolveGatewayLockKey(env);
 }
 
+function resolveLegacyLockIdentity(env: NodeJS.ProcessEnv) {
+  return __testing.resolveLegacyGatewayLockPath(env);
+}
+
+async function writeLegacyLockFile(env: NodeJS.ProcessEnv, params: { createdAt?: string } = {}) {
+  const { legacyLockPath, configPath } = resolveLegacyLockIdentity(env);
+  await fs.mkdir(path.dirname(legacyLockPath), { recursive: true });
+  await fs.writeFile(
+    legacyLockPath,
+    `${JSON.stringify({
+      pid: process.pid,
+      createdAt: params.createdAt ?? new Date().toISOString(),
+      configPath,
+    })}\n`,
+    "utf8",
+  );
+  return { legacyLockPath, configPath };
+}
+
 function writeLockRow(
   env: NodeJS.ProcessEnv,
   params: { startTime: number; createdAt?: string } = { startTime: 111 },
@@ -217,6 +236,54 @@ describe("gateway lock", () => {
     await acquiredLock.release();
     const lock2 = await acquireForTest(env);
     await expectGatewayLock(lock2).release();
+  });
+
+  it("holds a legacy file lock while the sqlite row is owned", async () => {
+    const env = await makeEnv();
+    const { legacyLockPath } = resolveLegacyLockIdentity(env);
+    const lock = expectGatewayLock(await acquireForTest(env));
+
+    const stat = await fs.stat(legacyLockPath);
+    expect(stat.isFile()).toBe(true);
+
+    await lock.release();
+    await expect(fs.stat(legacyLockPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("blocks on a live legacy file lock before acquiring sqlite", async () => {
+    vi.useRealTimers();
+    const env = await makeEnv();
+    const { legacyLockPath } = await writeLegacyLockFile(env);
+
+    const pending = acquireForTest(env, {
+      timeoutMs: 20,
+      pollIntervalMs: 2,
+      platform: "darwin",
+      readProcessCmdline: () => ["/usr/local/bin/openclaw", "gateway", "run"],
+    });
+    await expect(pending).rejects.toBeInstanceOf(GatewayLockError);
+
+    await fs.rm(legacyLockPath, { force: true });
+    const lock = await acquireForTest(env);
+    await expectGatewayLock(lock).release();
+  });
+
+  it("reclaims a stale legacy file lock", async () => {
+    const env = await makeEnv();
+    const { legacyLockPath } = await writeLegacyLockFile(env, {
+      createdAt: new Date(realNow() - 60_000).toISOString(),
+    });
+
+    const lock = expectGatewayLock(
+      await acquireForTest(env, {
+        staleMs: 10,
+        platform: "linux",
+        readProcessCmdline: () => null,
+      }),
+    );
+    expect(await fs.readFile(legacyLockPath, "utf8")).toContain(`"pid":${process.pid}`);
+
+    await lock.release();
   });
 
   it("treats recycled linux pid as stale when start time mismatches", async () => {

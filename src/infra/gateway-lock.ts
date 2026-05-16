@@ -1,7 +1,10 @@
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import fsSync from "node:fs";
+import fs from "node:fs/promises";
 import net from "node:net";
+import os from "node:os";
+import path from "node:path";
 import { z } from "zod";
 import { resolveConfigPath, resolveStateDir } from "../config/paths.js";
 import { isPidAlive } from "../shared/pid-alive.js";
@@ -27,17 +30,27 @@ type LockPayload = {
   pid: number;
   createdAt: string;
   configPath: string;
-  token: string;
   startTime?: number;
+};
+
+type SqliteLockPayload = LockPayload & {
+  token: string;
 };
 
 const LockPayloadSchema = z.object({
   pid: z.number(),
   createdAt: z.string(),
   configPath: z.string(),
-  token: z.string(),
   startTime: z.number().optional(),
 }) as z.ZodType<LockPayload>;
+
+const SqliteLockPayloadSchema = z.object({
+  pid: z.number(),
+  createdAt: z.string(),
+  configPath: z.string(),
+  token: z.string(),
+  startTime: z.number().optional(),
+}) as z.ZodType<SqliteLockPayload>;
 
 type GatewayLockHandle = {
   lockRef: string;
@@ -53,6 +66,7 @@ export type GatewayLockOptions = {
   allowInTests?: boolean;
   platform?: NodeJS.Platform;
   port?: number;
+  lockDir?: string;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   /** Override process command-line reader (testing seam). */
@@ -72,8 +86,12 @@ export class GatewayLockError extends Error {
 type LockOwnerStatus = "alive" | "dead" | "unknown";
 type GatewayLockDatabase = Pick<OpenClawStateKyselyDatabase, "state_leases">;
 type GatewayLockAcquireResult =
-  | { acquired: true; payload: LockPayload }
-  | { acquired: false; payload: LockPayload | null };
+  | { acquired: true; payload: SqliteLockPayload }
+  | { acquired: false; payload: SqliteLockPayload | null };
+
+type LegacyGatewayLockCheckResult =
+  | { blocked: true; payload: LockPayload | null }
+  | { blocked: false; payload?: LockPayload | null };
 
 function readLinuxCmdline(pid: number): string[] | null {
   try {
@@ -244,7 +262,20 @@ function parseLockPayload(value: unknown): LockPayload | null {
   return parsed.success ? parsed.data : null;
 }
 
-function safeParseLockPayloadJson(valueJson: string): LockPayload | null {
+function parseSqliteLockPayload(value: unknown): SqliteLockPayload | null {
+  const parsed = SqliteLockPayloadSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+function safeParseSqliteLockPayloadJson(valueJson: string): SqliteLockPayload | null {
+  try {
+    return parseSqliteLockPayload(JSON.parse(valueJson));
+  } catch {
+    return null;
+  }
+}
+
+function safeParseLegacyLockPayloadJson(valueJson: string): LockPayload | null {
   try {
     return parseLockPayload(JSON.parse(valueJson));
   } catch {
@@ -263,10 +294,154 @@ function resolveGatewayLockKey(env: NodeJS.ProcessEnv) {
   };
 }
 
+function resolveLegacyGatewayLockDir(tmpdir: () => string = os.tmpdir): string {
+  const base = tmpdir();
+  const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
+  const suffix = uid != null ? `openclaw-${uid}` : "openclaw";
+  return path.join(base, suffix);
+}
+
+function resolveLegacyGatewayLockPath(env: NodeJS.ProcessEnv, lockDir?: string) {
+  const stateDir = resolveStateDir(env);
+  const configPath = resolveConfigPath(env, stateDir);
+  const hash = createHash("sha256").update(configPath).digest("hex").slice(0, 8);
+  const directory = lockDir ?? resolveLegacyGatewayLockDir();
+  return {
+    legacyLockPath: path.join(directory, `gateway-${hash}.lock`),
+    configPath,
+  };
+}
+
+async function statLegacyGatewayLock(legacyLockPath: string): Promise<{ mtimeMs: number } | null> {
+  try {
+    const stat = await fs.stat(legacyLockPath);
+    return { mtimeMs: stat.mtimeMs };
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return null;
+    }
+    throw err;
+  }
+}
+
+async function readLegacyGatewayLockPayload(legacyLockPath: string): Promise<LockPayload | null> {
+  try {
+    const raw = await fs.readFile(legacyLockPath, "utf8");
+    return safeParseLegacyLockPayloadJson(raw);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return null;
+    }
+    return null;
+  }
+}
+
+function isLockPayloadStale(
+  payload: LockPayload | null,
+  fallbackMtimeMs: number,
+  nowMs: number,
+  staleMs: number,
+): boolean {
+  if (payload?.createdAt) {
+    const createdAt = Date.parse(payload.createdAt);
+    if (Number.isFinite(createdAt)) {
+      return nowMs - createdAt > staleMs;
+    }
+  }
+  return nowMs - fallbackMtimeMs > staleMs;
+}
+
+async function checkLegacyGatewayLock(params: {
+  legacyLockPath: string;
+  staleMs: number;
+  nowMs: number;
+  platform: NodeJS.Platform;
+  port: number | undefined;
+  readProcessCmdline?: (pid: number) => string[] | null;
+}): Promise<LegacyGatewayLockCheckResult> {
+  const stat = await statLegacyGatewayLock(params.legacyLockPath);
+  if (!stat) {
+    return { blocked: false };
+  }
+
+  const payload = await readLegacyGatewayLockPayload(params.legacyLockPath);
+  const ownerPid = payload?.pid;
+  const ownerStatus = ownerPid
+    ? await resolveGatewayOwnerStatus(
+        ownerPid,
+        payload,
+        params.platform,
+        params.port,
+        params.readProcessCmdline,
+      )
+    : "unknown";
+  if (ownerStatus === "dead") {
+    await fs.rm(params.legacyLockPath, { force: true });
+    return { blocked: false, payload };
+  }
+  if (
+    ownerStatus !== "alive" &&
+    isLockPayloadStale(payload, stat.mtimeMs, params.nowMs, params.staleMs)
+  ) {
+    await fs.rm(params.legacyLockPath, { force: true });
+    return { blocked: false, payload };
+  }
+  return { blocked: true, payload };
+}
+
+function toLegacyLockPayload(payload: SqliteLockPayload): LockPayload {
+  const legacyPayload: LockPayload = {
+    pid: payload.pid,
+    createdAt: payload.createdAt,
+    configPath: payload.configPath,
+  };
+  if (payload.startTime != null) {
+    legacyPayload.startTime = payload.startTime;
+  }
+  return legacyPayload;
+}
+
+async function tryCreateLegacyGatewayLockFile(
+  legacyLockPath: string,
+  payload: SqliteLockPayload,
+): Promise<boolean> {
+  await fs.mkdir(path.dirname(legacyLockPath), { recursive: true });
+  let handle: fs.FileHandle | null = null;
+  try {
+    handle = await fs.open(legacyLockPath, "wx");
+    await handle.writeFile(`${JSON.stringify(toLegacyLockPayload(payload))}\n`, "utf8");
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "EEXIST") {
+      return false;
+    }
+    throw err;
+  } finally {
+    await handle?.close();
+  }
+}
+
+async function removeLegacyGatewayLockFileIfMatches(
+  legacyLockPath: string,
+  payload: SqliteLockPayload,
+): Promise<void> {
+  const existing = await readLegacyGatewayLockPayload(legacyLockPath);
+  const expected = toLegacyLockPayload(payload);
+  if (
+    existing?.pid !== expected.pid ||
+    existing.createdAt !== expected.createdAt ||
+    existing.configPath !== expected.configPath ||
+    existing.startTime !== expected.startTime
+  ) {
+    return;
+  }
+  await fs.rm(legacyLockPath, { force: true });
+}
+
 function readGatewayLockPayload(
   lockKey: string,
   options: OpenClawStateDatabaseOptions,
-): LockPayload | null {
+): SqliteLockPayload | null {
   return runOpenClawStateWriteTransaction((database) => {
     const db = getNodeSqliteKysely<GatewayLockDatabase>(database.db);
     const row =
@@ -278,13 +453,13 @@ function readGatewayLockPayload(
           .where("scope", "=", GATEWAY_LOCK_SCOPE)
           .where("lease_key", "=", lockKey),
       ) ?? null;
-    return row?.payload_json ? safeParseLockPayloadJson(row.payload_json) : null;
+    return row?.payload_json ? safeParseSqliteLockPayloadJson(row.payload_json) : null;
   }, options);
 }
 
 function writeGatewayLockPayload(
   lockKey: string,
-  payload: LockPayload,
+  payload: SqliteLockPayload,
   options: OpenClawStateDatabaseOptions,
 ): void {
   runOpenClawStateWriteTransaction((database) => {
@@ -320,7 +495,7 @@ function writeGatewayLockPayload(
 
 function tryAcquireGatewayLockRow(params: {
   lockKey: string;
-  payload: LockPayload;
+  payload: SqliteLockPayload;
   env: NodeJS.ProcessEnv;
   staleMs: number;
 }): GatewayLockAcquireResult {
@@ -337,7 +512,7 @@ function tryAcquireGatewayLockRow(params: {
             .where("lease_key", "=", params.lockKey),
         ) ?? null;
       const existing = existingRow?.payload_json
-        ? safeParseLockPayloadJson(existingRow.payload_json)
+        ? safeParseSqliteLockPayloadJson(existingRow.payload_json)
         : null;
       if (existing) {
         return { acquired: false, payload: existing };
@@ -425,14 +600,29 @@ export async function acquireGatewayLock(
   const sleep =
     opts.sleep ?? (async (ms: number) => await new Promise((resolve) => setTimeout(resolve, ms)));
   const { lockKey, lockRef, configPath } = resolveGatewayLockKey(env);
+  const { legacyLockPath } = resolveLegacyGatewayLockPath(env, opts.lockDir);
 
   const startedAt = now();
   let lastPayload: LockPayload | null = null;
 
   while (now() - startedAt < timeoutMs) {
     try {
+      const legacyLock = await checkLegacyGatewayLock({
+        legacyLockPath,
+        staleMs,
+        nowMs: now(),
+        platform,
+        port,
+        readProcessCmdline: opts.readProcessCmdline,
+      });
+      if (legacyLock.blocked) {
+        lastPayload = legacyLock.payload;
+        await sleep(pollIntervalMs);
+        continue;
+      }
+
       const startTime = platform === "linux" ? readLinuxStartTime(process.pid) : null;
-      const payload: LockPayload = {
+      const payload: SqliteLockPayload = {
         pid: process.pid,
         createdAt: new Date(now()).toISOString(),
         configPath,
@@ -443,16 +633,24 @@ export async function acquireGatewayLock(
       }
       const acquired = tryAcquireGatewayLockRow({ lockKey, payload, env, staleMs });
       if (acquired.acquired) {
+        const legacyFileAcquired = await tryCreateLegacyGatewayLockFile(legacyLockPath, payload);
+        if (!legacyFileAcquired) {
+          clearGatewayLockRowIfTokenMatches({ lockKey, token: payload.token, env });
+          await sleep(pollIntervalMs);
+          continue;
+        }
         return {
           lockRef,
           configPath,
           release: async () => {
             clearGatewayLockRowIfTokenMatches({ lockKey, token: payload.token, env });
+            await removeLegacyGatewayLockFileIfMatches(legacyLockPath, payload);
           },
         };
       }
 
-      lastPayload = acquired.payload;
+      const rowPayload = acquired.payload;
+      lastPayload = rowPayload;
       const ownerPid = lastPayload?.pid;
       const ownerStatus = ownerPid
         ? await resolveGatewayOwnerStatus(
@@ -463,8 +661,8 @@ export async function acquireGatewayLock(
             opts.readProcessCmdline,
           )
         : "unknown";
-      if (ownerStatus === "dead" && ownerPid && lastPayload) {
-        clearGatewayLockRowIfTokenMatches({ lockKey, token: lastPayload.token, env });
+      if (ownerStatus === "dead" && ownerPid && rowPayload) {
+        clearGatewayLockRowIfTokenMatches({ lockKey, token: rowPayload.token, env });
         continue;
       }
       if (ownerStatus !== "alive") {
@@ -473,8 +671,8 @@ export async function acquireGatewayLock(
           const createdAt = Date.parse(lastPayload.createdAt);
           stale = Number.isFinite(createdAt) ? now() - createdAt > staleMs : false;
         }
-        if (stale && lastPayload) {
-          clearGatewayLockRowIfTokenMatches({ lockKey, token: lastPayload.token, env });
+        if (stale && rowPayload) {
+          clearGatewayLockRowIfTokenMatches({ lockKey, token: rowPayload.token, env });
           continue;
         }
       }
@@ -491,6 +689,7 @@ export async function acquireGatewayLock(
 
 export const __testing = {
   readGatewayLockPayload,
+  resolveLegacyGatewayLockPath,
   resolveGatewayLockKey,
   writeGatewayLockPayload,
 };
