@@ -30,6 +30,7 @@ export const MAX_COMPACTION_CHECKPOINT_SNAPSHOT_BYTES = 64 * 1024 * 1024;
 
 export type CapturedCompactionCheckpointSnapshot = {
   agentId: string;
+  path?: string;
   sourceSessionId: string;
   sessionId: string;
   leafId: string;
@@ -267,6 +268,7 @@ export async function captureCompactionCheckpointSnapshotAsync(params: {
   };
   replaceSqliteSessionTranscriptEvents({
     agentId: snapshotAgentId,
+    path: params.path,
     sessionId: snapshotSessionId,
     events: [
       snapshotHeader,
@@ -275,6 +277,7 @@ export async function captureCompactionCheckpointSnapshotAsync(params: {
   });
   recordSqliteSessionTranscriptSnapshot({
     agentId: snapshotAgentId,
+    path: params.path,
     sessionId: sourceHeader.id,
     snapshotId: snapshotSessionId,
     reason: "pre-compaction",
@@ -287,6 +290,7 @@ export async function captureCompactionCheckpointSnapshotAsync(params: {
   });
   return {
     agentId: snapshotAgentId,
+    path: params.path,
     sourceSessionId: sourceHeader.id,
     sessionId: snapshotSessionId,
     leafId,
@@ -301,11 +305,13 @@ export async function cleanupCompactionCheckpointSnapshot(
   }
   deleteSqliteSessionTranscriptSnapshot({
     agentId: snapshot.agentId,
+    path: snapshot.path,
     sessionId: snapshot.sourceSessionId,
     snapshotId: snapshot.sessionId,
   });
   deleteSqliteSessionTranscript({
     agentId: snapshot.agentId,
+    path: snapshot.path,
     sessionId: snapshot.sessionId,
   });
 }
@@ -361,6 +367,7 @@ export async function persistSessionCompactionCheckpoint(params: {
     | undefined;
   await patchSessionEntry({
     agentId: target.agentId,
+    path: target.databasePath,
     sessionKey: target.canonicalKey,
     update: (existing) => {
       if (!existing.sessionId) {
@@ -386,11 +393,13 @@ export async function persistSessionCompactionCheckpoint(params: {
   for (const removed of trimmedCheckpoints?.removed ?? []) {
     deleteSqliteSessionTranscriptSnapshot({
       agentId: target.agentId,
+      path: target.databasePath,
       sessionId: removed.sessionId,
       snapshotId: removed.preCompaction.sessionId,
     });
     deleteSqliteSessionTranscript({
       agentId: target.agentId,
+      path: target.databasePath,
       sessionId: removed.preCompaction.sessionId,
     });
   }
