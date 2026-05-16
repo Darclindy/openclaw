@@ -392,7 +392,7 @@ async function readManagedImageOriginalBuffer(
     await readMediaBuffer(
       record.original.mediaId,
       subdir,
-      DEFAULT_MANAGED_IMAGE_ATTACHMENT_LIMITS.maxBytes,
+      Math.max(DEFAULT_MANAGED_IMAGE_ATTACHMENT_LIMITS.maxBytes, record.original.sizeBytes ?? 0),
       managedImageRecordDbOptions(stateDir),
     )
   ).buffer;
@@ -913,7 +913,7 @@ export async function createManagedOutgoingImageBlocks(params: {
         filename: toRecordFilename(savedOriginal.path),
       };
       if (!savedOriginalContentType?.startsWith("image/")) {
-        await deleteManagedImageOriginal(savedOriginalForCleanup);
+        await deleteManagedImageOriginal(savedOriginalForCleanup, stateDir);
         savedOriginalForCleanup = null;
         continue;
       }
@@ -965,15 +965,18 @@ export async function createManagedOutgoingImageBlocks(params: {
           undefined,
           managedImageRecordDbOptions(stateDir),
         );
-        await deleteManagedImageOriginal({
-          mediaId: savedOriginal.id,
-          mediaSubdir: MANAGED_OUTGOING_ORIGINALS_SUBDIR,
-          contentType: savedOriginalContentType,
-          width: originalStats.width,
-          height: originalStats.height,
-          sizeBytes: originalStats.sizeBytes,
-          filename: toRecordFilename(savedOriginal.path),
-        });
+        await deleteManagedImageOriginal(
+          {
+            mediaId: savedOriginal.id,
+            mediaSubdir: MANAGED_OUTGOING_ORIGINALS_SUBDIR,
+            contentType: savedOriginalContentType,
+            width: originalStats.width,
+            height: originalStats.height,
+            sizeBytes: originalStats.sizeBytes,
+            filename: toRecordFilename(savedOriginal.path),
+          },
+          stateDir,
+        );
         savedOriginal = replacement;
         savedOriginalContentType = replacement.contentType ?? resized.contentType;
         savedOriginalForCleanup = {
@@ -1028,7 +1031,7 @@ export async function createManagedOutgoingImageBlocks(params: {
       }
     } catch (error) {
       if (savedOriginalForCleanup) {
-        await deleteManagedImageOriginal(savedOriginalForCleanup);
+        await deleteManagedImageOriginal(savedOriginalForCleanup, stateDir);
       }
       const sanitizedError = getSanitizedManagedImageAttachmentError(error, alt);
       if (params.continueOnPrepareError) {
