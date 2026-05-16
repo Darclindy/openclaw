@@ -2,7 +2,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { ISyncResponse } from "matrix-js-sdk/lib/matrix.js";
-import { resetPluginStateStoreForTests } from "openclaw/plugin-sdk/plugin-state-runtime";
+import {
+  resetPluginBlobStoreForTests,
+  resetPluginStateStoreForTests,
+} from "openclaw/plugin-sdk/plugin-state-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SqliteBackedMatrixSyncStore, parsePersistedMatrixSyncStore } from "./sqlite-sync-store.js";
 import { readMatrixStorageMetadata, writeMatrixStorageMetadata } from "./storage-meta-state.js";
@@ -67,6 +70,7 @@ describe("SqliteBackedMatrixSyncStore", () => {
     vi.unstubAllEnvs();
     vi.useRealTimers();
     resetPluginStateStoreForTests();
+    resetPluginBlobStoreForTests();
     for (const dir of tempDirs.splice(0)) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -226,6 +230,44 @@ describe("SqliteBackedMatrixSyncStore", () => {
 
     const secondStore = new SqliteBackedMatrixSyncStore(storageRoot);
     await expect(secondStore.getClientOptions()).resolves.toEqual({ lazyLoadMembers: true });
+  });
+
+  it("persists large sync payloads outside the keyed state size limit", async () => {
+    const storageRoot = createStorageRoot();
+    const syncResponse = createSyncResponse("large-token");
+    const join = syncResponse.rooms?.join ?? {};
+    for (let index = 0; index < 900; index += 1) {
+      join[`!room-${index}:example.org`] = {
+        summary: { "m.heroes": [`@hero-${index}:example.org`] },
+        state: { events: [] },
+        timeline: {
+          events: [
+            {
+              content: {
+                body: "x".repeat(128),
+                msgtype: "m.text",
+              },
+              event_id: `$message-${index}`,
+              origin_server_ts: index,
+              sender: "@user:example.org",
+              type: "m.room.message",
+            },
+          ],
+          prev_batch: `t${index}`,
+        },
+        ephemeral: { events: [] },
+        account_data: { events: [] },
+        unread_notifications: {},
+      };
+    }
+
+    const store = new SqliteBackedMatrixSyncStore(storageRoot);
+    await store.setSyncData(syncResponse);
+    await store.flush();
+
+    const persisted = new SqliteBackedMatrixSyncStore(storageRoot);
+    await expect(persisted.getSavedSyncToken()).resolves.toBe("large-token");
+    expect((await persisted.getSavedSync())?.roomsData.join["!room-899:example.org"]).toBeDefined();
   });
 
   it("parses legacy raw sync payloads for doctor migration", () => {

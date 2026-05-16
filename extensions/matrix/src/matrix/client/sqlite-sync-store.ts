@@ -9,7 +9,7 @@ import {
   type ISyncResponse,
   type IStoredClientOpts,
 } from "matrix-js-sdk/lib/matrix.js";
-import { createPluginStateSyncKeyedStore } from "openclaw/plugin-sdk/plugin-state-runtime";
+import { createPluginBlobSyncStore } from "openclaw/plugin-sdk/plugin-state-runtime";
 import { isRecord } from "../../record-shared.js";
 import { createAsyncLock } from "../async-lock.js";
 import { LogService } from "../sdk/logger.js";
@@ -26,7 +26,15 @@ type PersistedMatrixSyncStore = {
   cleanShutdown?: boolean;
 };
 
-const SYNC_STORE = createPluginStateSyncKeyedStore<PersistedMatrixSyncStore>("matrix", {
+type PersistedMatrixSyncStoreMetadata = {
+  version: number;
+  cleanShutdown?: boolean;
+  hasSavedSync: boolean;
+  nextBatch?: string;
+  payloadBytes: number;
+};
+
+const SYNC_STORE = createPluginBlobSyncStore<PersistedMatrixSyncStoreMetadata>("matrix", {
   namespace: MATRIX_SYNC_STORE_NAMESPACE,
   maxEntries: 1000,
 });
@@ -157,9 +165,12 @@ export class SqliteBackedMatrixSyncStore extends MemoryStore {
     let restoredClientOptions: IStoredClientOpts | undefined;
     let restoredCleanShutdown = false;
     const persisted = SYNC_STORE.lookup(resolveMatrixSyncStoreKey(this.rootDir));
-    restoredSavedSync = persisted?.savedSync ?? null;
-    restoredClientOptions = persisted?.clientOptions;
-    restoredCleanShutdown = persisted?.cleanShutdown === true;
+    const persistedPayload = persisted
+      ? parsePersistedMatrixSyncStore(persisted.blob.toString("utf8"))
+      : null;
+    restoredSavedSync = persistedPayload?.savedSync ?? null;
+    restoredClientOptions = persistedPayload?.clientOptions;
+    restoredCleanShutdown = persistedPayload?.cleanShutdown === true;
 
     this.savedSync = restoredSavedSync;
     this.savedClientOptions = restoredClientOptions;
@@ -282,9 +293,20 @@ export class SqliteBackedMatrixSyncStore extends MemoryStore {
       cleanShutdown: this.cleanShutdown,
       ...(this.savedClientOptions ? { clientOptions: cloneJson(this.savedClientOptions) } : {}),
     });
+    const blob = Buffer.from(JSON.stringify(payload));
     try {
       await this.persistLock(async () => {
-        SYNC_STORE.register(resolveMatrixSyncStoreKey(this.rootDir), payload);
+        SYNC_STORE.register(
+          resolveMatrixSyncStoreKey(this.rootDir),
+          {
+            version: STORE_VERSION,
+            cleanShutdown: payload.cleanShutdown === true,
+            hasSavedSync: payload.savedSync !== null,
+            ...(payload.savedSync?.nextBatch ? { nextBatch: payload.savedSync.nextBatch } : {}),
+            payloadBytes: blob.byteLength,
+          },
+          blob,
+        );
         claimCurrentTokenStorageState({
           rootDir: this.rootDir,
         });
