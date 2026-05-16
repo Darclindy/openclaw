@@ -32,6 +32,22 @@ describe("OpenAI Codex routing policy", () => {
 
     expect(openAIProviderUsesCodexRuntimeByDefault({ provider: "openai", config })).toBe(false);
     expect(modelSelectionShouldEnsureCodexPlugin({ model: "openai/gpt-5.5", config })).toBe(false);
+    expect(
+      listOpenAIAuthProfileProvidersForAgentRuntime({
+        provider: "openai",
+        harnessRuntime: "pi",
+        config,
+      }),
+    ).toEqual(["openai"]);
+    expect(
+      resolveOpenAIRuntimeProviderForPi({
+        provider: "openai",
+        harnessRuntime: "pi",
+        authProfileProvider: "openai-codex",
+        authProfileId: "openai-codex:work",
+        config,
+      }),
+    ).toBe("openai");
   });
 
   it("maps explicit PI plus Codex auth profile to the legacy PI Codex-auth transport", () => {
@@ -40,7 +56,7 @@ describe("OpenAI Codex routing policy", () => {
         provider: "openai",
         harnessRuntime: "pi",
       }),
-    ).toEqual(["openai", "openai-codex"]);
+    ).toEqual(["openai-codex"]);
     expect(
       resolveOpenAIRuntimeProviderForPi({
         provider: "openai",

@@ -1,4 +1,5 @@
 import { resolveAgentConfig } from "../../agents/agent-scope.js";
+import { isStoredCredentialCompatibleWithAuthProvider } from "../../agents/auth-profiles/order.js";
 import { clearSessionAuthProfileOverride } from "../../agents/auth-profiles/session-override.js";
 import { resolveContextTokensForModel } from "../../agents/context.js";
 import { DEFAULT_CONTEXT_TOKENS } from "../../agents/defaults.js";
@@ -328,8 +329,20 @@ export async function createModelSelectionState(params: {
     const acceptedAuthProviders = listOpenAIAuthProfileProvidersForAgentRuntime({
       provider,
       harnessRuntime: harnessPolicy.runtime,
-    }).map(normalizeProviderId);
-    if (!profile || !acceptedAuthProviders.includes(profileProvider ?? "")) {
+      config: cfg,
+    });
+    const profileIsAccepted =
+      profile &&
+      acceptedAuthProviders.some(
+        (candidateProvider) =>
+          normalizeProviderId(candidateProvider) === profileProvider ||
+          isStoredCredentialCompatibleWithAuthProvider({
+            cfg,
+            provider: candidateProvider,
+            credential: profile,
+          }),
+      );
+    if (!profileIsAccepted) {
       await clearSessionAuthProfileOverride({
         sessionEntry,
         sessionStore,

@@ -16,6 +16,7 @@ import { emitSessionTranscriptUpdate } from "../../sessions/transcript-events.js
 import { sanitizeForLog } from "../../terminal/ansi.js";
 import { resolveMessageChannel } from "../../utils/message-channel.js";
 import { resolveAuthProfileOrder } from "../auth-profiles/order.js";
+import { resolveSessionAuthProfileOverride } from "../auth-profiles/session-override.js";
 import { ensureAuthProfileStore } from "../auth-profiles/store.js";
 import { resolveBootstrapWarningSignaturesSeen } from "../bootstrap-budget.js";
 import { runCliAgent } from "../cli-runner.js";
@@ -24,7 +25,10 @@ import { FailoverError } from "../failover-error.js";
 import { resolveAvailableAgentHarnessPolicy } from "../harness/selection.js";
 import { resolveCliRuntimeExecutionProvider } from "../model-runtime-aliases.js";
 import { isCliProvider } from "../model-selection.js";
-import { resolveOpenAIRuntimeProviderForPi } from "../openai-codex-routing.js";
+import {
+  listOpenAIAuthProfileProvidersForAgentRuntime,
+  resolveOpenAIRuntimeProviderForPi,
+} from "../openai-codex-routing.js";
 import { runEmbeddedPiAgent, type EmbeddedPiRunResult } from "../pi-embedded.js";
 import { buildAgentRuntimeAuthPlan } from "../runtime-plan/auth.js";
 import {
@@ -120,7 +124,7 @@ function resolveProfileAuthFromStore(params: { agentDir: string; profileId: stri
   return { provider: credential?.provider, mode: credential?.type };
 }
 
-function resolveHarnessAuthProfileSelection(params: {
+async function resolveHarnessAuthProfileSelection(params: {
   config: OpenClawConfig;
   agentDir: string;
   workspaceDir: string;
@@ -128,22 +132,39 @@ function resolveHarnessAuthProfileSelection(params: {
   authProfileProvider: string;
   sessionAuthProfileId?: string;
   sessionAuthProfileSource?: "auto" | "user";
+  sessionEntry?: SessionEntry;
+  sessionStore?: Record<string, SessionEntry>;
+  sessionKey?: string;
+  storePath?: string;
+  isNewSession: boolean;
   harnessId?: string;
   harnessRuntime?: string;
   allowHarnessAuthProfileForwarding: boolean;
-}): HarnessAuthProfileSelection {
-  const sessionAuthProfileId = params.sessionAuthProfileId?.trim();
-  if (sessionAuthProfileId) {
+}): Promise<HarnessAuthProfileSelection> {
+  const buildSelectionFromProfile = (
+    profileId: string,
+    source: "auto" | "user" | undefined,
+    authProviderFallback: string,
+  ): HarnessAuthProfileSelection => {
     const profileAuth = resolveProfileAuthFromStore({
       agentDir: params.agentDir,
-      profileId: sessionAuthProfileId,
+      profileId,
     });
     return {
-      authProfileId: sessionAuthProfileId,
-      authProfileIdSource: params.sessionAuthProfileSource,
-      authProfileProvider: profileAuth.provider ?? params.authProfileProvider,
+      authProfileId: profileId,
+      authProfileIdSource: source,
+      authProfileProvider: profileAuth.provider ?? authProviderFallback,
       authProfileMode: profileAuth.mode,
     };
+  };
+
+  const sessionAuthProfileId = params.sessionAuthProfileId?.trim();
+  if (sessionAuthProfileId) {
+    return buildSelectionFromProfile(
+      sessionAuthProfileId,
+      params.sessionAuthProfileSource,
+      params.authProfileProvider,
+    );
   }
 
   const runtimeAuthPlan = buildAgentRuntimeAuthPlan({
@@ -156,25 +177,60 @@ function resolveHarnessAuthProfileSelection(params: {
     allowHarnessAuthProfileForwarding: params.allowHarnessAuthProfileForwarding,
   });
   const harnessAuthProvider = runtimeAuthPlan.harnessAuthProvider;
-  if (!harnessAuthProvider) {
+  const acceptedAuthProviders = harnessAuthProvider
+    ? [harnessAuthProvider]
+    : listOpenAIAuthProfileProvidersForAgentRuntime({
+        provider: params.provider,
+        harnessRuntime: params.harnessRuntime,
+        agentHarnessId: params.harnessId,
+        config: params.config,
+      });
+  const shouldAutoResolveAuthProfile =
+    Boolean(harnessAuthProvider) ||
+    acceptedAuthProviders.some((candidateProvider) => candidateProvider !== params.provider);
+  if (!shouldAutoResolveAuthProfile) {
     return { authProfileProvider: params.authProfileProvider };
+  }
+
+  if (params.sessionEntry && params.sessionStore && params.sessionKey) {
+    const resolvedSessionAuthProfileId = await resolveSessionAuthProfileOverride({
+      cfg: params.config,
+      provider: params.provider,
+      acceptedProviderIds: acceptedAuthProviders,
+      agentDir: params.agentDir,
+      sessionEntry: params.sessionEntry,
+      sessionStore: params.sessionStore,
+      sessionKey: params.sessionKey,
+      storePath: params.storePath,
+      isNewSession: params.isNewSession,
+    });
+    if (resolvedSessionAuthProfileId) {
+      return buildSelectionFromProfile(
+        resolvedSessionAuthProfileId,
+        params.sessionEntry.authProfileOverrideSource ?? "auto",
+        acceptedAuthProviders[0] ?? params.authProfileProvider,
+      );
+    }
   }
 
   const store = ensureAuthProfileStore(params.agentDir, {
     allowKeychainPrompt: false,
   });
-  const authProfileId = resolveAuthProfileOrder({
-    cfg: params.config,
-    store,
-    provider: harnessAuthProvider,
-  })[0];
+  const orderedProfiles = [
+    ...new Set(
+      acceptedAuthProviders.flatMap((candidateProvider) =>
+        resolveAuthProfileOrder({
+          cfg: params.config,
+          store,
+          provider: candidateProvider,
+        }),
+      ),
+    ),
+  ];
+  const authProfileId = orderedProfiles[0];
 
   return authProfileId
-    ? {
-        authProfileId,
-        authProfileIdSource: "auto",
-        authProfileProvider: harnessAuthProvider,
-      }
+    ? buildSelectionFromProfile(authProfileId, "auto", acceptedAuthProviders[0] ?? params.provider)
     : { authProfileProvider: params.authProfileProvider };
 }
 
@@ -350,7 +406,7 @@ export async function persistCliTurnTranscript(params: {
   });
 }
 
-export function runAgentAttempt(params: {
+export async function runAgentAttempt(params: {
   providerOverride: string;
   modelOverride: string;
   originalProvider: string;
@@ -422,7 +478,7 @@ export function runAgentAttempt(params: {
         modelId: params.modelOverride,
       }) ?? params.providerOverride);
   const agentHarnessPolicy = isRawModelRun
-    ? ({ runtime: "pi" } as const)
+    ? ({ runtime: "pi", runtimeSource: "model" } as const)
     : resolveAvailableAgentHarnessPolicy({
         provider: params.providerOverride,
         modelId: params.modelOverride,
@@ -430,7 +486,11 @@ export function runAgentAttempt(params: {
         agentId: params.sessionAgentId,
         sessionKey: params.sessionKey ?? params.sessionId,
       });
-  const harnessAuthSelection = resolveHarnessAuthProfileSelection({
+  const agentHarnessRuntimeOverride =
+    agentHarnessPolicy.runtime === "pi" && agentHarnessPolicy.runtimeSource !== "implicit"
+      ? "pi"
+      : undefined;
+  const harnessAuthSelection = await resolveHarnessAuthProfileSelection({
     config: params.cfg,
     agentDir: params.agentDir,
     workspaceDir: params.workspaceDir,
@@ -438,6 +498,11 @@ export function runAgentAttempt(params: {
     authProfileProvider: params.authProfileProvider,
     sessionAuthProfileId: params.sessionEntry?.authProfileOverride,
     sessionAuthProfileSource: params.sessionEntry?.authProfileOverrideSource,
+    sessionEntry: params.sessionEntry,
+    sessionStore: params.sessionStore,
+    sessionKey: params.sessionKey,
+    storePath: params.storePath,
+    isNewSession: params.sessionHasHistory !== true,
     harnessId: requestedAgentHarnessId,
     harnessRuntime: agentHarnessPolicy.runtime,
     allowHarnessAuthProfileForwarding: !isCliProvider(cliExecutionProvider, params.cfg),
@@ -610,6 +675,7 @@ export function runAgentAttempt(params: {
     workspaceDir: params.workspaceDir,
     config: params.cfg,
     agentHarnessId: requestedAgentHarnessId,
+    agentHarnessRuntimeOverride,
     skillsSnapshot: params.skillsSnapshot,
     prompt: effectivePrompt,
     images: params.isFallbackRetry ? undefined : params.opts.images,

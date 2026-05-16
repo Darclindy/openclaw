@@ -29,6 +29,7 @@ const OPENAI_CODEX_PROVIDER_ID = "openai-codex";
 
 function isOpenAIApiKeyCompatibleWithCodexAuth(params: {
   cfg?: OpenClawConfig;
+  workspaceDir?: string;
   providerAuthKey: string;
   credential?: AuthProfileCredential;
   profileProvider?: string;
@@ -39,6 +40,7 @@ function isOpenAIApiKeyCompatibleWithCodexAuth(params: {
   }
   const providerKey = resolveProviderIdForAuth(params.profileProvider ?? "", {
     config: params.cfg,
+    workspaceDir: params.workspaceDir,
   });
   const mode = params.credential?.type ?? params.profileMode;
   return providerKey === OPENAI_PROVIDER_ID && mode === "api_key";
@@ -46,16 +48,19 @@ function isOpenAIApiKeyCompatibleWithCodexAuth(params: {
 
 function isCredentialProviderCompatibleWithAuthProvider(params: {
   cfg?: OpenClawConfig;
+  workspaceDir?: string;
   providerAuthKey: string;
   credential: AuthProfileCredential;
 }): boolean {
   const credentialProviderKey = resolveProviderIdForAuth(params.credential.provider, {
     config: params.cfg,
+    workspaceDir: params.workspaceDir,
   });
   return (
     credentialProviderKey === params.providerAuthKey ||
     isOpenAIApiKeyCompatibleWithCodexAuth({
       cfg: params.cfg,
+      workspaceDir: params.workspaceDir,
       providerAuthKey: params.providerAuthKey,
       credential: params.credential,
       profileProvider: params.credential.provider,
@@ -65,12 +70,17 @@ function isCredentialProviderCompatibleWithAuthProvider(params: {
 
 export function isStoredCredentialCompatibleWithAuthProvider(params: {
   cfg?: OpenClawConfig;
+  workspaceDir?: string;
   provider: string;
   credential: AuthProfileCredential;
 }): boolean {
   return isCredentialProviderCompatibleWithAuthProvider({
     cfg: params.cfg,
-    providerAuthKey: resolveProviderIdForAuth(params.provider, { config: params.cfg }),
+    workspaceDir: params.workspaceDir,
+    providerAuthKey: resolveProviderIdForAuth(params.provider, {
+      config: params.cfg,
+      workspaceDir: params.workspaceDir,
+    }),
     credential: params.credential,
   });
 }
@@ -378,13 +388,7 @@ function mergeAliasOrderWithNativeProfiles(params: {
   aliasOrder: string[];
   nativeProfiles: string[];
 }): string[] {
-  const nativeIds = new Set(params.nativeProfiles);
-  const aliasHasNativeProfile = params.aliasOrder.some((profileId) => nativeIds.has(profileId));
-  return dedupeProfileIds(
-    aliasHasNativeProfile
-      ? [...params.aliasOrder, ...params.nativeProfiles]
-      : [...params.nativeProfiles, ...params.aliasOrder],
-  );
+  return dedupeProfileIds([...params.aliasOrder, ...params.nativeProfiles]);
 }
 
 function orderProfilesByMode(order: string[], store: AuthProfileStore): string[] {

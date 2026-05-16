@@ -89,6 +89,7 @@ export function shouldRouteOpenAIPiThroughCodexAuthProvider(params: {
 }): boolean {
   if (
     !isOpenAIProvider(params.provider) ||
+    openAIProviderUsesCustomBaseUrl(params.config) ||
     !hasOpenAICodexAuthProfileOverride(params.authProfileId)
   ) {
     return false;
@@ -112,6 +113,7 @@ export function listOpenAIAuthProfileProvidersForAgentRuntime(params: {
   provider: string;
   harnessRuntime?: string;
   agentHarnessId?: string;
+  config?: OpenClawConfig;
 }): string[] {
   if (!isOpenAIProvider(params.provider)) {
     return [params.provider];
@@ -122,8 +124,9 @@ export function listOpenAIAuthProfileProvidersForAgentRuntime(params: {
   if (runtime === "codex") {
     return [OPENAI_CODEX_PROVIDER_ID];
   }
-  if (runtime === "pi") {
-    return [OPENAI_PROVIDER_ID, OPENAI_CODEX_PROVIDER_ID];
+  if (runtime === "pi" && !openAIProviderUsesCustomBaseUrl(params.config)) {
+    // Codex auth resolution also carries ordered OpenAI API-key backups.
+    return [OPENAI_CODEX_PROVIDER_ID];
   }
   return [params.provider];
 }

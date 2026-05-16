@@ -24,7 +24,10 @@ import {
 } from "./image-sanitization.js";
 import { getApiKeyForModel, requireApiKey } from "./model-auth.js";
 import { ensureOpenClawModelsJson } from "./models-config.js";
-import { listOpenAIAuthProfileProvidersForAgentRuntime } from "./openai-codex-routing.js";
+import {
+  listOpenAIAuthProfileProvidersForAgentRuntime,
+  resolveOpenAIRuntimeProviderForPi,
+} from "./openai-codex-routing.js";
 import { EmbeddedBlockChunker, type BlockReplyChunking } from "./pi-embedded-block-chunker.js";
 import { resolveModelWithRegistry } from "./pi-embedded-runner/model.js";
 import { getActiveEmbeddedRunSnapshot } from "./pi-embedded-runner/runs.js";
@@ -243,19 +246,21 @@ async function resolveRuntimeModel(params: {
   if (!model) {
     throw new Error(`Unknown model: ${params.provider}/${params.model}`);
   }
+  const agentHarnessPolicy = resolveAvailableAgentHarnessPolicy({
+    provider: params.provider,
+    modelId: params.model,
+    config: params.cfg,
+    agentId: params.agentId,
+    sessionKey: params.sessionKey,
+  });
 
   const authProfileId = await resolveSessionAuthProfileOverride({
     cfg: params.cfg,
     provider: params.provider,
     acceptedProviderIds: listOpenAIAuthProfileProvidersForAgentRuntime({
       provider: params.provider,
-      harnessRuntime: resolveAvailableAgentHarnessPolicy({
-        provider: params.provider,
-        modelId: params.model,
-        config: params.cfg,
-        agentId: params.agentId,
-        sessionKey: params.sessionKey,
-      }).runtime,
+      harnessRuntime: agentHarnessPolicy.runtime,
+      config: params.cfg,
     }),
     agentDir: params.agentDir,
     sessionEntry: params.sessionEntry,
@@ -264,8 +269,28 @@ async function resolveRuntimeModel(params: {
     storePath: params.storePath,
     isNewSession: params.isNewSession,
   });
+  const runtimeProvider = resolveOpenAIRuntimeProviderForPi({
+    provider: params.provider,
+    harnessRuntime: agentHarnessPolicy.runtime,
+    authProfileProvider: authProfileId?.split(":", 1)[0],
+    authProfileId,
+    config: params.cfg,
+    workspaceDir: params.workspaceDir,
+  });
+  const runtimeModel =
+    runtimeProvider === params.provider
+      ? model
+      : resolveModelWithRegistry({
+          provider: runtimeProvider,
+          modelId: params.model,
+          modelRegistry,
+          cfg: params.cfg,
+        });
+  if (!runtimeModel) {
+    throw new Error(`Unknown model: ${runtimeProvider}/${params.model}`);
+  }
   return {
-    model,
+    model: runtimeModel,
     authProfileId,
     authProfileIdSource: params.sessionEntry?.authProfileOverrideSource,
   };

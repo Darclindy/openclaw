@@ -498,6 +498,50 @@ describe("runBtwSideQuestion", () => {
     expect(ensureArgs?.[2]).toEqual({ workspaceDir: "/tmp/workspace" });
   });
 
+  it("routes explicit OpenAI PI BTW calls through the Codex auth provider", async () => {
+    mockDoneAnswer("Final answer.");
+    resolveSessionAuthProfileOverrideMock.mockResolvedValue("openai-codex:work");
+    resolveModelWithRegistryMock.mockImplementation(({ provider }: { provider: string }) => ({
+      provider,
+      id: "gpt-5.5",
+      api: provider === "openai-codex" ? "openai-codex-responses" : "openai-responses",
+    }));
+
+    const result = await runSideQuestion({
+      cfg: {
+        models: {
+          providers: {
+            openai: {
+              baseUrl: "https://api.openai.com/v1",
+              agentRuntime: { id: "pi" },
+              models: [],
+            },
+          },
+        },
+      } as never,
+      provider: "openai",
+      model: "gpt-5.5",
+      sessionKey: DEFAULT_SESSION_KEY,
+    });
+
+    expect(result).toEqual({ text: "Final answer." });
+    expect(getApiKeyForModelMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        profileId: "openai-codex:work",
+        model: expect.objectContaining({ provider: "openai-codex" }),
+      }),
+    );
+    expect(registerProviderStreamForModelMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: expect.objectContaining({ provider: "openai-codex" }),
+      }),
+    );
+    expect(streamSimpleMock.mock.calls[0]?.[0]).toMatchObject({
+      provider: "openai-codex",
+      id: "gpt-5.5",
+    });
+  });
+
   it("routes Codex-selected BTW questions through the harness side-question hook", async () => {
     const codexSideQuestionMock = vi.fn().mockResolvedValue({ text: "Codex side answer." });
     registerAgentHarness({

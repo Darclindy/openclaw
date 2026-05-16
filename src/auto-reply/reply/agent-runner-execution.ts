@@ -1783,6 +1783,11 @@ export async function runAgentTurnWithFallback(params: {
                 agentId: params.followupRun.run.agentId,
                 sessionKey: params.followupRun.run.runtimePolicySessionKey ?? params.sessionKey,
               });
+          const agentHarnessRuntimeOverride =
+            sessionRuntimeOverride ??
+            (agentHarnessPolicy.runtime === "pi" && agentHarnessPolicy.runtimeSource !== "implicit"
+              ? "pi"
+              : undefined);
           const embeddedRunProvider = resolveOpenAIRuntimeProviderForPi({
             provider,
             harnessRuntime: agentHarnessPolicy.runtime,
@@ -1811,7 +1816,7 @@ export async function runAgentTurnWithFallback(params: {
                 ...runBaseParams,
                 provider: embeddedRunProvider,
                 agentHarnessId: sessionRuntimeOverride,
-                agentHarnessRuntimeOverride: sessionRuntimeOverride,
+                agentHarnessRuntimeOverride,
                 sandboxSessionKey: params.runtimePolicySessionKey,
                 prompt: params.commandBody,
                 transcriptPrompt: params.transcriptCommandBody,

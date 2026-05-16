@@ -13,7 +13,9 @@ import {
   resolveAllowedModelRefMock,
   resolveConfiguredModelRefMock,
   resolveCronSessionMock,
+  resolveSessionAuthProfileOverrideMock,
   resolveSupportedThinkingLevelMock,
+  mockRunCronFallbackPassthrough,
   resetRunCronIsolatedAgentTurnHarness,
   restoreFastTestEnv,
   runEmbeddedPiAgentMock,
@@ -180,6 +182,112 @@ describe("runCronIsolatedAgentTurn — cron model override forwarding (#58065)",
     const embeddedCall = firstMockArg(runEmbeddedPiAgentMock);
     expect(embeddedCall.provider).toBe("google");
     expect(embeddedCall.model).toBe("gemini-2.0-flash");
+  });
+
+  it("routes explicit OpenAI PI cron runs through the Codex auth provider", async () => {
+    resolveConfiguredModelRefMock.mockReturnValue({
+      provider: "openai",
+      model: "gpt-5.4",
+    });
+    resolveAllowedModelRefMock.mockReturnValue({
+      ref: { provider: "openai", model: "gpt-5.4" },
+    });
+    resolveSessionAuthProfileOverrideMock.mockResolvedValue("openai-codex:work");
+    resolveCronSessionMock.mockReturnValue(
+      makeCronSession({
+        sessionEntry: makeCronSessionEntry({
+          authProfileOverrideSource: "auto",
+        }),
+        isNewSession: false,
+      }),
+    );
+    mockRunCronFallbackPassthrough();
+    runEmbeddedPiAgentMock.mockResolvedValue({
+      payloads: [{ text: "summary done" }],
+      meta: { agentMeta: { usage: { input: 10, output: 20 } } },
+    });
+
+    const result = await runCronIsolatedAgentTurn(
+      makeParams({
+        cfg: {
+          models: {
+            providers: {
+              openai: {
+                baseUrl: "https://api.openai.com/v1",
+                agentRuntime: { id: "pi" },
+                models: [],
+              },
+            },
+          },
+          auth: {
+            order: {
+              openai: ["openai-codex:work"],
+            },
+          },
+        },
+        job: makeJob({
+          payload: {
+            kind: "agentTurn",
+            message: "summarize",
+            model: "openai/gpt-5.4",
+          },
+        }),
+      }),
+    );
+
+    expect(result.status).toBe("ok");
+    expect(resolveSessionAuthProfileOverrideMock.mock.calls[0]?.[0]).toMatchObject({
+      acceptedProviderIds: ["openai-codex"],
+    });
+    const embeddedCall = firstMockArg(runEmbeddedPiAgentMock);
+    expect(embeddedCall.provider).toBe("openai-codex");
+    expect(embeddedCall.model).toBe("gpt-5.4");
+    expect(embeddedCall.agentHarnessRuntimeOverride).toBe("pi");
+    expect(embeddedCall.authProfileId).toBe("openai-codex:work");
+    expect(embeddedCall.authProfileIdSource).toBe("auto");
+  });
+
+  it("does not force implicit OpenAI Codex runtime as a cron override", async () => {
+    resolveConfiguredModelRefMock.mockReturnValue({
+      provider: "openai",
+      model: "gpt-5.4",
+    });
+    resolveAllowedModelRefMock.mockReturnValue({
+      ref: { provider: "openai", model: "gpt-5.4" },
+    });
+    mockRunCronFallbackPassthrough();
+    runEmbeddedPiAgentMock.mockResolvedValue({
+      payloads: [{ text: "summary done" }],
+      meta: { agentMeta: { usage: { input: 10, output: 20 } } },
+    });
+
+    const result = await runCronIsolatedAgentTurn(
+      makeParams({
+        cfg: {
+          models: {
+            providers: {
+              openai: {
+                baseUrl: "https://api.openai.com/v1",
+                models: [],
+              },
+            },
+          },
+        },
+        job: makeJob({
+          payload: {
+            kind: "agentTurn",
+            message: "summarize",
+            model: "openai/gpt-5.4",
+          },
+        }),
+      }),
+    );
+
+    expect(result.status).toBe("ok");
+    const embeddedCall = firstMockArg(runEmbeddedPiAgentMock);
+    expect(embeddedCall.provider).toBe("openai");
+    expect(embeddedCall.model).toBe("gpt-5.4");
+    expect(embeddedCall.agentHarnessRuntimeOverride).toBeUndefined();
   });
 
   it("forwards isolated cron execution phase updates from embedded runs", async () => {

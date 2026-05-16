@@ -331,6 +331,37 @@ describe("resolveAuthProfileOrder", () => {
     });
     expect(order).toEqual(["openai-codex:user@example.com"]);
   });
+  it("keeps explicit OpenAI alias order ahead of native Codex profiles", () => {
+    const order = resolveAuthProfileOrder({
+      cfg: {
+        auth: {
+          order: {
+            openai: ["openai:api-key"],
+          },
+        },
+      },
+      store: {
+        version: 1,
+        profiles: {
+          "openai:api-key": {
+            type: "api_key",
+            provider: "openai",
+            key: "sk-openai",
+          },
+          "openai-codex:user@example.com": {
+            type: "oauth",
+            provider: "openai-codex",
+            access: "access-token",
+            refresh: "refresh-token",
+            expires: Date.now() + 60_000,
+          },
+        },
+      },
+      provider: "openai-codex",
+    });
+
+    expect(order).toEqual(["openai:api-key", "openai-codex:user@example.com"]);
+  });
   it("does not bypass explicit ids when the configured profile exists but is invalid", () => {
     const order = resolveAuthProfileOrder({
       cfg: {

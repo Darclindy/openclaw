@@ -1338,6 +1338,85 @@ describe("runAgentTurnWithFallback", () => {
     });
   });
 
+  it("preserves explicit OpenAI PI runtime when Codex auth owns transport", async () => {
+    state.runWithModelFallbackMock.mockImplementationOnce(async (params: FallbackRunnerParams) => ({
+      result: await params.run("openai", "gpt-5.4"),
+      provider: "openai",
+      model: "gpt-5.4",
+      attempts: [],
+    }));
+    state.runEmbeddedPiAgentMock.mockResolvedValueOnce({
+      payloads: [{ text: "ok" }],
+      meta: {},
+    });
+
+    const followupRun = createFollowupRun();
+    followupRun.run.provider = "openai";
+    followupRun.run.model = "gpt-5.4";
+    followupRun.run.config = {
+      models: {
+        providers: {
+          openai: {
+            baseUrl: "https://api.openai.com/v1",
+            agentRuntime: { id: "pi" },
+            models: [],
+          },
+        },
+      },
+    };
+    followupRun.run.authProfileId = "openai-codex:work";
+    followupRun.run.authProfileIdSource = "user";
+
+    const runAgentTurnWithFallback = await getRunAgentTurnWithFallback();
+    const result = await runAgentTurnWithFallback(createMinimalRunAgentTurnParams({ followupRun }));
+
+    expect(result.kind).toBe("success");
+    expectMockCallArgFields(state.runEmbeddedPiAgentMock, 0, "embedded run params", {
+      provider: "openai-codex",
+      model: "gpt-5.4",
+      agentHarnessRuntimeOverride: "pi",
+      authProfileId: "openai-codex:work",
+      authProfileIdSource: "user",
+    });
+  });
+
+  it("does not force implicit OpenAI Codex runtime as an override", async () => {
+    state.runWithModelFallbackMock.mockImplementationOnce(async (params: FallbackRunnerParams) => ({
+      result: await params.run("openai", "gpt-5.4"),
+      provider: "openai",
+      model: "gpt-5.4",
+      attempts: [],
+    }));
+    state.runEmbeddedPiAgentMock.mockResolvedValueOnce({
+      payloads: [{ text: "ok" }],
+      meta: {},
+    });
+
+    const followupRun = createFollowupRun();
+    followupRun.run.provider = "openai";
+    followupRun.run.model = "gpt-5.4";
+    followupRun.run.config = {
+      models: {
+        providers: {
+          openai: {
+            baseUrl: "https://api.openai.com/v1",
+            models: [],
+          },
+        },
+      },
+    };
+
+    const runAgentTurnWithFallback = await getRunAgentTurnWithFallback();
+    const result = await runAgentTurnWithFallback(createMinimalRunAgentTurnParams({ followupRun }));
+
+    expect(result.kind).toBe("success");
+    expectMockCallArgFields(state.runEmbeddedPiAgentMock, 0, "embedded run params", {
+      provider: "openai",
+      model: "gpt-5.4",
+      agentHarnessRuntimeOverride: undefined,
+    });
+  });
+
   it("classifies GPT-5 plan-only terminal results as fallback-eligible", async () => {
     const followupRun = createFollowupRun();
     followupRun.run.provider = "openai-codex";

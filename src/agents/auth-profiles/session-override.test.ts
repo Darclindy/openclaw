@@ -6,6 +6,7 @@ import {
   type OpenClawTestState,
   withOpenClawTestState,
 } from "../../test-utils/openclaw-test-state.js";
+import { listOpenAIAuthProfileProvidersForAgentRuntime } from "../openai-codex-routing.js";
 import { resolveSessionAuthProfileOverride } from "./session-override.js";
 import type { AuthProfileStore } from "./types.js";
 
@@ -132,7 +133,7 @@ function createAuthStore(): AuthProfileStore {
 }
 
 function createAuthStoreWithProfiles(params: {
-  profiles: Record<string, { type: "api_key"; provider: string; key: string }>;
+  profiles: AuthProfileStore["profiles"];
   order?: Record<string, string[]>;
 }): AuthProfileStore {
   return {
@@ -370,6 +371,121 @@ describe("resolveSessionAuthProfileOverride", () => {
       expect(resolved).toBe(TEST_SECONDARY_PROFILE_ID);
       expect(sessionEntry.authProfileOverride).toBe(TEST_SECONDARY_PROFILE_ID);
       expect(sessionEntry.authProfileOverrideSource).toBe("user");
+    });
+  });
+
+  it("honors subscription-first OpenAI auth order for explicit PI runtime", async () => {
+    await withAuthState(async (state) => {
+      const agentDir = state.agentDir();
+      await fs.mkdir(agentDir, { recursive: true });
+      authStoreMocks.state.hasSource = true;
+      authStoreMocks.state.store = createAuthStoreWithProfiles({
+        profiles: {
+          "openai-codex:sub@example.test": {
+            type: "oauth",
+            provider: "openai-codex",
+            access: "access-token",
+            refresh: "refresh-token",
+            expires: Date.now() + 60_000,
+          },
+          "openai:api-key-backup": {
+            type: "api_key",
+            provider: "openai",
+            key: "sk-platform",
+          },
+        },
+      });
+      const sessionEntry: SessionEntry = {
+        sessionId: "s1",
+        updatedAt: Date.now(),
+      };
+      const sessionStore = { "agent:main:main": sessionEntry };
+      const cfg = {
+        auth: {
+          order: {
+            openai: ["openai-codex:sub@example.test", "openai:api-key-backup"],
+          },
+        },
+      } as OpenClawConfig;
+
+      const resolved = await resolveSessionAuthProfileOverride({
+        cfg,
+        provider: "openai",
+        acceptedProviderIds: listOpenAIAuthProfileProvidersForAgentRuntime({
+          provider: "openai",
+          harnessRuntime: "pi",
+          config: cfg,
+        }),
+        agentDir,
+        sessionEntry,
+        sessionStore,
+        sessionKey: "agent:main:main",
+        storePath: undefined,
+        isNewSession: false,
+      });
+
+      expect(resolved).toBe("openai-codex:sub@example.test");
+      expect(sessionEntry.authProfileOverride).toBe("openai-codex:sub@example.test");
+      expect(sessionEntry.authProfileOverrideSource).toBe("auto");
+    });
+  });
+
+  it("keeps custom OpenAI endpoints on OpenAI auth for explicit PI runtime", async () => {
+    await withAuthState(async (state) => {
+      const agentDir = state.agentDir();
+      await fs.mkdir(agentDir, { recursive: true });
+      authStoreMocks.state.hasSource = true;
+      authStoreMocks.state.store = createAuthStoreWithProfiles({
+        profiles: {
+          "openai-codex:sub@example.test": {
+            type: "oauth",
+            provider: "openai-codex",
+            access: "access-token",
+            refresh: "refresh-token",
+            expires: Date.now() + 60_000,
+          },
+          "openai:custom-endpoint": {
+            type: "api_key",
+            provider: "openai",
+            key: "sk-custom",
+          },
+        },
+      });
+      const sessionEntry: SessionEntry = {
+        sessionId: "s1",
+        updatedAt: Date.now(),
+      };
+      const sessionStore = { "agent:main:main": sessionEntry };
+      const cfg = {
+        models: {
+          providers: {
+            openai: {
+              baseUrl: "https://custom-openai.example.test/v1",
+              models: [],
+            },
+          },
+        },
+      } as OpenClawConfig;
+
+      const resolved = await resolveSessionAuthProfileOverride({
+        cfg,
+        provider: "openai",
+        acceptedProviderIds: listOpenAIAuthProfileProvidersForAgentRuntime({
+          provider: "openai",
+          harnessRuntime: "pi",
+          config: cfg,
+        }),
+        agentDir,
+        sessionEntry,
+        sessionStore,
+        sessionKey: "agent:main:main",
+        storePath: undefined,
+        isNewSession: false,
+      });
+
+      expect(resolved).toBe("openai:custom-endpoint");
+      expect(sessionEntry.authProfileOverride).toBe("openai:custom-endpoint");
+      expect(sessionEntry.authProfileOverrideSource).toBe("auto");
     });
   });
 

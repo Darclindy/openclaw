@@ -1,5 +1,7 @@
 import type { BootstrapContextMode } from "../../agents/bootstrap-files.js";
+import { resolveAgentHarnessPolicy } from "../../agents/harness/selection.js";
 import { resolveCliRuntimeExecutionProvider } from "../../agents/model-runtime-aliases.js";
+import { resolveOpenAIRuntimeProviderForPi } from "../../agents/openai-codex-routing.js";
 import type { SkillSnapshot } from "../../agents/skills.js";
 import { normalizeToolList } from "../../agents/tool-policy.js";
 import type { ThinkLevel, VerboseLevel } from "../../auto-reply/thinking.js";
@@ -222,6 +224,25 @@ export function createCronPromptExecutor(params: {
           to: params.resolvedDelivery.to,
           threadId: params.resolvedDelivery.threadId,
         });
+        const agentHarnessPolicy = resolveAgentHarnessPolicy({
+          provider: providerOverride,
+          modelId: modelOverride,
+          config: params.cfgWithAgentDefaults,
+          agentId: params.agentId,
+          sessionKey: params.runSessionKey,
+        });
+        const embeddedRunProvider = resolveOpenAIRuntimeProviderForPi({
+          provider: providerOverride,
+          harnessRuntime: agentHarnessPolicy.runtime,
+          authProfileProvider: params.liveSelection.authProfileId?.split(":", 1)[0],
+          authProfileId: params.liveSelection.authProfileId,
+          config: params.cfgWithAgentDefaults,
+          workspaceDir: params.workspaceDir,
+        });
+        const agentHarnessRuntimeOverride =
+          agentHarnessPolicy.runtime === "pi" && agentHarnessPolicy.runtimeSource !== "implicit"
+            ? "pi"
+            : undefined;
         const result = await runEmbeddedPiAgent({
           sessionId: params.cronSession.sessionEntry.sessionId,
           sessionKey: params.runSessionKey,
@@ -246,9 +267,10 @@ export function createCronPromptExecutor(params: {
           skillsSnapshot: params.skillsSnapshot,
           prompt: promptText,
           lane: resolveCronAgentLane(params.lane),
-          provider: providerOverride,
+          provider: embeddedRunProvider,
           model: modelOverride,
           modelFallbacksOverride: cronFallbacksOverride,
+          agentHarnessRuntimeOverride,
           authProfileId: params.liveSelection.authProfileId,
           authProfileIdSource: params.liveSelection.authProfileId
             ? params.liveSelection.authProfileIdSource
