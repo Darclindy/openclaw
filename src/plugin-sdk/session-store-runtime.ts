@@ -5,6 +5,7 @@ import type { MsgContext } from "../auto-reply/templating.js";
 import { resolveStateDir } from "../config/paths.js";
 import { loadSqliteSessionEntries } from "../config/sessions/session-entries.sqlite.js";
 import { normalizeSessionEntries } from "../config/sessions/session-entry-normalize.js";
+import { validateSessionId } from "../config/sessions/session-id.js";
 import { resolveAndPersistSessionTranscriptScope } from "../config/sessions/session-scope.js";
 import { resolveSessionRowEntry } from "../config/sessions/store-entry.js";
 import {
@@ -72,8 +73,6 @@ type SaveSessionStoreOptions = {
 };
 
 type CompatSessionEntry = SessionEntry & { sessionFile?: string };
-
-const SAFE_SESSION_ID_RE = /^[a-z0-9][a-z0-9._-]{0,127}$/i;
 
 function optionsWithEnv(agentId: string, env?: NodeJS.ProcessEnv): SessionRowOptions {
   return env ? { agentId, env } : { agentId };
@@ -177,10 +176,7 @@ export function resolveSessionTranscriptPathInDir(
   sessionsDir: string,
   topicId?: string | number,
 ): string {
-  const trimmed = sessionId.trim();
-  if (!SAFE_SESSION_ID_RE.test(trimmed)) {
-    throw new Error(`Invalid session ID: ${sessionId}`);
-  }
+  const trimmed = validateSessionId(sessionId);
   const safeTopicId =
     typeof topicId === "string"
       ? encodeURIComponent(topicId)

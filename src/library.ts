@@ -18,6 +18,11 @@ import {
   handlePortError,
   PortInUseError,
 } from "./infra/ports.js";
+import {
+  loadSessionStore,
+  resolveStorePath,
+  saveSessionStore,
+} from "./plugin-sdk/session-store-runtime.js";
 import type { monitorWebChannel as monitorWebChannelRuntime } from "./plugins/runtime/runtime-web-channel-plugin.js";
 import type {
   runCommandWithTimeout as runCommandWithTimeoutRuntime,
@@ -84,6 +89,7 @@ export {
   describePortOwner,
   ensurePortAvailable,
   handlePortError,
+  loadSessionStore,
   loadConfig,
   getSessionEntry,
   listSessionEntries,
@@ -91,6 +97,8 @@ export {
   patchSessionEntry,
   PortInUseError,
   resolveSessionKey,
+  resolveStorePath,
+  saveSessionStore,
   upsertSessionEntry,
   waitForever,
 };

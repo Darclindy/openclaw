@@ -574,11 +574,12 @@ Completed consolidation/deletion highlights:
 - Channel session runtime types now expose `{agentId, sessionKey}` for
   updated-at reads, inbound metadata, and last-route updates. The old
   `saveSessionStore(storePath, store)` compatibility type is gone.
-- Plugin runtime, extension API, root library, and `config/sessions` barrel
-  surfaces no longer export `resolveStorePath`; plugin code uses SQLite-backed
-  session row helpers. The old `resolveLegacySessionStorePath` helper is gone;
-  legacy `sessions.json` path construction is now local to migration and test
-  fixtures.
+- Plugin runtime, extension API, and `config/sessions` barrel surfaces now steer
+  plugin code to SQLite-backed session row helpers. Root library compatibility
+  exports (`loadSessionStore`, `saveSessionStore`, `resolveStorePath`) remain as
+  deprecated shims for existing consumers. The old
+  `resolveLegacySessionStorePath` helper is gone; legacy `sessions.json` path
+  construction is now local to migration and test fixtures.
 - `src/config/sessions/session-entries.sqlite.ts` now stores canonical session
   entries in the per-agent database and has row-level read/upsert/delete patch
   support. Runtime upsert/patch/delete no longer scans for case variants or
@@ -1768,6 +1769,8 @@ runtime contract:
   `patchSessionEntry`, `deleteSessionEntry`, and `listSessionEntries`.
 - Whole-store rewrite helpers, file writers, queue tests, alias pruning, and
   legacy-key deletion parameters are gone from runtime.
+- Deprecated root-package compatibility exports still adapt canonical
+  `sessions.json` paths onto the SQLite row APIs.
 - `sessions.json` parsing remains only in doctor migration/import code and
   doctor tests.
 - Runtime lifecycle fallback reads SQLite transcript headers, not JSONL first

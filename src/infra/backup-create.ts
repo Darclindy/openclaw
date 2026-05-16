@@ -694,12 +694,20 @@ export async function createBackupArchive(
     });
     await publishTempArchive({ tempArchivePath, outputPath });
     if (manifest && result.assets.some((asset) => asset.kind === "state")) {
-      recordOpenClawStateBackupRun({
-        createdAt: nowMs,
-        archivePath: outputPath,
-        status: "completed",
-        manifest: manifest as unknown as Record<string, unknown>,
-      });
+      try {
+        recordOpenClawStateBackupRun({
+          createdAt: nowMs,
+          archivePath: outputPath,
+          status: "completed",
+          manifest: manifest as unknown as Record<string, unknown>,
+        });
+      } catch (error) {
+        opts.log?.(
+          `Backup created, but recording backup history failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
     }
   } finally {
     await fs.rm(tempArchivePath, { force: true }).catch(() => undefined);

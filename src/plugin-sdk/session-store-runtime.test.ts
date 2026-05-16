@@ -7,6 +7,7 @@ import {
   loadSessionStore,
   readSessionUpdatedAt,
   resolveAndPersistSessionFile,
+  resolveSessionTranscriptPathInDir,
   saveSessionStore,
   updateSessionStore,
   upsertSessionEntry,
@@ -20,6 +21,15 @@ describe("session-store-runtime compatibility", () => {
   function testEnv(stateDir: string): NodeJS.ProcessEnv {
     return { ...process.env, OPENCLAW_STATE_DIR: stateDir };
   }
+
+  it("rejects reserved checkpoint session IDs for transcript paths", () => {
+    expect(() =>
+      resolveSessionTranscriptPathInDir(
+        "sess.checkpoint.11111111-1111-4111-8111-111111111111",
+        "/tmp/sessions",
+      ),
+    ).toThrow(/Invalid session ID/);
+  });
 
   it("rejects custom store paths instead of falling back to the default agent", async () => {
     await withOpenClawTestState(

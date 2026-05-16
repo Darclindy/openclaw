@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import * as library from "./library.js";
 
 const libraryPath = new URL("./library.ts", import.meta.url);
 const lazyRuntimeSpecifiers = [
@@ -36,5 +37,13 @@ describe("library module imports", () => {
         true,
       );
     }
+  });
+});
+
+describe("root library compatibility exports", () => {
+  it("keeps deprecated session-store shims available", () => {
+    expect(library.loadSessionStore).toEqual(expect.any(Function));
+    expect(library.saveSessionStore).toEqual(expect.any(Function));
+    expect(library.resolveStorePath).toEqual(expect.any(Function));
   });
 });
