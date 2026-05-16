@@ -11,14 +11,21 @@ import type {
   MSTeamsConversationStoreEntry,
   StoredConversationReference,
 } from "./conversation-store.js";
-import { toPluginJsonValue, withMSTeamsSqliteStateEnv } from "./sqlite-state.js";
+import { resolveMSTeamsSqliteStateEnv, toPluginJsonValue } from "./sqlite-state.js";
 
 const MAX_CONVERSATIONS = 1000;
 const CONVERSATION_TTL_MS = 365 * 24 * 60 * 60 * 1000;
-const CONVERSATION_STORE = createPluginStateKeyedStore<StoredConversationReference>("msteams", {
-  namespace: "conversations",
-  maxEntries: MAX_CONVERSATIONS,
-});
+function createConversationStateStore(params?: {
+  env?: NodeJS.ProcessEnv;
+  homedir?: () => string;
+  stateDir?: string;
+}) {
+  return createPluginStateKeyedStore<StoredConversationReference>("msteams", {
+    namespace: "conversations",
+    maxEntries: MAX_CONVERSATIONS,
+    env: resolveMSTeamsSqliteStateEnv(params),
+  });
+}
 
 export function createMSTeamsConversationStoreState(params?: {
   env?: NodeJS.ProcessEnv;
@@ -27,6 +34,7 @@ export function createMSTeamsConversationStoreState(params?: {
   stateDir?: string;
 }): MSTeamsConversationStore {
   const ttlMs = params?.ttlMs ?? CONVERSATION_TTL_MS;
+  const conversationStore = createConversationStateStore(params);
 
   const isExpired = (reference: StoredConversationReference): boolean => {
     const lastSeenAt = parseStoredConversationTimestamp(reference.lastSeenAt);
@@ -34,52 +42,49 @@ export function createMSTeamsConversationStoreState(params?: {
     return lastSeenAt != null && Date.now() - lastSeenAt > ttlMs;
   };
 
-  const entries = async (): Promise<Array<[string, StoredConversationReference]>> =>
-    await withMSTeamsSqliteStateEnv(params, async () => {
-      const rows = await CONVERSATION_STORE.entries();
-      const kept: Array<[string, StoredConversationReference]> = [];
-      for (const row of rows) {
-        if (isExpired(row.value)) {
-          await CONVERSATION_STORE.delete(row.key);
-          continue;
-        }
-        kept.push([row.key, row.value]);
+  const entries = async (): Promise<Array<[string, StoredConversationReference]>> => {
+    const rows = await conversationStore.entries();
+    const kept: Array<[string, StoredConversationReference]> = [];
+    for (const row of rows) {
+      if (isExpired(row.value)) {
+        await conversationStore.delete(row.key);
+        continue;
       }
-      return kept;
-    });
+      kept.push([row.key, row.value]);
+    }
+    return kept;
+  };
 
-  const lookup = async (conversationId: string): Promise<StoredConversationReference | null> =>
-    await withMSTeamsSqliteStateEnv(params, async () => {
-      const normalizedId = normalizeStoredConversationId(conversationId);
-      const value = await CONVERSATION_STORE.lookup(normalizedId);
-      if (!value) {
-        return null;
-      }
-      if (isExpired(value)) {
-        await CONVERSATION_STORE.delete(normalizedId);
-        return null;
-      }
-      return value;
-    });
+  const lookup = async (conversationId: string): Promise<StoredConversationReference | null> => {
+    const normalizedId = normalizeStoredConversationId(conversationId);
+    const value = await conversationStore.lookup(normalizedId);
+    if (!value) {
+      return null;
+    }
+    if (isExpired(value)) {
+      await conversationStore.delete(normalizedId);
+      return null;
+    }
+    return value;
+  };
 
   const register = async (
     conversationId: string,
     reference: StoredConversationReference,
-  ): Promise<void> =>
-    await withMSTeamsSqliteStateEnv(params, async () => {
-      await CONVERSATION_STORE.register(conversationId, toPluginJsonValue(reference));
-      const rows = await CONVERSATION_STORE.entries();
-      if (rows.length > MAX_CONVERSATIONS) {
-        const sorted = rows.toSorted((a, b) => {
-          const aTs = parseStoredConversationTimestamp(a.value.lastSeenAt) ?? a.createdAt;
-          const bTs = parseStoredConversationTimestamp(b.value.lastSeenAt) ?? b.createdAt;
-          return aTs - bTs || a.key.localeCompare(b.key);
-        });
-        for (const row of sorted.slice(0, rows.length - MAX_CONVERSATIONS)) {
-          await CONVERSATION_STORE.delete(row.key);
-        }
+  ): Promise<void> => {
+    await conversationStore.register(conversationId, toPluginJsonValue(reference));
+    const rows = await conversationStore.entries();
+    if (rows.length > MAX_CONVERSATIONS) {
+      const sorted = rows.toSorted((a, b) => {
+        const aTs = parseStoredConversationTimestamp(a.value.lastSeenAt) ?? a.createdAt;
+        const bTs = parseStoredConversationTimestamp(b.value.lastSeenAt) ?? b.createdAt;
+        return aTs - bTs || a.key.localeCompare(b.key);
+      });
+      for (const row of sorted.slice(0, rows.length - MAX_CONVERSATIONS)) {
+        await conversationStore.delete(row.key);
       }
-    });
+    }
+  };
 
   const list = async (): Promise<MSTeamsConversationStoreEntry[]> => {
     return toConversationStoreEntries(await entries());
@@ -109,9 +114,7 @@ export function createMSTeamsConversationStoreState(params?: {
 
   const remove = async (conversationId: string): Promise<boolean> => {
     const normalizedId = normalizeStoredConversationId(conversationId);
-    return await withMSTeamsSqliteStateEnv(params, async () => {
-      return await CONVERSATION_STORE.delete(normalizedId);
-    });
+    return await conversationStore.delete(normalizedId);
   };
 
   return {

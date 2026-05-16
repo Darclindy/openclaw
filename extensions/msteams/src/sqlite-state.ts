@@ -21,25 +21,17 @@ function resolveStateDirOverride(
   return options.env?.OPENCLAW_STATE_DIR?.trim() || undefined;
 }
 
-export async function withMSTeamsSqliteStateEnv<T>(
+export function resolveMSTeamsSqliteStateEnv(
   options: MSTeamsSqliteStateOptions | undefined,
-  action: () => Promise<T>,
-): Promise<T> {
+): NodeJS.ProcessEnv | undefined {
   const stateDir = resolveStateDirOverride(options);
   if (!stateDir) {
-    return await action();
+    return options?.env;
   }
-  const previous = process.env.OPENCLAW_STATE_DIR;
-  process.env.OPENCLAW_STATE_DIR = stateDir;
-  try {
-    return await action();
-  } finally {
-    if (previous == null) {
-      delete process.env.OPENCLAW_STATE_DIR;
-    } else {
-      process.env.OPENCLAW_STATE_DIR = previous;
-    }
-  }
+  return {
+    ...(options?.env ?? process.env),
+    OPENCLAW_STATE_DIR: stateDir,
+  };
 }
 
 export function toPluginJsonValue<T>(value: T): T {

@@ -1,5 +1,5 @@
 import { createPluginStateKeyedStore } from "openclaw/plugin-sdk/plugin-state-runtime";
-import { withMSTeamsSqliteStateEnv, type MSTeamsSqliteStateOptions } from "./sqlite-state.js";
+import { resolveMSTeamsSqliteStateEnv, type MSTeamsSqliteStateOptions } from "./sqlite-state.js";
 
 type MSTeamsSsoStoredToken = {
   /** Connection name from the Bot Framework OAuth connection setting. */
@@ -24,10 +24,13 @@ export const MSTEAMS_SSO_TOKEN_NAMESPACE = "sso-tokens";
 const MSTEAMS_PLUGIN_ID = "msteams";
 const STORE_KEY_VERSION_PREFIX = "v2:";
 
-const ssoTokenStore = createPluginStateKeyedStore<MSTeamsSsoStoredToken>(MSTEAMS_PLUGIN_ID, {
-  namespace: MSTEAMS_SSO_TOKEN_NAMESPACE,
-  maxEntries: 20_000,
-});
+function createSsoTokenStore(params?: MSTeamsSqliteStateOptions) {
+  return createPluginStateKeyedStore<MSTeamsSsoStoredToken>(MSTEAMS_PLUGIN_ID, {
+    namespace: MSTEAMS_SSO_TOKEN_NAMESPACE,
+    maxEntries: 20_000,
+    env: resolveMSTeamsSqliteStateEnv(params),
+  });
+}
 
 export function makeMSTeamsSsoTokenStoreKey(connectionName: string, userId: string): string {
   return `${STORE_KEY_VERSION_PREFIX}${Buffer.from(
@@ -39,28 +42,25 @@ export function makeMSTeamsSsoTokenStoreKey(connectionName: string, userId: stri
 export function createMSTeamsSsoTokenStore(
   params?: MSTeamsSqliteStateOptions,
 ): MSTeamsSsoTokenStore {
+  const ssoTokenStore = createSsoTokenStore(params);
   return {
     async get({ connectionName, userId }) {
-      return await withMSTeamsSqliteStateEnv(
-        params,
-        async () =>
-          (await ssoTokenStore.lookup(makeMSTeamsSsoTokenStoreKey(connectionName, userId))) ?? null,
+      return (
+        (await ssoTokenStore.lookup(makeMSTeamsSsoTokenStoreKey(connectionName, userId))) ?? null
       );
     },
 
     async save(token) {
-      await withMSTeamsSqliteStateEnv(params, async () => {
-        await ssoTokenStore.register(
-          makeMSTeamsSsoTokenStoreKey(token.connectionName, token.userId),
-          { ...token },
-        );
-      });
+      await ssoTokenStore.register(
+        makeMSTeamsSsoTokenStoreKey(token.connectionName, token.userId),
+        {
+          ...token,
+        },
+      );
     },
 
     async remove({ connectionName, userId }) {
-      return await withMSTeamsSqliteStateEnv(params, async () => {
-        return await ssoTokenStore.delete(makeMSTeamsSsoTokenStoreKey(connectionName, userId));
-      });
+      return await ssoTokenStore.delete(makeMSTeamsSsoTokenStoreKey(connectionName, userId));
     },
   };
 }

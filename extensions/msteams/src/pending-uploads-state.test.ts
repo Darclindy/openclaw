@@ -108,6 +108,53 @@ describe("msteams pending uploads (sqlite-backed)", () => {
     expect(reader?.filename).toBe("secret.bin");
   });
 
+  it("isolates concurrent state dir overrides without mutating process env", async () => {
+    const originalStateDir = process.env.OPENCLAW_STATE_DIR;
+    const globalStateDir = await makeTempStateDir();
+    const firstStateDir = await makeTempStateDir();
+    const secondStateDir = await makeTempStateDir();
+    process.env.OPENCLAW_STATE_DIR = globalStateDir;
+    try {
+      await Promise.all([
+        storePendingUploadState(
+          {
+            id: "upload-shared",
+            buffer: Buffer.from("first"),
+            filename: "first.bin",
+            conversationId: "first-conversation",
+          },
+          { stateDir: firstStateDir },
+        ),
+        storePendingUploadState(
+          {
+            id: "upload-shared",
+            buffer: Buffer.from("second"),
+            filename: "second.bin",
+            conversationId: "second-conversation",
+          },
+          { stateDir: secondStateDir },
+        ),
+      ]);
+
+      expect(process.env.OPENCLAW_STATE_DIR).toBe(globalStateDir);
+      await expect(
+        getPendingUploadState("upload-shared", { stateDir: globalStateDir }),
+      ).resolves.toBeUndefined();
+      await expect(
+        getPendingUploadState("upload-shared", { stateDir: firstStateDir }),
+      ).resolves.toMatchObject({ conversationId: "first-conversation" });
+      await expect(
+        getPendingUploadState("upload-shared", { stateDir: secondStateDir }),
+      ).resolves.toMatchObject({ conversationId: "second-conversation" });
+    } finally {
+      if (originalStateDir == null) {
+        delete process.env.OPENCLAW_STATE_DIR;
+      } else {
+        process.env.OPENCLAW_STATE_DIR = originalStateDir;
+      }
+    }
+  });
+
   it("removes persisted entries", async () => {
     const stateDir = await makeTempStateDir();
     const env = makeEnv(stateDir);

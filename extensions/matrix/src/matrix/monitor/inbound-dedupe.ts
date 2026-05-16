@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { createPluginStateKeyedStore } from "openclaw/plugin-sdk/plugin-state-runtime";
 import type { MatrixAuth } from "../client/types.js";
 import { LogService } from "../sdk/logger.js";
-import { withMatrixSqliteStateEnvAsync } from "../sqlite-state.js";
+import { resolveMatrixSqliteStateEnv } from "../sqlite-state.js";
 
 const MATRIX_PLUGIN_ID = "matrix";
 const INBOUND_DEDUPE_NAMESPACE = "inbound-dedupe";
@@ -14,6 +14,18 @@ type StoredMatrixInboundDedupeEntry = {
   eventId: string;
   ts: number;
 };
+
+function createInboundDedupeStore(params: {
+  env?: NodeJS.ProcessEnv;
+  stateDir?: string;
+  stateRootDir?: string;
+}) {
+  return createPluginStateKeyedStore<StoredMatrixInboundDedupeEntry>(MATRIX_PLUGIN_ID, {
+    namespace: INBOUND_DEDUPE_NAMESPACE,
+    maxEntries: DEFAULT_MAX_ENTRIES,
+    env: resolveMatrixSqliteStateEnv(params),
+  });
+}
 
 export type MatrixInboundEventDeduper = {
   claimEvent: (params: { roomId: string; eventId: string }) => boolean;
@@ -100,16 +112,13 @@ export async function createMatrixInboundEventDeduper(params: {
     typeof params.maxEntries === "number" && Number.isFinite(params.maxEntries)
       ? Math.max(0, Math.floor(params.maxEntries))
       : DEFAULT_MAX_ENTRIES;
-  const store = createPluginStateKeyedStore<StoredMatrixInboundDedupeEntry>(MATRIX_PLUGIN_ID, {
-    namespace: INBOUND_DEDUPE_NAMESPACE,
-    maxEntries: DEFAULT_MAX_ENTRIES,
-  });
+  const store = createInboundDedupeStore(params);
 
   const seen = new Map<string, number>();
   const pending = new Set<string>();
 
   try {
-    const entries = await withMatrixSqliteStateEnvAsync(params, () => store.entries());
+    const entries = await store.entries();
     for (const entry of entries) {
       const value = entry.value;
       if (!value) {
@@ -155,16 +164,14 @@ export async function createMatrixInboundEventDeduper(params: {
       seen.delete(key);
       seen.set(key, ts);
       pruneSeenEvents({ seen, ttlMs, maxEntries, nowMs: nowMs() });
-      await withMatrixSqliteStateEnvAsync(params, () =>
-        store.register(
-          key,
-          {
-            roomId: normalizeEventPart(roomId),
-            eventId: normalizeEventPart(eventId),
-            ts,
-          },
-          ttlMs > 0 ? { ttlMs } : undefined,
-        ),
+      await store.register(
+        key,
+        {
+          roomId: normalizeEventPart(roomId),
+          eventId: normalizeEventPart(eventId),
+          ts,
+        },
+        ttlMs > 0 ? { ttlMs } : undefined,
       );
     },
     releaseEvent: ({ roomId, eventId }) => {

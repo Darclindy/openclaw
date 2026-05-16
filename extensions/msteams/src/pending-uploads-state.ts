@@ -1,5 +1,5 @@
 import { createPluginBlobStore } from "openclaw/plugin-sdk/plugin-state-runtime";
-import { toPluginJsonValue, withMSTeamsSqliteStateEnv } from "./sqlite-state.js";
+import { resolveMSTeamsSqliteStateEnv, toPluginJsonValue } from "./sqlite-state.js";
 
 /** TTL for persisted pending uploads (matches in-memory store). */
 const PENDING_UPLOAD_TTL_MS = 5 * 60 * 1000;
@@ -7,11 +7,14 @@ const PENDING_UPLOAD_TTL_MS = 5 * 60 * 1000;
 /** Cap to avoid unbounded growth if a process crashes mid-flow. */
 const MAX_PENDING_UPLOADS = 100;
 
-const PENDING_UPLOAD_STORE = createPluginBlobStore<PendingUploadMetadata>("msteams", {
-  namespace: "pending-uploads",
-  maxEntries: MAX_PENDING_UPLOADS,
-  defaultTtlMs: PENDING_UPLOAD_TTL_MS,
-});
+function createPendingUploadStore(options?: PendingUploadsStateOptions) {
+  return createPluginBlobStore<PendingUploadMetadata>("msteams", {
+    namespace: "pending-uploads",
+    maxEntries: MAX_PENDING_UPLOADS,
+    defaultTtlMs: PENDING_UPLOAD_TTL_MS,
+    env: resolveMSTeamsSqliteStateEnv(options),
+  });
+}
 
 type PendingUploadMetadata = {
   id: string;
@@ -69,21 +72,19 @@ export async function storePendingUploadState(
   options?: PendingUploadsStateOptions,
 ): Promise<void> {
   const ttlMs = options?.ttlMs ?? PENDING_UPLOAD_TTL_MS;
-  await withMSTeamsSqliteStateEnv(options, async () => {
-    await PENDING_UPLOAD_STORE.register(
-      upload.id,
-      toPluginJsonValue({
-        id: upload.id,
-        filename: upload.filename,
-        contentType: upload.contentType,
-        conversationId: upload.conversationId,
-        consentCardActivityId: upload.consentCardActivityId,
-        createdAt: Date.now(),
-      }),
-      upload.buffer,
-      { ttlMs },
-    );
-  });
+  await createPendingUploadStore(options).register(
+    upload.id,
+    toPluginJsonValue({
+      id: upload.id,
+      filename: upload.filename,
+      contentType: upload.contentType,
+      conversationId: upload.conversationId,
+      consentCardActivityId: upload.consentCardActivityId,
+      createdAt: Date.now(),
+    }),
+    upload.buffer,
+    { ttlMs },
+  );
 }
 
 /**
@@ -97,17 +98,16 @@ export async function getPendingUploadState(
     return undefined;
   }
   const ttlMs = options?.ttlMs ?? PENDING_UPLOAD_TTL_MS;
-  return await withMSTeamsSqliteStateEnv(options, async () => {
-    const entry = await PENDING_UPLOAD_STORE.lookup(id);
-    if (!entry) {
-      return undefined;
-    }
-    if (Date.now() - entry.metadata.createdAt > ttlMs) {
-      await PENDING_UPLOAD_STORE.delete(id);
-      return undefined;
-    }
-    return metadataToUpload(entry.metadata, entry.blob);
-  });
+  const store = createPendingUploadStore(options);
+  const entry = await store.lookup(id);
+  if (!entry) {
+    return undefined;
+  }
+  if (Date.now() - entry.metadata.createdAt > ttlMs) {
+    await store.delete(id);
+    return undefined;
+  }
+  return metadataToUpload(entry.metadata, entry.blob);
 }
 
 /**
@@ -121,9 +121,7 @@ export async function removePendingUploadState(
   if (!id) {
     return;
   }
-  await withMSTeamsSqliteStateEnv(options, async () => {
-    await PENDING_UPLOAD_STORE.delete(id);
-  });
+  await createPendingUploadStore(options).delete(id);
 }
 
 /**
@@ -136,14 +134,13 @@ export async function setPendingUploadActivityIdState(
   options?: PendingUploadsStateOptions,
 ): Promise<void> {
   const ttlMs = options?.ttlMs ?? PENDING_UPLOAD_TTL_MS;
-  await withMSTeamsSqliteStateEnv(options, async () => {
-    const entry = await PENDING_UPLOAD_STORE.lookup(id);
-    if (!entry) {
-      return;
-    }
-    entry.metadata.consentCardActivityId = activityId;
-    await PENDING_UPLOAD_STORE.register(id, toPluginJsonValue(entry.metadata), entry.blob, {
-      ttlMs,
-    });
+  const store = createPendingUploadStore(options);
+  const entry = await store.lookup(id);
+  if (!entry) {
+    return;
+  }
+  entry.metadata.consentCardActivityId = activityId;
+  await store.register(id, toPluginJsonValue(entry.metadata), entry.blob, {
+    ttlMs,
   });
 }

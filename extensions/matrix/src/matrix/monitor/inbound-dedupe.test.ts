@@ -52,6 +52,56 @@ describe("Matrix inbound event dedupe", () => {
     expect(second.claimEvent({ roomId: "!room:example.org", eventId: "$event-1" })).toBe(false);
   });
 
+  it("isolates concurrent state root overrides without mutating process env", async () => {
+    const originalStateDir = process.env.OPENCLAW_STATE_DIR;
+    const globalStateDir = createStateRoot();
+    const firstStateRootDir = createStateRoot();
+    const secondStateRootDir = createStateRoot();
+    process.env.OPENCLAW_STATE_DIR = globalStateDir;
+    try {
+      const [first, second] = await Promise.all([
+        createMatrixInboundEventDeduper({
+          auth: auth as never,
+          stateRootDir: firstStateRootDir,
+        }),
+        createMatrixInboundEventDeduper({
+          auth: auth as never,
+          stateRootDir: secondStateRootDir,
+        }),
+      ]);
+
+      expect(first.claimEvent({ roomId: "!room:example.org", eventId: "$shared" })).toBe(true);
+      expect(second.claimEvent({ roomId: "!room:example.org", eventId: "$shared" })).toBe(true);
+      await Promise.all([
+        first.commitEvent({ roomId: "!room:example.org", eventId: "$shared" }),
+        second.commitEvent({ roomId: "!room:example.org", eventId: "$shared" }),
+      ]);
+
+      expect(process.env.OPENCLAW_STATE_DIR).toBe(globalStateDir);
+      expect(fs.existsSync(path.join(globalStateDir, "state", "openclaw.sqlite"))).toBe(false);
+      const firstReloaded = await createMatrixInboundEventDeduper({
+        auth: auth as never,
+        stateRootDir: firstStateRootDir,
+      });
+      const secondReloaded = await createMatrixInboundEventDeduper({
+        auth: auth as never,
+        stateRootDir: secondStateRootDir,
+      });
+      expect(firstReloaded.claimEvent({ roomId: "!room:example.org", eventId: "$shared" })).toBe(
+        false,
+      );
+      expect(secondReloaded.claimEvent({ roomId: "!room:example.org", eventId: "$shared" })).toBe(
+        false,
+      );
+    } finally {
+      if (originalStateDir == null) {
+        delete process.env.OPENCLAW_STATE_DIR;
+      } else {
+        process.env.OPENCLAW_STATE_DIR = originalStateDir;
+      }
+    }
+  });
+
   it("does not persist released pending claims", async () => {
     const stateRootDir = createStateRoot();
     const first = await createMatrixInboundEventDeduper({

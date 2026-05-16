@@ -26,6 +26,19 @@ export function resolveMatrixSqliteStateKey(options: MatrixSqliteStateOptions | 
   return resolveStateDirOverride(options) ?? "";
 }
 
+export function resolveMatrixSqliteStateEnv(
+  options: MatrixSqliteStateOptions | undefined,
+): NodeJS.ProcessEnv | undefined {
+  const stateDir = resolveStateDirOverride(options);
+  if (!stateDir) {
+    return options?.env;
+  }
+  return {
+    ...(options?.env ?? process.env),
+    OPENCLAW_STATE_DIR: stateDir,
+  };
+}
+
 export function withMatrixSqliteStateEnv<T>(
   options: MatrixSqliteStateOptions | undefined,
   action: () => T,
@@ -38,27 +51,6 @@ export function withMatrixSqliteStateEnv<T>(
   process.env.OPENCLAW_STATE_DIR = stateDir;
   try {
     return action();
-  } finally {
-    if (previous == null) {
-      delete process.env.OPENCLAW_STATE_DIR;
-    } else {
-      process.env.OPENCLAW_STATE_DIR = previous;
-    }
-  }
-}
-
-export async function withMatrixSqliteStateEnvAsync<T>(
-  options: MatrixSqliteStateOptions | undefined,
-  action: () => Promise<T>,
-): Promise<T> {
-  const stateDir = resolveStateDirOverride(options);
-  if (!stateDir) {
-    return await action();
-  }
-  const previous = process.env.OPENCLAW_STATE_DIR;
-  process.env.OPENCLAW_STATE_DIR = stateDir;
-  try {
-    return await action();
   } finally {
     if (previous == null) {
       delete process.env.OPENCLAW_STATE_DIR;

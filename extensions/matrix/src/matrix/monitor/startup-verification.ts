@@ -3,7 +3,7 @@ import type { MatrixConfig } from "../../types.js";
 import type { MatrixAuth } from "../client/types.js";
 import { formatMatrixErrorMessage } from "../errors.js";
 import type { MatrixClient, MatrixOwnDeviceVerificationStatus } from "../sdk.js";
-import { withMatrixSqliteStateEnvAsync } from "../sqlite-state.js";
+import { resolveMatrixSqliteStateEnv } from "../sqlite-state.js";
 
 const MATRIX_PLUGIN_ID = "matrix";
 const STARTUP_VERIFICATION_NAMESPACE = "startup-verification";
@@ -11,13 +11,19 @@ const STARTUP_VERIFICATION_MAX_ENTRIES = 1_000;
 const DEFAULT_STARTUP_VERIFICATION_MODE = "if-unverified" as const;
 const DEFAULT_STARTUP_VERIFICATION_COOLDOWN_HOURS = 24;
 const DEFAULT_STARTUP_VERIFICATION_FAILURE_COOLDOWN_MS = 60 * 60 * 1000;
-const startupVerificationStore = createPluginStateKeyedStore<MatrixStartupVerificationState>(
-  MATRIX_PLUGIN_ID,
-  {
+function createStartupVerificationStore(params: {
+  env?: NodeJS.ProcessEnv;
+  stateRootDir?: string;
+}) {
+  return createPluginStateKeyedStore<MatrixStartupVerificationState>(MATRIX_PLUGIN_ID, {
     namespace: STARTUP_VERIFICATION_NAMESPACE,
     maxEntries: STARTUP_VERIFICATION_MAX_ENTRIES,
-  },
-);
+    env: resolveMatrixSqliteStateEnv({
+      env: params.env,
+      stateRootDir: params.stateRootDir,
+    }),
+  });
+}
 
 type MatrixStartupVerificationState = {
   userId?: string | null;
@@ -59,12 +65,8 @@ async function readStartupVerificationState(params: {
   env?: NodeJS.ProcessEnv;
   stateRootDir?: string;
 }): Promise<MatrixStartupVerificationState | null> {
-  const value = await withMatrixSqliteStateEnvAsync(
-    {
-      env: params.env,
-      stateRootDir: params.stateRootDir,
-    },
-    () => startupVerificationStore.lookup(buildStartupVerificationKey(params.auth)),
+  const value = await createStartupVerificationStore(params).lookup(
+    buildStartupVerificationKey(params.auth),
   );
   return value && typeof value === "object" ? value : null;
 }
@@ -74,13 +76,9 @@ async function clearStartupVerificationState(params: {
   env?: NodeJS.ProcessEnv;
   stateRootDir?: string;
 }): Promise<void> {
-  await withMatrixSqliteStateEnvAsync(
-    {
-      env: params.env,
-      stateRootDir: params.stateRootDir,
-    },
-    () => startupVerificationStore.delete(buildStartupVerificationKey(params.auth)),
-  ).catch(() => {});
+  await createStartupVerificationStore(params)
+    .delete(buildStartupVerificationKey(params.auth))
+    .catch(() => {});
 }
 
 async function writeStartupVerificationState(params: {
@@ -89,16 +87,9 @@ async function writeStartupVerificationState(params: {
   stateRootDir?: string;
   state: MatrixStartupVerificationState;
 }): Promise<void> {
-  await withMatrixSqliteStateEnvAsync(
-    {
-      env: params.env,
-      stateRootDir: params.stateRootDir,
-    },
-    () =>
-      startupVerificationStore.register(
-        buildStartupVerificationKey(params.auth),
-        JSON.parse(JSON.stringify(params.state)) as MatrixStartupVerificationState,
-      ),
+  await createStartupVerificationStore(params).register(
+    buildStartupVerificationKey(params.auth),
+    JSON.parse(JSON.stringify(params.state)) as MatrixStartupVerificationState,
   );
 }
 
