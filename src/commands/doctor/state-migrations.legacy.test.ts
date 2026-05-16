@@ -458,6 +458,79 @@ describe("state migrations", () => {
     await expectMissingPath(legacyPluginStatePath);
   });
 
+  it("imports legacy Active Memory session toggles into unified plugin state", async () => {
+    const root = await createTempDir();
+    const stateDir = path.join(root, ".openclaw");
+    const env = createEnv(stateDir);
+    const cfg = createConfig();
+    const legacyTogglePath = path.join(
+      stateDir,
+      "plugins",
+      "active-memory",
+      "session-toggles.json",
+    );
+    await fs.mkdir(path.dirname(legacyTogglePath), { recursive: true });
+    await fs.writeFile(
+      legacyTogglePath,
+      `${JSON.stringify(
+        {
+          sessions: {
+            "agent:main:disabled": { disabled: true, updatedAt: 111 },
+            "agent:main:enabled": { disabled: false, updatedAt: 222 },
+            "  ": { disabled: true, updatedAt: 333 },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+
+    const detected = await detectLegacyStateMigrations({
+      cfg,
+      env,
+      homedir: () => root,
+    });
+
+    expect(detected.preview).toEqual([
+      `- Active Memory session toggles: ${legacyTogglePath} → SQLite`,
+    ]);
+
+    const result = await runLegacyStateMigrations({
+      detected,
+      now: () => 1234,
+    });
+
+    expect(result.warnings).toStrictEqual([]);
+    expect(result.changes).toEqual([
+      "Imported 1 Active Memory session toggle(s) into SQLite plugin state",
+    ]);
+
+    const stateDatabase = openOpenClawStateDatabase({ env });
+    const db = getNodeSqliteKysely<PluginStateTestDatabase>(stateDatabase.db);
+    const rows = executeSqliteQuerySync(
+      stateDatabase.db,
+      db
+        .selectFrom("plugin_state_entries")
+        .select(["plugin_id", "namespace", "entry_key", "value_json", "created_at", "expires_at"])
+        .orderBy("plugin_id", "asc")
+        .orderBy("namespace", "asc")
+        .orderBy("entry_key", "asc"),
+    ).rows;
+
+    expect(rows).toEqual([
+      {
+        plugin_id: "active-memory",
+        namespace: "session-toggles",
+        entry_key: "agent:main:disabled",
+        value_json: '{"version":1,"disabled":true,"updatedAt":111}',
+        created_at: 111,
+        expires_at: null,
+      },
+    ]);
+    await expectMissingPath(legacyTogglePath);
+  });
+
   it("migrates legacy sessions for every configured agent", async () => {
     const root = await createTempDir();
     const stateDir = path.join(root, ".openclaw");

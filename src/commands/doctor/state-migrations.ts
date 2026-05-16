@@ -128,6 +128,12 @@ type MigrationSourceReport = {
   recordCount?: number;
 };
 
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
 function parseJsonlEvents(filePath: string): unknown[] {
   const raw = fs.readFileSync(filePath, "utf-8");
   const events: unknown[] = [];
@@ -1373,6 +1379,33 @@ function collectCoreLegacyStateMigrationPlans(params: {
       },
     });
   }
+  const activeMemorySessionTogglesPath = resolveLegacyActiveMemorySessionTogglesPath(
+    params.stateDir,
+  );
+  if (fileExists(activeMemorySessionTogglesPath)) {
+    plans.push({
+      kind: "custom",
+      label: "Active Memory session toggles",
+      sourcePath: activeMemorySessionTogglesPath,
+      targetTable: "plugin_state_entries",
+      recordCount: countLegacyActiveMemorySessionToggleRecords(activeMemorySessionTogglesPath),
+      apply: () => {
+        const result = importLegacyActiveMemorySessionTogglesToSqlite(
+          activeMemorySessionTogglesPath,
+          params.env,
+        );
+        return {
+          changes:
+            result.imported > 0
+              ? [
+                  `Imported ${result.imported} Active Memory session toggle(s) into SQLite plugin state`,
+                ]
+              : [],
+          warnings: result.warnings,
+        };
+      },
+    });
+  }
   const acpxGatewayInstancePath = path.join(params.stateDir, "gateway-instance-id");
   if (fileExists(acpxGatewayInstancePath)) {
     plans.push({
@@ -1891,9 +1924,21 @@ const CLAWHUB_SKILL_STATE_OWNER_ID = "core:clawhub-skills";
 const CLAWHUB_SKILL_STATE_NAMESPACE = "skill-installs";
 const DEFAULT_CLAWHUB_URL = "https://clawhub.ai";
 const LEGACY_PLUGIN_STATE_SIDECAR_SUFFIXES = ["", "-shm", "-wal"] as const;
+const ACTIVE_MEMORY_PLUGIN_STATE_OWNER_ID = "active-memory";
+const ACTIVE_MEMORY_SESSION_TOGGLES_NAMESPACE = "session-toggles";
+const LEGACY_ACTIVE_MEMORY_SESSION_TOGGLES_FILE = "session-toggles.json";
 
 function resolveLegacyPluginStateSqlitePath(stateDir: string): string {
   return path.join(stateDir, "plugin-state", "state.sqlite");
+}
+
+function resolveLegacyActiveMemorySessionTogglesPath(stateDir: string): string {
+  return path.join(
+    stateDir,
+    "plugins",
+    ACTIVE_MEMORY_PLUGIN_STATE_OWNER_ID,
+    LEGACY_ACTIVE_MEMORY_SESSION_TOGGLES_FILE,
+  );
 }
 
 function readLegacyPluginStateSqliteRows(sourcePath: string): {
@@ -1971,6 +2016,102 @@ function importLegacyPluginStateSqliteToUnified(
   }
 
   removeLegacyPluginStateSqliteFiles(sourcePath);
+  return { imported: result.rows.length, warnings: [] };
+}
+
+function readLegacyActiveMemorySessionToggleRows(sourcePath: string): {
+  rows: PluginStateMigrationRow[];
+  warnings: string[];
+} {
+  let fallbackUpdatedAt = 0;
+  try {
+    fallbackUpdatedAt = Math.trunc(fs.statSync(sourcePath).mtimeMs);
+  } catch {
+    // keep deterministic zero fallback when stat fails
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(sourcePath, "utf8")) as unknown;
+  } catch (error) {
+    return {
+      rows: [],
+      warnings: [`Failed reading legacy Active Memory toggles (${sourcePath}): ${String(error)}`],
+    };
+  }
+
+  const sessions = asRecord(parsed)?.sessions;
+  if (!sessions || typeof sessions !== "object" || Array.isArray(sessions)) {
+    return { rows: [], warnings: [] };
+  }
+
+  const rows: PluginStateMigrationRow[] = [];
+  for (const [rawSessionKey, rawValue] of Object.entries(sessions)) {
+    const sessionKey = rawSessionKey.trim();
+    const value = asRecord(rawValue);
+    if (!sessionKey || value?.disabled !== true) {
+      continue;
+    }
+    const updatedAt =
+      typeof value.updatedAt === "number" && Number.isFinite(value.updatedAt)
+        ? Math.trunc(value.updatedAt)
+        : fallbackUpdatedAt;
+    rows.push({
+      plugin_id: ACTIVE_MEMORY_PLUGIN_STATE_OWNER_ID,
+      namespace: ACTIVE_MEMORY_SESSION_TOGGLES_NAMESPACE,
+      entry_key: sessionKey,
+      value_json: JSON.stringify({
+        version: 1,
+        disabled: true,
+        updatedAt,
+      }),
+      created_at: updatedAt,
+      expires_at: null,
+    });
+  }
+  return { rows, warnings: [] };
+}
+
+function countLegacyActiveMemorySessionToggleRecords(sourcePath: string): number | undefined {
+  const result = readLegacyActiveMemorySessionToggleRows(sourcePath);
+  return result.warnings.length === 0 ? result.rows.length : undefined;
+}
+
+function importLegacyActiveMemorySessionTogglesToSqlite(
+  sourcePath: string,
+  env: NodeJS.ProcessEnv,
+): { imported: number; warnings: string[] } {
+  const result = readLegacyActiveMemorySessionToggleRows(sourcePath);
+  if (result.warnings.length > 0) {
+    return { imported: 0, warnings: result.warnings };
+  }
+
+  if (result.rows.length > 0) {
+    runOpenClawStateWriteTransaction(
+      (stateDatabase) => {
+        const db = getNodeSqliteKysely<PluginStateMigrationDatabase>(stateDatabase.db);
+        for (const row of result.rows) {
+          executeSqliteQuerySync(
+            stateDatabase.db,
+            db
+              .insertInto("plugin_state_entries")
+              .values(row)
+              .onConflict((conflict) =>
+                conflict.columns(["plugin_id", "namespace", "entry_key"]).doUpdateSet({
+                  value_json: (eb) => eb.ref("excluded.value_json"),
+                  created_at: (eb) => eb.ref("excluded.created_at"),
+                  expires_at: (eb) => eb.ref("excluded.expires_at"),
+                }),
+              ),
+          );
+        }
+      },
+      { env },
+    );
+  }
+
+  fs.rmSync(sourcePath, { force: true });
+  removeDirIfEmpty(path.dirname(sourcePath));
   return { imported: result.rows.length, warnings: [] };
 }
 
