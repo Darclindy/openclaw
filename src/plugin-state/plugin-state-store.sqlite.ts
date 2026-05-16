@@ -9,6 +9,7 @@ import { requireNodeSqlite } from "../infra/node-sqlite.js";
 import type { DB as OpenClawStateKyselyDatabase } from "../state/openclaw-state-db.generated.js";
 import {
   closeOpenClawStateDatabase,
+  isOpenClawStateDatabaseOpen,
   openOpenClawStateDatabase,
   type OpenClawStateDatabaseOptions,
   runOpenClawStateWriteTransaction,
@@ -659,6 +660,7 @@ export function probePluginStateStore(): PluginStateStoreProbeResult {
   const databasePath = resolveOpenClawStateSqlitePath(process.env);
   const steps: PluginStateStoreProbeStep[] = [];
   const wasOpen = cachedDatabase !== null;
+  const stateWasOpen = isOpenClawStateDatabaseOpen();
 
   const pushOk = (name: string) => steps.push({ name, ok: true });
   const pushFailure = (name: string, error: unknown) => {
@@ -727,7 +729,7 @@ export function probePluginStateStore(): PluginStateStoreProbeResult {
   } catch (error) {
     pushFailure("probe", error);
   } finally {
-    if (!wasOpen) {
+    if (!wasOpen && !stateWasOpen) {
       closePluginStateDatabase();
     }
   }

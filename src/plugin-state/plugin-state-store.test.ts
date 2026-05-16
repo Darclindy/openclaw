@@ -523,6 +523,16 @@ describe("plugin state keyed store", () => {
     });
   });
 
+  it("does not close a shared state database opened before the plugin-state probe", async () => {
+    await withPluginStateTestState(async () => {
+      const database = openOpenClawStateDatabase();
+      const result = probePluginStateStore();
+
+      expect(result.ok).toBe(true);
+      expect(database.db.isOpen).toBe(true);
+    });
+  });
+
   it("reopens after the shared state DB cache closes its handle", async () => {
     await withPluginStateTestState(async () => {
       const store = createPluginStateKeyedStore("discord", {

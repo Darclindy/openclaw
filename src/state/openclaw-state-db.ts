@@ -282,4 +282,8 @@ export function closeOpenClawStateDatabase(): void {
   cachedDatabase = null;
 }
 
+export function isOpenClawStateDatabaseOpen(): boolean {
+  return cachedDatabase?.db.isOpen === true;
+}
+
 export const closeOpenClawStateDatabaseForTest = closeOpenClawStateDatabase;
