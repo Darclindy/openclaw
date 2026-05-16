@@ -13,10 +13,7 @@ import {
   runOpenClawAgentWriteTransaction,
 } from "../../state/openclaw-agent-db.js";
 import { type OpenClawStateDatabaseOptions } from "../../state/openclaw-state-db.js";
-import {
-  normalizeDeliveryContext,
-  normalizeSessionDeliveryFields,
-} from "../../utils/delivery-context.shared.js";
+import { normalizeSessionDeliveryFields } from "../../utils/delivery-context.shared.js";
 import {
   conversationIdentityFromSessionEntry,
   type ConversationIdentity,
