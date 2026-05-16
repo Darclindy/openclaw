@@ -5,8 +5,10 @@ import {
 } from "../../routing/session-key.js";
 import { deliveryContextFromSession } from "../../utils/delivery-context.shared.js";
 import type { DeliveryContext } from "../../utils/delivery-context.types.js";
+import type { OpenClawConfig } from "../types.openclaw.js";
 import { normalizeSessionRowKey } from "./store-entry.js";
 import { getSessionEntry } from "./store.js";
+import { resolveAgentSessionDatabaseTargetsSync } from "./targets.js";
 import type { SessionEntry } from "./types.js";
 
 type ExtractedDeliveryContext = {
@@ -51,19 +53,42 @@ function resolveAgentId(sessionKey: string): string {
   return resolveAgentIdFromSessionKey(sessionKey) ?? DEFAULT_AGENT_ID;
 }
 
-function readDeliverySessionEntry(sessionKey: string): SessionEntry | undefined {
+type DeliveryInfoLookupOptions = {
+  cfg?: OpenClawConfig;
+  env?: NodeJS.ProcessEnv;
+};
+
+function readDeliverySessionEntry(
+  sessionKey: string,
+  options: DeliveryInfoLookupOptions = {},
+): SessionEntry | undefined {
   const agentId = resolveAgentId(sessionKey);
-  return getSessionEntry({
-    agentId,
-    sessionKey: normalizeSessionRowKey(sessionKey),
-  });
+  const normalizedKey = normalizeSessionRowKey(sessionKey);
+  const targets: Array<{ agentId: string; databasePath?: string }> = options.cfg
+    ? resolveAgentSessionDatabaseTargetsSync(options.cfg, agentId, { env: options.env })
+    : [{ agentId }];
+  for (const target of targets) {
+    const entry = getSessionEntry({
+      agentId: target.agentId,
+      env: options.env,
+      path: target.databasePath,
+      sessionKey: normalizedKey,
+    });
+    if (entry) {
+      return entry;
+    }
+  }
+  return undefined;
 }
 
 export function parseSessionThreadInfo(sessionKey: string | undefined): ParsedSessionThreadInfo {
   return parseThreadSessionSuffix(sessionKey);
 }
 
-export function extractDeliveryInfo(sessionKey: string | undefined): {
+export function extractDeliveryInfo(
+  sessionKey: string | undefined,
+  options: DeliveryInfoLookupOptions = {},
+): {
   deliveryContext: ExtractedDeliveryContext | undefined;
   threadId: string | undefined;
 } {
@@ -75,8 +100,8 @@ export function extractDeliveryInfo(sessionKey: string | undefined): {
   const lookupKey = baseSessionKey ?? sessionKey;
   try {
     const entry =
-      readDeliverySessionEntry(lookupKey) ??
-      (lookupKey === sessionKey ? undefined : readDeliverySessionEntry(sessionKey));
+      readDeliverySessionEntry(lookupKey, options) ??
+      (lookupKey === sessionKey ? undefined : readDeliverySessionEntry(sessionKey, options));
     const deliveryContext = toExtractedDeliveryContext(entry);
     return {
       deliveryContext,

@@ -507,6 +507,11 @@ async function createAgentMainSessionForSend(params: {
     sessionId: patched.entry.sessionId,
   });
   if (!ensured.ok) {
+    deleteSessionEntry({
+      agentId: target.agentId,
+      path: target.databasePath,
+      sessionKey: target.canonicalKey,
+    });
     return {
       ok: false,
       error: errorShape(

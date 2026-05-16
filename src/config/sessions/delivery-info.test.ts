@@ -7,6 +7,7 @@ import {
   openOpenClawAgentDatabase,
 } from "../../state/openclaw-agent-db.js";
 import { closeOpenClawStateDatabaseForTest } from "../../state/openclaw-state-db.js";
+import type { OpenClawConfig } from "../types.openclaw.js";
 import { extractDeliveryInfo } from "./delivery-info.js";
 import { upsertSessionEntry } from "./store.js";
 import type { SessionEntry } from "./types.js";
@@ -136,6 +137,37 @@ describe("extractDeliveryInfo", () => {
         accountId: "default",
       },
       threadId: "66",
+    });
+  });
+
+  it("searches registered agent databases when config is available", () => {
+    const env = setStateDir();
+    const cfg = {
+      agents: {
+        list: [{ id: "main", default: true }, { id: "ops" }],
+      },
+    } as OpenClawConfig;
+    const sessionKey = "agent:ops:matrix:channel:!ops:example.org";
+    const registeredPath = `${env.OPENCLAW_STATE_DIR}/registered/ops.sqlite`;
+    upsertSessionEntry({
+      agentId: "ops",
+      env,
+      path: registeredPath,
+      sessionKey,
+      entry: buildEntry({
+        channel: "matrix",
+        to: "!ops:example.org",
+        accountId: "work",
+      }),
+    });
+
+    expect(extractDeliveryInfo(sessionKey, { cfg, env })).toEqual({
+      deliveryContext: {
+        channel: "matrix",
+        to: "!ops:example.org",
+        accountId: "work",
+      },
+      threadId: undefined,
     });
   });
 

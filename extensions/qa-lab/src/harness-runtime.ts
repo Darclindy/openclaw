@@ -90,7 +90,7 @@ export function createQaRunnerRuntime(): PluginRuntime {
               ? params.ctxPayload.SessionKey
               : params.routeSessionKey;
           await params.recordInboundSession({
-            storePath: params.storePath,
+            agentId: params.agentId,
             sessionKey,
             ctx: params.ctxPayload,
             onRecordError: params.record?.onRecordError ?? (() => undefined),
