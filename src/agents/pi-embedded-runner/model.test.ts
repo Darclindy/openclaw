@@ -148,6 +148,7 @@ vi.mock("./openrouter-model-capabilities.js", () => ({
 
 import type { OpenClawConfig, OpenClawConfigInput } from "../../config/config.js";
 import { COPILOT_INTEGRATION_ID, buildCopilotIdeHeaders } from "../copilot-dynamic-headers.js";
+import { writeStoredModelsConfigRaw } from "../models-config-store.js";
 import { getModelProviderLocalService } from "../provider-local-service.js";
 import { getModelProviderRequestTransport } from "../provider-request-config.js";
 import { buildForwardCompatTemplate } from "./model.forward-compat.test-support.js";
@@ -290,6 +291,39 @@ describe("resolveModel", () => {
     expectResolvedModel(second);
     expect(discoverAuthStorage).toHaveBeenCalledTimes(1);
     expect(discoverModels).toHaveBeenCalledTimes(1);
+  });
+
+  it("invalidates PI discovery stores when the SQLite model catalog changes", async () => {
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-model-catalog-cache-"));
+    const stateDir = path.join(rootDir, "state");
+    const agentDir = path.join(rootDir, "agent");
+    fs.mkdirSync(agentDir, { recursive: true });
+    vi.stubEnv("OPENCLAW_STATE_DIR", stateDir);
+    mockDiscoveredModel(discoverModels, {
+      provider: "openai",
+      modelId: "gpt-5.5",
+      templateModel: {
+        provider: "openai",
+        ...makeModel("gpt-5.5"),
+      },
+    });
+
+    const first = await resolveModelAsync("openai", "gpt-5.5", agentDir, undefined, {
+      runtimeHooks: createRuntimeHooks(),
+    });
+    writeStoredModelsConfigRaw(
+      agentDir,
+      `${JSON.stringify({ providers: { openai: { models: [] } } })}\n`,
+      { now: () => 1 },
+    );
+    const second = await resolveModelAsync("openai", "gpt-5.5", agentDir, undefined, {
+      runtimeHooks: createRuntimeHooks(),
+    });
+
+    expectResolvedModel(first);
+    expectResolvedModel(second);
+    expect(discoverAuthStorage).toHaveBeenCalledTimes(2);
+    expect(discoverModels).toHaveBeenCalledTimes(2);
   });
 
   it("invalidates PI discovery stores when inherited default auth changes", async () => {
