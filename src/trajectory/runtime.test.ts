@@ -144,6 +144,28 @@ describe("trajectory runtime", () => {
     expect(runtimeRecorder.runtimeScope).toBe("sqlite:worker:trajectory:session-1");
   });
 
+  it("writes runtime events to the supplied state environment", () => {
+    useTempStateDir();
+    const overrideEnv = {
+      OPENCLAW_STATE_DIR: makeTempDir(),
+    };
+    const recorder = createTrajectoryRuntimeRecorder({
+      env: overrideEnv,
+      sessionId: "session-1",
+      sessionKey: "agent:main:session-1",
+    });
+
+    const runtimeRecorder = expectTrajectoryRuntimeRecorder(recorder);
+    runtimeRecorder.recordEvent("context.compiled", { ok: true });
+
+    expect(
+      listTrajectoryRuntimeEvents({ agentId: "main", env: overrideEnv, sessionId: "session-1" }),
+    ).toHaveLength(1);
+    expect(listTrajectoryRuntimeEvents({ agentId: "main", sessionId: "session-1" })).toHaveLength(
+      0,
+    );
+  });
+
   it("mirrors runtime trajectory capture into the artifact store on flush", async () => {
     useTempStateDir();
     const artifacts = createArtifactStoreRecorder();

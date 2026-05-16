@@ -230,6 +230,7 @@ export function createTrajectoryRuntimeRecorder(
     try {
       recordTrajectoryRuntimeEvent({
         agentId,
+        env,
         event: parsed,
       });
     } catch {
