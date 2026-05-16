@@ -115,6 +115,30 @@ describe("extractDeliveryInfo", () => {
     });
   });
 
+  it("resolves generic thread session keys through the stored base row", () => {
+    const env = setStateDir();
+    const sessionKey = "agent:main:webchat:dm:user-123";
+    upsertSessionEntry({
+      agentId: "main",
+      env,
+      sessionKey,
+      entry: buildEntry({
+        channel: "webchat",
+        to: "webchat:user-123",
+        accountId: "default",
+      }),
+    });
+
+    expect(extractDeliveryInfo(`${sessionKey}:thread:66`)).toEqual({
+      deliveryContext: {
+        channel: "webchat",
+        to: "webchat:user-123",
+        accountId: "default",
+      },
+      threadId: "66",
+    });
+  });
+
   it("returns empty delivery info when the session row is missing", () => {
     setStateDir();
 

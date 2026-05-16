@@ -1,4 +1,8 @@
-import { DEFAULT_AGENT_ID, resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
+import {
+  DEFAULT_AGENT_ID,
+  parseThreadSessionSuffix,
+  resolveAgentIdFromSessionKey,
+} from "../../routing/session-key.js";
 import { deliveryContextFromSession } from "../../utils/delivery-context.shared.js";
 import type { DeliveryContext } from "../../utils/delivery-context.types.js";
 import { normalizeSessionRowKey } from "./store-entry.js";
@@ -56,10 +60,7 @@ function readDeliverySessionEntry(sessionKey: string): SessionEntry | undefined 
 }
 
 export function parseSessionThreadInfo(sessionKey: string | undefined): ParsedSessionThreadInfo {
-  return {
-    baseSessionKey: sessionKey,
-    threadId: undefined,
-  };
+  return parseThreadSessionSuffix(sessionKey);
 }
 
 export function extractDeliveryInfo(sessionKey: string | undefined): {
@@ -70,14 +71,18 @@ export function extractDeliveryInfo(sessionKey: string | undefined): {
     return { deliveryContext: undefined, threadId: undefined };
   }
 
+  const { baseSessionKey, threadId } = parseSessionThreadInfo(sessionKey);
+  const lookupKey = baseSessionKey ?? sessionKey;
   try {
-    const entry = readDeliverySessionEntry(sessionKey);
+    const entry =
+      readDeliverySessionEntry(lookupKey) ??
+      (lookupKey === sessionKey ? undefined : readDeliverySessionEntry(sessionKey));
     const deliveryContext = toExtractedDeliveryContext(entry);
     return {
       deliveryContext,
-      threadId: deliveryContext?.threadId,
+      threadId: deliveryContext?.threadId ?? threadId,
     };
   } catch {
-    return { deliveryContext: undefined, threadId: undefined };
+    return { deliveryContext: undefined, threadId };
   }
 }
