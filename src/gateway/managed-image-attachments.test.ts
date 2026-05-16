@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { upsertSessionEntry } from "../config/sessions/store.js";
 import { replaceSqliteSessionTranscriptEvents } from "../config/sessions/transcript-store.sqlite.js";
 import {
   executeSqliteQuerySync,
@@ -13,10 +14,12 @@ import {
 import { createPinnedLookup } from "../infra/net/ssrf.js";
 import { resolvePreferredOpenClawTmpDir } from "../infra/tmp-openclaw-dir.js";
 import {
+  readMediaBuffer,
   resolveMediaBufferPath,
   saveMediaBuffer,
   setMediaStoreNetworkDepsForTest,
 } from "../media/store.js";
+import { DEFAULT_AGENT_ID, resolveAgentIdFromSessionKey } from "../routing/session-key.js";
 import { closeOpenClawAgentDatabasesForTest } from "../state/openclaw-agent-db.js";
 import type { DB as OpenClawStateKyselyDatabase } from "../state/openclaw-state-db.generated.js";
 import {
@@ -170,7 +173,13 @@ async function createFixture(
     },
   };
   await writeManagedImageRecord(record as Parameters<typeof writeManagedImageRecord>[0], stateDir);
-  return { attachmentId, sessionKey, originalPath };
+  upsertSessionEntry({
+    agentId: resolveAgentIdFromSessionKey(sessionKey) ?? DEFAULT_AGENT_ID,
+    env: { ...process.env, OPENCLAW_STATE_DIR: stateDir },
+    sessionKey,
+    entry: { sessionId: "sess-main", updatedAt: Date.now() },
+  });
+  return { attachmentId, mediaId: savedOriginal.id, sessionKey, originalPath };
 }
 
 type ManagedImageTestDatabase = Pick<OpenClawStateKyselyDatabase, "managed_outgoing_image_records">;
@@ -297,6 +306,23 @@ async function requestManagedImage(params: {
       },
     ],
   );
+  const encodedSessionKey = params.pathName.split("/").at(-3);
+  if (encodedSessionKey) {
+    try {
+      const sessionKey = decodeURIComponent(encodedSessionKey);
+      upsertSessionEntry({
+        agentId: resolveAgentIdFromSessionKey(sessionKey) ?? DEFAULT_AGENT_ID,
+        env: { ...process.env, OPENCLAW_STATE_DIR: params.stateDir },
+        sessionKey,
+        entry: {
+          sessionId: params.sessionEntry?.sessionId ?? "sess-1",
+          updatedAt: Date.now(),
+        },
+      });
+    } catch {
+      // Malformed encoded session-key tests should reach the HTTP handler.
+    }
+  }
 
   const auth = { mode: "test" } as never;
   const server = http.createServer(async (req, res) => {
@@ -1094,9 +1120,6 @@ describe("cleanupManagedOutgoingImageRecords", () => {
 
   it("cleans up dereferenced records and original files", async () => {
     const fixture = await createFixture(stateDir);
-    loadSessionEntryMock.mockReturnValue({
-      entry: { sessionId: "sess-main" },
-    });
     readSessionMessagesMock.mockReturnValue([]);
 
     const result = await cleanupManagedOutgoingImageRecords({ stateDir });
@@ -1105,13 +1128,15 @@ describe("cleanupManagedOutgoingImageRecords", () => {
     expect(result.deletedFileCount).toBe(1);
     expect(result.retainedCount).toBe(0);
     await expectPathMissing(fixture.originalPath);
+    await expect(
+      readMediaBuffer(fixture.mediaId, "outgoing/originals", undefined, {
+        env: { ...process.env, OPENCLAW_STATE_DIR: stateDir },
+      }),
+    ).rejects.toThrow(/does not resolve to a file/u);
   });
 
   it("retains committed records that are still referenced by a full-image block", async () => {
     const fixture = await createFixture(stateDir);
-    loadSessionEntryMock.mockReturnValue({
-      entry: { sessionId: "sess-main" },
-    });
     readSessionMessagesMock.mockReturnValue([
       {
         __openclaw: { id: "msg-1" },
@@ -1141,9 +1166,6 @@ describe("cleanupManagedOutgoingImageRecords", () => {
     const secondFixture = await createFixture(stateDir, {
       attachmentId: "22222222-2222-4222-8222-222222222222",
       filename: "att-2.png",
-    });
-    loadSessionEntryMock.mockReturnValue({
-      entry: { sessionId: "sess-main" },
     });
     readSessionMessagesMock.mockReturnValue([
       {

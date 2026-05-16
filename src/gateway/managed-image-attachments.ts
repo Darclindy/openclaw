@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import type { Insertable, Selectable } from "kysely";
 import { resolveStateDir } from "../config/paths.js";
+import { getSessionEntry } from "../config/sessions.js";
 import { getSqliteSessionTranscriptStats } from "../config/sessions/transcript-store.sqlite.js";
 import { readLocalFileSafely } from "../infra/fs-safe.js";
 import {
@@ -27,6 +28,7 @@ import {
   saveMediaSource,
 } from "../media/store.js";
 import { DEFAULT_AGENT_ID, resolveAgentIdFromSessionKey } from "../routing/session-key.js";
+import { resolveOpenClawAgentSqlitePath } from "../state/openclaw-agent-db.paths.js";
 import type { DB as OpenClawStateKyselyDatabase } from "../state/openclaw-state-db.generated.js";
 import {
   openOpenClawStateDatabase,
@@ -288,6 +290,13 @@ function managedImageRecordDbOptions(stateDir: string): OpenClawStateDatabaseOpt
   return { env: { ...process.env, OPENCLAW_STATE_DIR: stateDir } };
 }
 
+function managedImageAgentDbPath(agentId: string, stateDir: string): string {
+  return resolveOpenClawAgentSqlitePath({
+    agentId,
+    env: managedImageRecordDbOptions(stateDir).env,
+  });
+}
+
 function normalizeManagedOutgoingOriginalSubdir(value: string | undefined): string {
   return value === MANAGED_OUTGOING_ORIGINALS_SUBDIR ? value : MANAGED_OUTGOING_ORIGINALS_SUBDIR;
 }
@@ -374,15 +383,29 @@ async function getVariantStats(filePath: string) {
   };
 }
 
-async function readManagedImageOriginalBuffer(record: ManagedImageRecord): Promise<Buffer> {
+async function readManagedImageOriginalBuffer(
+  record: ManagedImageRecord,
+  stateDir = resolveStateDir(),
+): Promise<Buffer> {
   const subdir = normalizeManagedOutgoingOriginalSubdir(record.original.mediaSubdir);
-  return (await readMediaBuffer(record.original.mediaId, subdir)).buffer;
+  return (
+    await readMediaBuffer(
+      record.original.mediaId,
+      subdir,
+      DEFAULT_MANAGED_IMAGE_ATTACHMENT_LIMITS.maxBytes,
+      managedImageRecordDbOptions(stateDir),
+    )
+  ).buffer;
 }
 
-async function deleteManagedImageOriginal(original: ManagedImageRecordVariant): Promise<number> {
+async function deleteManagedImageOriginal(
+  original: ManagedImageRecordVariant,
+  stateDir = resolveStateDir(),
+): Promise<number> {
   await deleteMediaBuffer(
     original.mediaId,
     normalizeManagedOutgoingOriginalSubdir(original.mediaSubdir),
+    managedImageRecordDbOptions(stateDir),
   );
   return 1;
 }
@@ -474,7 +497,7 @@ async function deleteManagedImageRecordArtifacts(
   record: ManagedImageRecord,
   stateDir = resolveStateDir(),
 ) {
-  const deletedFileCount = await deleteManagedImageOriginal(record.original);
+  const deletedFileCount = await deleteManagedImageOriginal(record.original, stateDir);
   const { database, db } = managedImageRecordDatabase(stateDir);
   executeSqliteQuerySync(
     database.db,
@@ -706,14 +729,20 @@ async function getSessionManagedOutgoingAttachmentIndex(
   if (cache?.has(sessionKey)) {
     return cache.get(sessionKey) ?? null;
   }
-  const { entry } = loadSessionEntry(sessionKey);
+  const agentId = resolveAgentIdFromSessionKey(sessionKey) ?? DEFAULT_AGENT_ID;
+  const entry = stateDir
+    ? getSessionEntry({
+        agentId,
+        env: managedImageRecordDbOptions(stateDir).env,
+        sessionKey,
+      })
+    : loadSessionEntry(sessionKey).entry;
   const sessionId = entry?.sessionId;
   if (!sessionId) {
     cache?.set(sessionKey, null);
     return null;
   }
 
-  const agentId = resolveAgentIdFromSessionKey(sessionKey) ?? DEFAULT_AGENT_ID;
   const transcriptStat = getSqliteSessionTranscriptStats({
     agentId,
     sessionId,
@@ -730,7 +759,11 @@ async function getSessionManagedOutgoingAttachmentIndex(
   }
 
   const messages = await readSessionMessagesAsync(
-    { agentId, sessionId },
+    {
+      agentId,
+      sessionId,
+      ...(stateDir ? { path: managedImageAgentDbPath(agentId, stateDir) } : {}),
+    },
     {
       mode: "full",
       reason: "managed outgoing attachment index",
@@ -1099,7 +1132,7 @@ export async function handleManagedOutgoingImageHttpRequest(
 
   let body: Buffer;
   try {
-    body = await readManagedImageOriginalBuffer(record);
+    body = await readManagedImageOriginalBuffer(record, opts.stateDir);
   } catch {
     sendStatus(res, 404, "not found");
     return true;

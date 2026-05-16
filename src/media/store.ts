@@ -117,8 +117,12 @@ function getMediaKysely(db: DatabaseSync) {
   return getNodeSqliteKysely<MediaKyselyDatabase>(db);
 }
 
-function getMediaBlobRow(params: { subdir: string; id: string }): MediaBlobRow | undefined {
-  const database = openOpenClawStateDatabase();
+function getMediaBlobRow(params: {
+  subdir: string;
+  id: string;
+  state?: OpenClawStateDatabaseOptions;
+}): MediaBlobRow | undefined {
+  const database = openOpenClawStateDatabase(params.state);
   return executeSqliteQueryTakeFirstSync(
     database.db,
     getMediaKysely(database.db)
@@ -968,10 +972,14 @@ export async function saveMediaStream(
  * Prefer readMediaBuffer when the caller needs the bytes; this path-returning
  * helper is for channel surfaces that need a stable local attachment path.
  */
-export async function resolveMediaBufferPath(id: string, subdir = "inbound"): Promise<string> {
+export async function resolveMediaBufferPath(
+  id: string,
+  subdir = "inbound",
+  state?: OpenClawStateDatabaseOptions,
+): Promise<string> {
   const safeSubdir = resolveMediaSubdir(subdir, "resolveMediaBufferPath");
   resolveMediaRelativePath(id, subdir, "resolveMediaBufferPath");
-  const row = getMediaBlobRow({ subdir: safeSubdir, id });
+  const row = getMediaBlobRow({ subdir: safeSubdir, id, state });
   if (!row) {
     throw new Error(
       `resolveMediaBufferPath: media ID does not resolve to a file: ${JSON.stringify(id)}`,
@@ -995,10 +1003,11 @@ export async function readMediaBuffer(
   id: string,
   subdir: string = "inbound",
   maxBytes = MAX_BYTES,
+  state?: OpenClawStateDatabaseOptions,
 ): Promise<ReadMediaBufferResult> {
   const safeSubdir = resolveMediaSubdir(subdir, "readMediaBuffer");
   resolveMediaRelativePath(id, subdir, "readMediaBuffer");
-  const row = getMediaBlobRow({ subdir: safeSubdir, id });
+  const row = getMediaBlobRow({ subdir: safeSubdir, id, state });
   if (!row) {
     throw new Error(`readMediaBuffer: media ID does not resolve to a file: ${JSON.stringify(id)}`);
   }
@@ -1035,7 +1044,11 @@ export async function readMediaBuffer(
  * @param id     The media ID as returned by SavedMedia.id.
  * @param subdir The subdirectory the file was saved into (default "inbound").
  */
-export async function deleteMediaBuffer(id: string, subdir = "inbound"): Promise<void> {
+export async function deleteMediaBuffer(
+  id: string,
+  subdir = "inbound",
+  state?: OpenClawStateDatabaseOptions,
+): Promise<void> {
   const safeSubdir = resolveMediaSubdir(subdir, "deleteMediaBuffer");
   resolveMediaRelativePath(id, subdir, "deleteMediaBuffer");
   runOpenClawStateWriteTransaction((database) => {
@@ -1046,7 +1059,7 @@ export async function deleteMediaBuffer(id: string, subdir = "inbound"): Promise
         .where("subdir", "=", safeSubdir)
         .where("id", "=", id),
     );
-  });
+  }, state);
   await fs.rm(path.join(resolveMediaScopedDir(subdir, "deleteMediaBuffer"), id), {
     force: true,
   });
