@@ -1107,6 +1107,7 @@ function resolveChatType(ctx: {
   }
   const sessionKey = ctx.sessionKey?.trim().toLowerCase();
   if (sessionKey) {
+    const provider = (ctx.messageProvider ?? "").trim().toLowerCase();
     if (sessionKey.includes(":direct:")) {
       return "direct";
     }
@@ -1126,6 +1127,9 @@ function resolveChatType(ctx: {
       return "explicit";
     }
     if (/^agent:[^:]+:main:thread:/.test(sessionKey)) {
+      return "direct";
+    }
+    if (/^agent:[^:]+:main$/.test(sessionKey) && provider && provider !== "webchat") {
       return "direct";
     }
   }
