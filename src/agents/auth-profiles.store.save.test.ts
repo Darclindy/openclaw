@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -56,6 +57,17 @@ function readRawPersistedAuthProfiles(agentDir?: string): {
     lastGood?: unknown;
     usageStats?: unknown;
   };
+}
+
+function resolveExpectedOAuthProfileSecretPath(
+  agentDir: string | undefined,
+  profileId: string,
+): string {
+  const id = createHash("sha256")
+    .update(`${authProfileStoreKey(agentDir)}\0${profileId}`)
+    .digest("hex")
+    .slice(0, 32);
+  return path.join(resolveOAuthDir(), "auth-profiles", `${id}.json`);
 }
 
 describe("saveAuthProfileStore", () => {
@@ -329,6 +341,36 @@ describe("saveAuthProfileStore", () => {
         access: "access-2",
         refresh: "refresh-2",
       });
+    } finally {
+      await fs.rm(agentDir, { recursive: true, force: true });
+    }
+  });
+
+  it("removes detached OAuth secret files when profiles are deleted", async () => {
+    const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-auth-save-secret-"));
+    const profileId = "openai-codex:default";
+    try {
+      saveAuthProfileStore(
+        {
+          version: 1,
+          profiles: {
+            [profileId]: {
+              type: "oauth",
+              provider: "openai-codex",
+              access: "access-token",
+              refresh: "refresh-token",
+              expires: Date.now() + 60_000,
+            },
+          },
+        },
+        agentDir,
+      );
+      const secretPath = resolveExpectedOAuthProfileSecretPath(agentDir, profileId);
+      await expect(fs.stat(secretPath)).resolves.toBeTruthy();
+
+      saveAuthProfileStore({ version: 1, profiles: {} }, agentDir);
+
+      await expect(fs.stat(secretPath)).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       await fs.rm(agentDir, { recursive: true, force: true });
     }
