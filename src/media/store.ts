@@ -253,6 +253,7 @@ function upsertMediaBlob(params: {
             content_type: (eb) => eb.ref("excluded.content_type"),
             size_bytes: (eb) => eb.ref("excluded.size_bytes"),
             blob: (eb) => eb.ref("excluded.blob"),
+            created_at: (eb) => eb.ref("excluded.created_at"),
             updated_at: (eb) => eb.ref("excluded.updated_at"),
           }),
         ),

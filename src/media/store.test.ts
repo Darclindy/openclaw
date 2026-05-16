@@ -605,6 +605,35 @@ describe("media store", () => {
     await expectCleanupBehaviorCase({ setup, run });
   });
 
+  it("keeps stable-id media when a stale blob is refreshed", async () => {
+    await withTempStore(async (store) => {
+      const now = Date.now();
+      try {
+        vi.useFakeTimers({ now: now - 60_000 });
+        await store.saveMediaBufferWithId({
+          subdir: "stable-refresh",
+          id: "stable.txt",
+          buffer: Buffer.from("old"),
+          contentType: "text/plain",
+        });
+        vi.setSystemTime(now);
+
+        await store.saveMediaBufferWithId({
+          subdir: "stable-refresh",
+          id: "stable.txt",
+          buffer: Buffer.from("fresh"),
+          contentType: "text/plain",
+        });
+        await store.cleanOldMedia(30_000, { recursive: true, pruneEmptyDirs: true });
+
+        const result = await store.readMediaBuffer("stable.txt", "stable-refresh");
+        expect(result.buffer).toEqual(Buffer.from("fresh"));
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   it.each([
     {
       name: "sets correct mime for xlsx by extension",
