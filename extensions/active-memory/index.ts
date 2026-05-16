@@ -1,5 +1,8 @@
 import crypto from "node:crypto";
-import { loadSqliteSessionTranscriptBoundedEvents } from "openclaw/plugin-sdk/agent-harness-runtime";
+import {
+  deleteSqliteSessionTranscript,
+  loadSqliteSessionTranscriptBoundedEvents,
+} from "openclaw/plugin-sdk/agent-harness-runtime";
 import {
   DEFAULT_PROVIDER,
   parseModelRef,
@@ -1560,6 +1563,17 @@ async function streamBoundedTranscriptEvents(params: {
   }
 }
 
+function deleteTransientRecallTranscript(transcriptScope: TranscriptScope | undefined): void {
+  if (!transcriptScope) {
+    return;
+  }
+  try {
+    deleteSqliteSessionTranscript(transcriptScope);
+  } catch {
+    // Best-effort cleanup; recall results should not fail because transcript cleanup did.
+  }
+}
+
 function extractActiveMemorySearchDebugFromSessionRecord(
   value: unknown,
 ): ActiveMemorySearchDebug | undefined {
@@ -2570,8 +2584,9 @@ async function maybeResolveActiveRecall(params: {
   });
 
   let terminalMemorySearchWatch: TerminalMemorySearchWatch | undefined;
+  let subagentPromise: Promise<RecallSubagentResult> | undefined;
   try {
-    const subagentPromise = runRecallSubagent({
+    subagentPromise = runRecallSubagent({
       ...params,
       modelRef: resolvedModelRef,
       abortSignal: controller.signal,
@@ -2755,6 +2770,14 @@ async function maybeResolveActiveRecall(params: {
   } finally {
     terminalMemorySearchWatch?.stop();
     clearTimeout(timeoutId);
+    if (!params.config.persistTranscripts) {
+      deleteTransientRecallTranscript(transcriptScope);
+      subagentPromise
+        ?.finally(() => {
+          deleteTransientRecallTranscript(transcriptScope);
+        })
+        .catch(() => undefined);
+    }
   }
 }
 

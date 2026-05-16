@@ -1,7 +1,10 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { appendSqliteSessionTranscriptEvent } from "openclaw/plugin-sdk/agent-harness-runtime";
+import {
+  appendSqliteSessionTranscriptEvent,
+  hasSqliteSessionTranscriptEvents,
+} from "openclaw/plugin-sdk/agent-harness-runtime";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
 import { resetPluginStateStoreForTests } from "openclaw/plugin-sdk/plugin-state-runtime";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
@@ -4052,11 +4055,21 @@ describe("active-memory plugin", () => {
     );
   });
 
-  it("keeps subagent transcripts in sqlite by default", async () => {
+  it("deletes subagent transcripts by default after reading sqlite recall output", async () => {
     const mkdtempSpy = vi.spyOn(fs, "mkdtemp");
     const rmSpy = vi.spyOn(fs, "rm");
+    let transcriptScope: TranscriptScope | undefined;
+    runEmbeddedPiAgent.mockImplementationOnce(
+      async (params: { agentId?: string; sessionId: string }) => {
+        transcriptScope = transcriptScopeFromRunParams(params);
+        await writeSqliteTranscriptEvents(transcriptScope, [
+          { type: "message", message: { role: "assistant", content: "private recall summary" } },
+        ]);
+        return { payloads: [{ text: "private recall summary" }] };
+      },
+    );
 
-    await hooks.before_prompt_build(
+    const result = await hooks.before_prompt_build(
       { prompt: "what wings should i order? sqlite transcript scope", messages: [] },
       {
         agentId: "main",
@@ -4066,11 +4079,16 @@ describe("active-memory plugin", () => {
       },
     );
 
+    expect(result).toMatchObject({
+      prependContext: expect.stringContaining("private recall summary"),
+    });
     const runParams = runEmbeddedPiAgent.mock.calls.at(-1)?.[0];
     expect(runParams).toMatchObject({
       agentId: "main",
       sessionId: expect.stringMatching(/^active-memory-[a-z0-9]+-[a-f0-9]{8}$/),
     });
+    expect(transcriptScope).toBeDefined();
+    expect(hasSqliteSessionTranscriptEvents(transcriptScope as TranscriptScope)).toBe(false);
     expect(mkdtempSpy).not.toHaveBeenCalled();
     expect(rmSpy).not.toHaveBeenCalled();
   });
