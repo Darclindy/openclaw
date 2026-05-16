@@ -2,7 +2,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { closeOpenClawStateDatabaseForTest } from "../state/openclaw-state-db.js";
 import { AUTH_STORE_VERSION } from "./auth-profiles/constants.js";
+import { loadPersistedAuthProfileStore } from "./auth-profiles/persisted.js";
 import {
   clearRuntimeAuthProfileStoreSnapshots,
   ensureAuthProfileStore,
@@ -75,6 +77,7 @@ describe("auth profile store cache", () => {
   afterEach(() => {
     vi.useRealTimers();
     clearRuntimeAuthProfileStoreSnapshots();
+    closeOpenClawStateDatabaseForTest();
   });
 
   function createRuntimeOnlyOverlay(access: string): RuntimeOnlyOverlay {
@@ -122,6 +125,33 @@ describe("auth profile store cache", () => {
 
       expect((reloaded.profiles["openai:default"] as { key?: string } | undefined)?.key).toBe(
         "sk-test-2",
+      );
+    });
+  });
+
+  it("imports legacy auth-profiles.json when SQLite auth is empty", async () => {
+    await withAgentDirEnv("openclaw-auth-store-legacy-import-", (agentDir) => {
+      vi.stubEnv("OPENCLAW_STATE_DIR", path.join(agentDir, "state"));
+      fs.writeFileSync(
+        path.join(agentDir, "auth-profiles.json"),
+        JSON.stringify({
+          openai: {
+            type: "api_key",
+            provider: "openai",
+            key: "sk-legacy",
+          },
+        }),
+        "utf8",
+      );
+
+      const loaded = ensureAuthProfileStore(agentDir);
+      const persisted = loadPersistedAuthProfileStore(agentDir);
+
+      expect((loaded.profiles["openai:default"] as { key?: string } | undefined)?.key).toBe(
+        "sk-legacy",
+      );
+      expect((persisted?.profiles["openai:default"] as { key?: string } | undefined)?.key).toBe(
+        "sk-legacy",
       );
     });
   });

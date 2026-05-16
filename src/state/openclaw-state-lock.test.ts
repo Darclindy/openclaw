@@ -1,8 +1,15 @@
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { executeSqliteQuerySync, getNodeSqliteKysely } from "../infra/kysely-sync.js";
 import { withTempDir } from "../test-helpers/temp-dir.js";
-import { closeOpenClawStateDatabaseForTest } from "./openclaw-state-db.js";
+import type { DB as OpenClawStateKyselyDatabase } from "./openclaw-state-db.generated.js";
+import {
+  closeOpenClawStateDatabaseForTest,
+  runOpenClawStateWriteTransaction,
+} from "./openclaw-state-db.js";
 import { withOpenClawStateLock } from "./openclaw-state-lock.js";
+
+type StateLockTestDatabase = Pick<OpenClawStateKyselyDatabase, "state_leases">;
 
 const FAST_RETRY = {
   retries: 100,
@@ -55,6 +62,43 @@ describe("withOpenClawStateLock", () => {
       releaseFirst();
       await Promise.all([first, second]);
       expect(order).toEqual(["first-enter", "first-exit", "second-enter"]);
+    });
+  });
+
+  it("rejects and aborts the guarded task when lease renewal loses ownership", async () => {
+    await withTempDir({ prefix: "openclaw-core-state-lock-lost-" }, async (dir) => {
+      const dbPath = path.join(dir, "state.sqlite");
+      let signal!: AbortSignal;
+      let locked!: Promise<void>;
+      const entered = new Promise<void>((resolve) => {
+        locked = withOpenClawStateLock(
+          "shared",
+          { path: dbPath, stale: 20, retries: FAST_RETRY },
+          async (lockSignal) => {
+            signal = lockSignal;
+            resolve();
+            await new Promise<never>(() => {});
+          },
+        );
+      });
+      await entered;
+
+      runOpenClawStateWriteTransaction(
+        (database) => {
+          const db = getNodeSqliteKysely<StateLockTestDatabase>(database.db);
+          executeSqliteQuerySync(
+            database.db,
+            db
+              .deleteFrom("state_leases")
+              .where("scope", "=", "runtime.lock")
+              .where("lease_key", "=", "shared"),
+          );
+        },
+        { path: dbPath },
+      );
+
+      await expect(locked).rejects.toThrow("Lost SQLite state lock runtime.lock:shared");
+      expect(signal.aborted).toBe(true);
     });
   });
 });
