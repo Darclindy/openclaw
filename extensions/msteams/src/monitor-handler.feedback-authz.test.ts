@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { loadSqliteSessionTranscriptEvents } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { resetPluginStateStoreForTests } from "openclaw/plugin-sdk/plugin-state-runtime";
+import { upsertSessionEntry } from "openclaw/plugin-sdk/session-store-runtime";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig, PluginRuntime, RuntimeEnv } from "../runtime-api.js";
 import {
@@ -156,6 +157,7 @@ function readFeedbackTranscriptMessage(params: {
 async function withFeedbackHandler(params: {
   cfg: OpenClawConfig;
   context: Parameters<typeof createFeedbackInvokeContext>[0];
+  beforeRun?: (args: { tmpDir: string }) => Promise<void>;
   assertResult: (args: { tmpDir: string; originalRun: ReturnType<typeof vi.fn> }) => Promise<void>;
 }) {
   const tmpDir = await mkdtemp(path.join(tmpdir(), "openclaw-msteams-feedback-"));
@@ -175,6 +177,7 @@ async function withFeedbackHandler(params: {
       run: NonNullable<MSTeamsActivityHandler["run"]>;
     };
 
+    await params.beforeRun?.({ tmpDir });
     await handler.run(createFeedbackInvokeContext(params.context));
     await params.assertResult({ tmpDir, originalRun });
   } finally {
@@ -295,6 +298,62 @@ describe("msteams feedback invoke authz", () => {
           messageId: "bot-msg-1",
           value: "positive",
           comment: "allowed dm feedback",
+          sessionKey: "msteams:direct:owner-aad",
+          agentId: "default",
+          conversationId: "a:personal-chat",
+        });
+        expect(originalRun).not.toHaveBeenCalled();
+      },
+    });
+  });
+
+  it("records feedback in the stored transcript session when the route key differs", async () => {
+    await withFeedbackHandler({
+      cfg: {
+        channels: {
+          msteams: {
+            dmPolicy: "allowlist",
+            allowFrom: ["owner-aad"],
+          },
+        },
+      } as OpenClawConfig,
+      context: {
+        reaction: "like",
+        conversationId: "a:personal-chat;messageid=bot-msg-1",
+        conversationType: "personal",
+        senderId: "owner-aad",
+        senderName: "Owner",
+        comment: "stored transcript feedback",
+      },
+      beforeRun: async ({ tmpDir }) => {
+        upsertSessionEntry({
+          env: { ...process.env, OPENCLAW_STATE_DIR: tmpDir },
+          agentId: "default",
+          sessionKey: "msteams:direct:owner-aad",
+          entry: {
+            sessionId: "stored-session-uuid",
+            updatedAt: Date.now(),
+          },
+        });
+      },
+      assertResult: async ({ tmpDir, originalRun }) => {
+        expect(
+          readFeedbackTranscriptMessage({
+            stateDir: tmpDir,
+            sessionId: "msteams:direct:owner-aad",
+          }),
+        ).toBeUndefined();
+        expect(
+          readFeedbackTranscriptMessage({
+            stateDir: tmpDir,
+            sessionId: "stored-session-uuid",
+          }),
+        ).toMatchObject({
+          type: "custom",
+          event: "feedback",
+          messageId: "bot-msg-1",
+          value: "positive",
+          comment: "stored transcript feedback",
           sessionKey: "msteams:direct:owner-aad",
           agentId: "default",
           conversationId: "a:personal-chat",
