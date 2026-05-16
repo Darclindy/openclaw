@@ -2,8 +2,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { CHANNEL_IDS } from "../../../channels/ids.js";
 import { getPairingAdapter } from "../../../channels/plugins/pairing.js";
+import { createConfigIO } from "../../../config/config.js";
 import {
   resolveAllowFromAccountId,
+  safeAccountKey,
   type AllowFromStore,
 } from "../../../pairing/pairing-store-keys.js";
 import {
@@ -27,6 +29,12 @@ type PairingStore = {
   version: 1;
   requests: PairingRequest[];
 };
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
 
 function normalizePairingRequest(value: unknown): PairingRequest | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -158,6 +166,44 @@ function parsePairingFilename(filename: string): PairingChannel | null {
   return filename.slice(0, -LEGACY_PAIRING_SUFFIX.length) as PairingChannel;
 }
 
+async function resolveConfiguredAccountIdByLegacyFileKey(
+  channel: PairingChannel,
+  env: NodeJS.ProcessEnv,
+): Promise<Map<string, string>> {
+  const accountIdsByFileKey = new Map<string, string>();
+  try {
+    const snapshot = await createConfigIO({
+      env,
+      pluginValidation: "skip",
+      logger: { error: () => undefined, warn: () => undefined },
+    }).readConfigFileSnapshot();
+    const channels = asRecord(snapshot.config.channels) ?? asRecord(snapshot.sourceConfig.channels);
+    const channelConfig = asRecord(channels?.[channel]);
+    const accounts = asRecord(channelConfig?.accounts);
+    if (!accounts) {
+      return accountIdsByFileKey;
+    }
+
+    const accountIds = Object.keys(accounts);
+    for (const accountId of accountIds) {
+      const resolved = resolveAllowFromAccountId(accountId);
+      if (safeAccountKey(resolved) === resolved) {
+        accountIdsByFileKey.set(resolved, resolved);
+      }
+    }
+    for (const accountId of accountIds) {
+      const resolved = resolveAllowFromAccountId(accountId);
+      const fileKey = safeAccountKey(resolved);
+      if (!accountIdsByFileKey.has(fileKey)) {
+        accountIdsByFileKey.set(fileKey, resolved);
+      }
+    }
+  } catch {
+    return accountIdsByFileKey;
+  }
+  return accountIdsByFileKey;
+}
+
 async function readLegacyPairingStore(filePath: string): Promise<PairingStore | null> {
   try {
     const raw = await fs.readFile(filePath, "utf8");
@@ -185,6 +231,7 @@ export async function importLegacyChannelPairingFilesToSqlite(
 ): Promise<{ files: number; requests: number; allowFrom: number }> {
   const dir = resolveLegacyPairingCredentialsDir(env);
   const entries = await fs.readdir(dir).catch(() => []);
+  const configuredAccountIdsByChannel = new Map<PairingChannel, Map<string, string>>();
   let files = 0;
   let requests = 0;
   let allowFrom = 0;
@@ -207,9 +254,21 @@ export async function importLegacyChannelPairingFilesToSqlite(
     const allowFromTarget = parseAllowFromFilename(filename);
     if (allowFromTarget) {
       const entries = await readAllowFromStateForPath(allowFromTarget.channel, filePath);
+      let accountId = allowFromTarget.accountId;
+      if (accountId !== DEFAULT_ACCOUNT_ID) {
+        let configuredAccountIds = configuredAccountIdsByChannel.get(allowFromTarget.channel);
+        if (!configuredAccountIds) {
+          configuredAccountIds = await resolveConfiguredAccountIdByLegacyFileKey(
+            allowFromTarget.channel,
+            env,
+          );
+          configuredAccountIdsByChannel.set(allowFromTarget.channel, configuredAccountIds);
+        }
+        accountId = configuredAccountIds.get(accountId) ?? accountId;
+      }
       const state = readChannelPairingState(allowFromTarget.channel, env);
       state.allowFrom ??= {};
-      state.allowFrom[resolveAllowFromAccountId(allowFromTarget.accountId)] = entries;
+      state.allowFrom[resolveAllowFromAccountId(accountId)] = entries;
       writeChannelPairingState(allowFromTarget.channel, state, env);
       allowFrom += entries.length;
       await fs.rm(filePath, { force: true }).catch(() => undefined);

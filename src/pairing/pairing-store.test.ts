@@ -13,7 +13,8 @@ import {
   vi,
 } from "vitest";
 import { importLegacyChannelPairingFilesToSqlite } from "../commands/doctor/legacy/channel-pairing.js";
-import { resolveOAuthDir } from "../config/paths.js";
+import { resolveLegacyChannelAllowFromPath } from "../commands/doctor/legacy/channel-pairing-files.js";
+import { resolveConfigPath, resolveOAuthDir } from "../config/paths.js";
 import { executeSqliteQuerySync, getNodeSqliteKysely } from "../infra/kysely-sync.js";
 import { DEFAULT_ACCOUNT_ID } from "../routing/session-key.js";
 import type { DB as OpenClawStateKyselyDatabase } from "../state/openclaw-state-db.generated.js";
@@ -311,6 +312,47 @@ describe("pairing store", () => {
       await expect(readChannelAllowFromStore("telegram", process.env, "yy")).resolves.toEqual([
         "1001",
       ]);
+    });
+  });
+
+  it("imports sanitized legacy allowFrom files under configured unsafe account ids", async () => {
+    await withTempStateDir(async (stateDir) => {
+      const env = { ...process.env, OPENCLAW_STATE_DIR: stateDir };
+      const configPath = resolveConfigPath(env, stateDir);
+      fsSync.mkdirSync(path.dirname(configPath), { recursive: true });
+      fsSync.writeFileSync(
+        configPath,
+        `${JSON.stringify({
+          channels: {
+            telegram: {
+              accounts: {
+                "work/prod": { enabled: true },
+              },
+            },
+          },
+        })}\n`,
+        "utf8",
+      );
+
+      const allowFromPath = resolveLegacyChannelAllowFromPath("telegram", env, "work/prod");
+      expect(path.basename(allowFromPath)).toBe("telegram-work_prod-allowFrom.json");
+      fsSync.mkdirSync(path.dirname(allowFromPath), { recursive: true });
+      fsSync.writeFileSync(
+        allowFromPath,
+        `${JSON.stringify({ version: 1, allowFrom: ["sender-unsafe"] })}\n`,
+        "utf8",
+      );
+
+      await expect(importLegacyChannelPairingFilesToSqlite(process.env)).resolves.toMatchObject({
+        allowFrom: 1,
+      });
+
+      await expect(readChannelAllowFromStore("telegram", process.env, "work/prod")).resolves.toEqual(
+        ["sender-unsafe"],
+      );
+      await expect(readChannelAllowFromStore("telegram", process.env, "work_prod")).resolves.toEqual(
+        [],
+      );
     });
   });
 

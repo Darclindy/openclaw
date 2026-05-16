@@ -349,6 +349,57 @@ describe("exportTrajectoryBundle", () => {
     expect(JSON.stringify(bundle.events)).not.toContain("old branch");
   });
 
+  it("stops SQLite branch traversal on cyclic transcript parents", async () => {
+    const tmpDir = makeTempDir();
+    const outputDir = path.join(tmpDir, "bundle");
+    writeSessionTranscript([
+      {
+        type: "session",
+        version: 1,
+        id: "session-cycle",
+        timestamp: "2026-04-01T05:46:39.000Z",
+        cwd: tmpDir,
+      },
+      {
+        type: "message",
+        id: "entry-a",
+        parentId: "entry-c",
+        timestamp: "2026-04-01T05:46:40.000Z",
+        message: userMessage("a"),
+      },
+      {
+        type: "message",
+        id: "entry-b",
+        parentId: "entry-a",
+        timestamp: "2026-04-01T05:46:41.000Z",
+        message: assistantMessage([{ type: "text", text: "b" }]),
+      },
+      {
+        type: "message",
+        id: "entry-c",
+        parentId: "entry-b",
+        timestamp: "2026-04-01T05:46:42.000Z",
+        message: assistantMessage([{ type: "text", text: "c" }]),
+      },
+    ]);
+
+    const bundle = await exportTrajectoryBundle({
+      outputDir,
+      agentId: "main",
+      sessionId: "session-cycle",
+      workspaceDir: tmpDir,
+    });
+
+    expect(bundle.manifest.leafId).toBe("entry-c");
+    expect(bundle.manifest.transcriptEventCount).toBe(3);
+    const branch = JSON.parse(fs.readFileSync(path.join(outputDir, "session-branch.json"), "utf8"));
+    expect(branch.entries.map((entry: { id: string }) => entry.id)).toEqual([
+      "entry-a",
+      "entry-b",
+      "entry-c",
+    ]);
+  });
+
   it("includes run-scoped SQLite tool artifact metadata without embedding blobs", async () => {
     const tmpDir = makeTempDir();
     process.env.OPENCLAW_STATE_DIR = path.join(tmpDir, "state");

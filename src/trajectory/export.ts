@@ -91,8 +91,13 @@ function readSessionBranch(params: { agentId?: string; sessionId: string; sessio
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   const leafId = entries.at(-1)?.id ?? null;
   const branchEntries: SessionEntry[] = [];
+  const seen = new Set<string>();
   let current = leafId ? byId.get(leafId) : undefined;
   while (current) {
+    if (seen.has(current.id)) {
+      break;
+    }
+    seen.add(current.id);
     branchEntries.unshift(current);
     current = current.parentId ? byId.get(current.parentId) : undefined;
   }
