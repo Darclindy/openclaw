@@ -214,6 +214,38 @@ describe("model provider localService config", () => {
   });
 });
 
+describe("retired cron config validation", () => {
+  it("keeps retired cron keys repairable without invalidating config", async () => {
+    await withTempHome(async (home) => {
+      await writeOpenClawConfig(home, {
+        cron: {
+          enabled: true,
+          store: "~/.openclaw/cron/jobs.json",
+          sessionRetention: "7d",
+          maxConcurrentRuns: 2,
+        },
+      });
+
+      const snap = await readConfigFileSnapshot();
+
+      expect(snap.valid).toBe(true);
+      expect(snap.issues).toHaveLength(0);
+      expect(snap.sourceConfig.cron as { store?: string; sessionRetention?: string }).toMatchObject(
+        {
+          store: "~/.openclaw/cron/jobs.json",
+          sessionRetention: "7d",
+        },
+      );
+      expect(snap.config.cron).toMatchObject({
+        enabled: true,
+        maxConcurrentRuns: 2,
+      });
+      expect(snap.config.cron).not.toHaveProperty("store");
+      expect(snap.config.cron).not.toHaveProperty("sessionRetention");
+    });
+  });
+});
+
 describe("$schema key in config (#14998)", () => {
   it("accepts config with $schema string", () => {
     const result = OpenClawSchema.safeParse({

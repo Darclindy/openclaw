@@ -24,10 +24,14 @@ const GATEWAY_BIND_RULE: LegacyConfigRule = {
 const LEGACY_CRON_STORE_RULE: LegacyConfigRule = {
   path: ["cron"],
   message:
-    'cron.store is legacy; cron jobs now use the shared SQLite database. Run "openclaw doctor --fix" to remove it after legacy import.',
+    'cron.store/sessionRetention are legacy; cron jobs now use SQLite state and default run-session cleanup. Run "openclaw doctor --fix" to remove them after legacy import.',
   match: (value) => {
     const cron = getRecord(value);
-    return Boolean(cron && Object.prototype.hasOwnProperty.call(cron, "store"));
+    return Boolean(
+      cron &&
+        (Object.prototype.hasOwnProperty.call(cron, "store") ||
+          Object.prototype.hasOwnProperty.call(cron, "sessionRetention")),
+    );
   },
 };
 
@@ -74,16 +78,35 @@ function escapeControlForLog(value: string): string {
 
 export const LEGACY_CONFIG_MIGRATIONS_RUNTIME_GATEWAY: LegacyConfigMigrationSpec[] = [
   defineLegacyConfigMigration({
-    id: "cron.store",
-    describe: "Remove legacy cron.store path settings",
+    id: "cron.store-session-retention",
+    describe: "Remove legacy cron.store and cron.sessionRetention settings",
     legacyRules: [LEGACY_CRON_STORE_RULE],
     apply: (raw, changes) => {
       const cron = getRecord(raw.cron);
-      if (!cron || !Object.prototype.hasOwnProperty.call(cron, "store")) {
+      if (!cron) {
         return;
       }
-      delete cron.store;
-      changes.push("Removed cron.store; cron jobs now use the shared SQLite database.");
+      let changed = false;
+      if (Object.prototype.hasOwnProperty.call(cron, "store")) {
+        delete cron.store;
+        changes.push("Removed cron.store; cron jobs now use the shared SQLite database.");
+        changed = true;
+      }
+      if (Object.prototype.hasOwnProperty.call(cron, "sessionRetention")) {
+        delete cron.sessionRetention;
+        changes.push(
+          "Removed cron.sessionRetention; cron run sessions now use SQLite cleanup defaults.",
+        );
+        changed = true;
+      }
+      if (!changed) {
+        return;
+      }
+      if (Object.keys(cron).length === 0) {
+        delete raw.cron;
+        return;
+      }
+      raw.cron = cron;
     },
   }),
   defineLegacyConfigMigration({
