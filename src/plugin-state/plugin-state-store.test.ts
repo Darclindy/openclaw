@@ -516,7 +516,9 @@ describe("plugin state keyed store", () => {
     await withPluginStateTestState(async () => {
       const store = createPluginStateKeyedStore("discord", { namespace: "close", maxEntries: 10 });
       await store.register("k", { ok: true });
+      const database = openOpenClawStateDatabase();
       closePluginStateDatabase();
+      expect(() => database.db.exec("SELECT 1")).toThrow();
       await expect(store.lookup("k")).resolves.toEqual({ ok: true });
     });
   });

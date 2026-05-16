@@ -272,7 +272,7 @@ export function recordOpenClawStateBackupRun(options: RecordOpenClawStateBackupR
   return id;
 }
 
-export function closeOpenClawStateDatabaseForTest(): void {
+export function closeOpenClawStateDatabase(): void {
   if (!cachedDatabase) {
     return;
   }
@@ -281,3 +281,5 @@ export function closeOpenClawStateDatabaseForTest(): void {
   cachedDatabase.db.close();
   cachedDatabase = null;
 }
+
+export const closeOpenClawStateDatabaseForTest = closeOpenClawStateDatabase;

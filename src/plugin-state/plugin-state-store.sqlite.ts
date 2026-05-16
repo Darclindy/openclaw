@@ -8,6 +8,7 @@ import {
 import { requireNodeSqlite } from "../infra/node-sqlite.js";
 import type { DB as OpenClawStateKyselyDatabase } from "../state/openclaw-state-db.generated.js";
 import {
+  closeOpenClawStateDatabase,
   openOpenClawStateDatabase,
   type OpenClawStateDatabaseOptions,
   runOpenClawStateWriteTransaction,
@@ -736,4 +737,5 @@ export function probePluginStateStore(): PluginStateStoreProbeResult {
 
 export function closePluginStateDatabase(): void {
   cachedDatabase = null;
+  closeOpenClawStateDatabase();
 }
