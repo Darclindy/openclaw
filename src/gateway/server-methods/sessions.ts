@@ -861,7 +861,11 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     const payload = await measureDiagnosticsTimelineSpan(
       "gateway.sessions.list",
       async () => {
-        const { databasePath, entries: store } = measureDiagnosticsTimelineSpanSync(
+        const {
+          databasePath,
+          entries: store,
+          sourceDatabasePathBySessionKey,
+        } = measureDiagnosticsTimelineSpanSync(
           "gateway.sessions.list.store_load",
           () => {
             const loaded = loadCombinedSessionEntriesForGateway(cfg, {
@@ -897,6 +901,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
             listSessionsFromStoreAsync({
               cfg,
               databasePath,
+              sourceDatabasePathBySessionKey,
               store,
               modelCatalog,
               opts: p,

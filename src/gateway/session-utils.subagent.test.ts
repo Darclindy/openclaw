@@ -6,6 +6,7 @@ import {
 } from "../agents/subagent-registry.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { getSessionEntry, upsertSessionEntry, type SessionEntry } from "../config/sessions.js";
+import { replaceSqliteSessionTranscriptEvents } from "../config/sessions/transcript-store.sqlite.js";
 import { registerAgentRunContext, resetAgentRunContextForTest } from "../infra/agent-events.js";
 import { openOpenClawAgentDatabase } from "../state/openclaw-agent-db.js";
 import { withStateDirEnv } from "../test-helpers/state-dir-env.js";
@@ -1171,9 +1172,64 @@ describe("loadCombinedSessionEntriesForGateway includes SQLite-registered agents
         },
       } as OpenClawConfig;
 
-      const { entries } = loadCombinedSessionEntriesForGateway(cfg);
+      const { entries, sourceDatabasePathBySessionKey } = loadCombinedSessionEntriesForGateway(cfg);
 
       expect(entries["agent:retired:archived-task"]?.sessionId).toBe("s-retired");
+      expect(sourceDatabasePathBySessionKey?.["agent:retired:archived-task"]).toBe(databasePath);
+    });
+  });
+
+  test("list rows read transcript fields from registered database paths", async () => {
+    await withStateDirEnv("openclaw-acp-registered-transcript-path-", async ({ tempRoot }) => {
+      const databasePath = path.join(tempRoot, "relocated", "work.sqlite");
+      openOpenClawAgentDatabase({ agentId: "work", path: databasePath });
+      upsertSessionEntry({
+        agentId: "work",
+        path: databasePath,
+        sessionKey: "agent:work:task",
+        entry: {
+          sessionId: "s-work",
+          updatedAt: 400,
+          modelProvider: "openai",
+          model: "gpt-5.4",
+        },
+      });
+      replaceSqliteSessionTranscriptEvents({
+        agentId: "work",
+        path: databasePath,
+        sessionId: "s-work",
+        events: [
+          { type: "session", version: 1, id: "s-work" },
+          { message: { role: "user", content: "relocated title" } },
+          { message: { role: "assistant", content: "relocated last" } },
+        ],
+      });
+      const cfg = {
+        session: {
+          mainKey: "main",
+        },
+        agents: {
+          list: [{ id: "main", default: true }, { id: "work" }],
+        },
+      } as OpenClawConfig;
+
+      const combined = loadCombinedSessionEntriesForGateway(cfg, { agentId: "work" });
+      expect(Object.keys(combined.entries)).toContain("agent:work:task");
+      const result = listSessionsFromStore({
+        cfg,
+        databasePath: combined.databasePath,
+        sourceDatabasePathBySessionKey: combined.sourceDatabasePathBySessionKey,
+        store: combined.entries,
+        opts: { agentId: "work", includeDerivedTitles: true, includeLastMessage: true },
+      });
+
+      expect(result.sessions[0]).toEqual(
+        expect.objectContaining({
+          key: "agent:work:task",
+          derivedTitle: "relocated title",
+          lastMessagePreview: "relocated last",
+        }),
+      );
     });
   });
 

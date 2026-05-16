@@ -15,6 +15,8 @@ import type { SessionEntry } from "./types.js";
 function mergeSessionEntryIntoCombined(params: {
   cfg: OpenClawConfig;
   combined: Record<string, SessionEntry>;
+  sourceDatabasePathBySessionKey: Record<string, string>;
+  sourceDatabasePath: string;
   entry: SessionEntry;
   agentId: string;
   canonicalKey: string;
@@ -50,6 +52,7 @@ function mergeSessionEntryIntoCombined(params: {
       spawnedBy,
     };
   }
+  params.sourceDatabasePathBySessionKey[canonicalKey] = params.sourceDatabasePath;
 }
 
 export function loadCombinedSessionEntriesForGateway(
@@ -58,6 +61,7 @@ export function loadCombinedSessionEntriesForGateway(
 ): {
   databasePath: string;
   entries: Record<string, SessionEntry>;
+  sourceDatabasePathBySessionKey?: Record<string, string>;
 } {
   const requestedAgentId =
     typeof opts.agentId === "string" && opts.agentId.trim()
@@ -71,6 +75,7 @@ export function loadCombinedSessionEntriesForGateway(
         )
       : resolveAllAgentSessionDatabaseTargetsSync(cfg);
   const combined: Record<string, SessionEntry> = {};
+  const sourceDatabasePathBySessionKey: Record<string, string> = {};
   for (const target of targets) {
     const agentId = target.agentId;
     for (const { sessionKey: key, entry } of listSessionEntries({
@@ -85,6 +90,8 @@ export function loadCombinedSessionEntriesForGateway(
       mergeSessionEntryIntoCombined({
         cfg,
         combined,
+        sourceDatabasePathBySessionKey,
+        sourceDatabasePath: target.databasePath,
         entry,
         agentId,
         canonicalKey,
@@ -98,5 +105,5 @@ export function loadCombinedSessionEntriesForGateway(
       : targets.length === 1
         ? targets[0].databasePath
         : "(multiple)";
-  return { databasePath, entries: combined };
+  return { databasePath, entries: combined, sourceDatabasePathBySessionKey };
 }
