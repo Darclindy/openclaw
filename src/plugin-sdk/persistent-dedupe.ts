@@ -145,17 +145,26 @@ export function createPersistentDedupe(options: PersistentDedupeOptions): Persis
     try {
       const scopeKey = options.resolveScopeKey(namespace);
       const storeKey = resolveStoreKey(scopeKey, namespace, key);
-      const existing = PERSISTENT_DEDUPE_STORE.lookup(storeKey);
-      const existingSeenAt = existing?.seenAt;
-      if (isRecentTimestamp(existingSeenAt, ttlMs, now)) {
-        memory.check(scopedKey, existingSeenAt);
-        return false;
-      }
-      PERSISTENT_DEDUPE_STORE.register(
+      const inserted = PERSISTENT_DEDUPE_STORE.registerIfAbsent(
         storeKey,
         { scopeKey, namespace, key, seenAt: now },
         ttlMs > 0 ? { ttlMs } : undefined,
       );
+      if (!inserted) {
+        const existingSeenAt = PERSISTENT_DEDUPE_STORE.lookup(storeKey)?.seenAt;
+        if (!isRecentTimestamp(existingSeenAt, ttlMs, now)) {
+          PERSISTENT_DEDUPE_STORE.register(
+            storeKey,
+            { scopeKey, namespace, key, seenAt: now },
+            ttlMs > 0 ? { ttlMs } : undefined,
+          );
+          prunePersistentRows(scopeKey, now, ttlMs, maxEntries);
+          memory.check(scopedKey, now);
+          return true;
+        }
+        memory.check(scopedKey, existingSeenAt);
+        return false;
+      }
       prunePersistentRows(scopeKey, now, ttlMs, maxEntries);
       memory.check(scopedKey, now);
       return true;

@@ -42,7 +42,7 @@ class DeviceAuthStoreTest {
     assertTrue((entry?.updatedAtMs ?: 0L) > 0L)
     val row = OpenClawSQLiteStateStore(app).readDeviceAuthToken("device-1", "operator")
     assertNotNull(row)
-    assertEquals("operator-token", row?.token)
+    assertEquals("__openclaw_secure_prefs__", row?.token)
     assertEquals("""["operator.read","operator.write"]""", row?.scopesJson)
   }
 
@@ -75,10 +75,34 @@ class DeviceAuthStoreTest {
     assertEquals("operator", entry?.role)
     assertEquals(listOf("operator.read", "operator.write"), entry?.scopes)
     assertEquals(1700000000000L, entry?.updatedAtMs)
-    assertNull(prefs.getString("gateway.deviceToken.device-1.operator"))
+    assertEquals("operator-token", prefs.getString("gateway.deviceToken.device-1.operator"))
     assertNull(prefs.getString("gateway.deviceTokenMeta.device-1.operator"))
     assertEquals(
-      "operator-token",
+      "__openclaw_secure_prefs__",
+      OpenClawSQLiteStateStore(app).readDeviceAuthToken("device-1", "operator")?.token,
+    )
+  }
+
+  @Test
+  fun loadEntryMovesPlaintextSqliteTokenBackToSecurePrefs() {
+    val app = RuntimeEnvironment.getApplication()
+    val prefs = legacyPrefs(app)
+    OpenClawSQLiteStateStore(app).upsertDeviceAuthToken(
+      OpenClawSQLiteDeviceAuthTokenRow(
+        deviceId = "device-1",
+        role = "operator",
+        token = "operator-token",
+        scopesJson = """["operator.read"]""",
+        updatedAtMs = 1700000000000,
+      ),
+    )
+
+    val entry = DeviceAuthStore(app, legacyPrefsOverride = prefs).loadEntry("device-1", "operator")
+
+    assertEquals("operator-token", entry?.token)
+    assertEquals("operator-token", prefs.getString("gateway.deviceToken.device-1.operator"))
+    assertEquals(
+      "__openclaw_secure_prefs__",
       OpenClawSQLiteStateStore(app).readDeviceAuthToken("device-1", "operator")?.token,
     )
   }
@@ -100,6 +124,7 @@ class DeviceAuthStoreTest {
     assertNull(prefs.getString("gateway.deviceToken.device-1.operator"))
     assertNull(prefs.getString("gateway.deviceTokenMeta.device-1.operator"))
     assertEquals("fresh-token", store.loadEntry("device-2", "operator")?.token)
+    assertEquals("fresh-token", prefs.getString("gateway.deviceToken.device-2.operator"))
   }
 
   private fun legacyPrefs(context: Context): SecurePrefs {

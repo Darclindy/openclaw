@@ -22,6 +22,7 @@ private data class PersistedDeviceAuthMetadata(
 
 private const val deviceAuthTokenPrefix = "gateway.deviceToken."
 private const val deviceAuthMetadataPrefix = "gateway.deviceTokenMeta."
+private const val sqliteSecurePrefsTokenMarker = "__openclaw_secure_prefs__"
 
 interface DeviceAuthTokenStore {
   fun loadEntry(
@@ -64,7 +65,16 @@ class DeviceAuthStore(
     val row =
       stateStore.readDeviceAuthToken(normalizedDevice, normalizedRole)
         ?: return migrateLegacyEntry(normalizedDevice, normalizedRole)
-    val token = row.token.trim().takeIf { it.isNotEmpty() } ?: return null
+    val token =
+      legacyPrefs
+        .getString(tokenKey(normalizedDevice, normalizedRole))
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?: row.token.trim().takeIf { it.isNotEmpty() && it != sqliteSecurePrefsTokenMarker }?.also {
+          legacyPrefs.putString(tokenKey(normalizedDevice, normalizedRole), it)
+          stateStore.upsertDeviceAuthToken(row.copy(token = sqliteSecurePrefsTokenMarker))
+        }
+        ?: return null
     return DeviceAuthEntry(
       token = token,
       role = normalizedRole,
@@ -92,20 +102,20 @@ class DeviceAuthStore(
     if (sqliteDeviceChanged) {
       stateStore.deleteAllDeviceAuthTokens()
     }
+    if (shouldDropLegacyAuth) {
+      removeAllLegacyEntries()
+    }
+    legacyPrefs.putString(tokenKey(normalizedDevice, normalizedRole), token.trim())
+    removeLegacyMetadata(normalizedDevice, normalizedRole)
     stateStore.upsertDeviceAuthToken(
       OpenClawSQLiteDeviceAuthTokenRow(
         deviceId = normalizedDevice,
         role = normalizedRole,
-        token = token.trim(),
+        token = sqliteSecurePrefsTokenMarker,
         scopesJson = json.encodeToString(normalizedScopes),
         updatedAtMs = System.currentTimeMillis(),
       ),
     )
-    if (shouldDropLegacyAuth) {
-      removeAllLegacyEntries()
-    } else {
-      removeLegacyEntry(normalizedDevice, normalizedRole)
-    }
   }
 
   override fun clearToken(
@@ -144,13 +154,21 @@ class DeviceAuthStore(
       OpenClawSQLiteDeviceAuthTokenRow(
         deviceId = normalizedDevice,
         role = normalizedRole,
-        token = entry.token,
+        token = sqliteSecurePrefsTokenMarker,
         scopesJson = json.encodeToString(entry.scopes),
         updatedAtMs = entry.updatedAtMs,
       ),
     )
-    removeLegacyEntry(normalizedDevice, normalizedRole)
+    legacyPrefs.putString(tokenKey(normalizedDevice, normalizedRole), entry.token)
+    removeLegacyMetadata(normalizedDevice, normalizedRole)
     return entry
+  }
+
+  private fun removeLegacyMetadata(
+    normalizedDevice: String,
+    normalizedRole: String,
+  ) {
+    legacyPrefs.remove(metadataKey(normalizedDevice, normalizedRole))
   }
 
   private fun removeLegacyEntry(
