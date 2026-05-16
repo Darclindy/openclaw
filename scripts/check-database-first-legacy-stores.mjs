@@ -467,8 +467,10 @@ const allowedExactPaths = new Set([
   "extensions/codex/src/node-cli-sessions.ts",
   "src/agents/session-tool-result-guard.ts",
   "src/agents/pi-embedded-runner/run/helpers.ts",
+  "src/index.ts",
   "src/infra/exec-approvals.ts",
   "src/infra/restart-sentinel.ts",
+  "src/library.ts",
   "src/plugin-sdk/session-store-runtime.ts",
 ]);
 
