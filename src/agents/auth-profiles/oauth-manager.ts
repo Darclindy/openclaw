@@ -30,7 +30,6 @@ import {
 import {
   ensureAuthProfileStoreWithoutExternalProfiles,
   loadAuthProfileStoreWithoutExternalProfiles,
-  saveAuthProfileStore,
   resolvePersistedAuthProfileOwnerAgentDir,
   updateAuthProfileStoreWithLock,
 } from "./store.js";
@@ -405,6 +404,23 @@ export function createOAuthManager(adapter: OAuthManagerAdapter) {
     }
   }
 
+  async function saveOAuthCredentialIntoStore(params: {
+    agentDir?: string;
+    profileId: string;
+    credential: OAuthCredential;
+  }): Promise<void> {
+    const updated = await updateAuthProfileStoreWithLock({
+      agentDir: params.agentDir,
+      updater: (store) => {
+        store.profiles[params.profileId] = { ...params.credential };
+        return true;
+      },
+    });
+    if (!updated) {
+      throw new Error("Failed to save refreshed OAuth credential.");
+    }
+  }
+
   async function doRefreshOAuthTokenWithLock(params: {
     profileId: string;
     provider: string;
@@ -508,8 +524,11 @@ export function createOAuthManager(adapter: OAuthManagerAdapter) {
                 shouldReplaceStoredOAuthCredential(cred, externallyManaged) &&
                 !areOAuthCredentialsEquivalent(cred, externallyManaged)
               ) {
-                store.profiles[params.profileId] = { ...externallyManaged };
-                saveAuthProfileStore(store, ownerAgentDir);
+                await saveOAuthCredentialIntoStore({
+                  agentDir: ownerAgentDir,
+                  profileId: params.profileId,
+                  credential: externallyManaged,
+                });
               }
               credentialToRefresh = externallyManaged;
               if (!params.forceRefresh && hasUsableOAuthCredential(externallyManaged)) {
@@ -545,8 +564,11 @@ export function createOAuthManager(adapter: OAuthManagerAdapter) {
           if (!refreshedCredentials) {
             return null;
           }
-          store.profiles[params.profileId] = refreshedCredentials;
-          saveAuthProfileStore(store, ownerAgentDir);
+          await saveOAuthCredentialIntoStore({
+            agentDir: ownerAgentDir,
+            profileId: params.profileId,
+            credential: refreshedCredentials,
+          });
           if (ownerAgentDir) {
             const mainStoreKey = resolveAuthProfileStoreKey(undefined);
             if (mainStoreKey !== ownerStoreKey) {

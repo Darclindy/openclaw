@@ -20,6 +20,7 @@ import {
   clearRuntimeAuthProfileStoreSnapshots,
   ensureAuthProfileStore,
   ensureAuthProfileStoreWithoutExternalProfiles,
+  loadAuthProfileStoreWithoutExternalProfiles,
   saveAuthProfileStore,
 } from "./store.js";
 import type { AuthProfileStore, OAuthCredential } from "./types.js";
@@ -662,5 +663,99 @@ describe("createOAuthManager", () => {
       expect(surfacedCauseMessage).not.toContain("external-attempt-refresh");
       expect(surfacedCauseMessage).not.toContain("external-attempt-id-token");
     }
+  });
+
+  it("merges concurrent refresh writes for different profiles in the same store", async () => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "oauth-manager-refresh-merge-"));
+    tempDirs.push(tempRoot);
+    process.env.OPENCLAW_STATE_DIR = tempRoot;
+    const agentDir = path.join(tempRoot, "agents", "main", "agent");
+    process.env.OPENCLAW_AGENT_DIR = agentDir;
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    await fs.mkdir(agentDir, { recursive: true });
+
+    const firstProfileId = "openai-codex:first";
+    const secondProfileId = "openai-codex:second";
+    const firstCredential = createCredential({
+      access: "first-old-access",
+      refresh: "first-old-refresh",
+      expires: Date.now() - 60_000,
+    });
+    const secondCredential = createCredential({
+      access: "second-old-access",
+      refresh: "second-old-refresh",
+      expires: Date.now() - 60_000,
+    });
+    saveAuthProfileStore(
+      {
+        version: 1,
+        profiles: {
+          [firstProfileId]: firstCredential,
+          [secondProfileId]: secondCredential,
+        },
+      },
+      agentDir,
+      { filterExternalAuthProfiles: false },
+    );
+
+    let resolveBothStarted!: () => void;
+    const bothStarted = new Promise<void>((resolve) => {
+      resolveBothStarted = resolve;
+    });
+    let releaseRefreshes!: () => void;
+    const refreshGate = new Promise<void>((resolve) => {
+      releaseRefreshes = resolve;
+    });
+    const refreshInputs: string[] = [];
+    const manager = createOAuthManager({
+      buildApiKey: async (_provider, credential) => credential.access,
+      refreshCredential: vi.fn(async (credential) => {
+        refreshInputs.push(credential.access);
+        if (refreshInputs.length === 2) {
+          resolveBothStarted();
+        }
+        await refreshGate;
+        return {
+          access: `${credential.access}-rotated`,
+          refresh: `${credential.refresh}-rotated`,
+          expires: Date.now() + 60_000,
+        };
+      }),
+      readBootstrapCredential: () => null,
+      isRefreshTokenReusedError: () => false,
+    });
+
+    const firstRefresh = manager.resolveOAuthAccess({
+      store: ensureAuthProfileStoreWithoutExternalProfiles(agentDir, {
+        allowKeychainPrompt: false,
+      }),
+      profileId: firstProfileId,
+      credential: firstCredential,
+      agentDir,
+      forceRefresh: true,
+    });
+    const secondRefresh = manager.resolveOAuthAccess({
+      store: ensureAuthProfileStoreWithoutExternalProfiles(agentDir, {
+        allowKeychainPrompt: false,
+      }),
+      profileId: secondProfileId,
+      credential: secondCredential,
+      agentDir,
+      forceRefresh: true,
+    });
+
+    await bothStarted;
+    releaseRefreshes();
+    await Promise.all([firstRefresh, secondRefresh]);
+
+    const saved = loadAuthProfileStoreWithoutExternalProfiles(agentDir);
+    expect(saved.profiles[firstProfileId]).toMatchObject({
+      access: "first-old-access-rotated",
+      refresh: "first-old-refresh-rotated",
+    });
+    expect(saved.profiles[secondProfileId]).toMatchObject({
+      access: "second-old-access-rotated",
+      refresh: "second-old-refresh-rotated",
+    });
   });
 });
