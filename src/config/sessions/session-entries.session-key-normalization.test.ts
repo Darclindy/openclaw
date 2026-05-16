@@ -171,6 +171,28 @@ describe("SQLite session row key normalization", () => {
     expect(store[CANONICAL_KEY]?.updatedAt).toBeGreaterThan(100);
   });
 
+  it("patches and migrates legacy direct mixed-case rows", async () => {
+    seedRawSessionEntry(MIXED_CASE_KEY, {
+      sessionId: "legacy-session",
+      updatedAt: 1,
+      chatType: "direct",
+      channel: "webchat",
+    });
+
+    await patchSessionEntry({
+      agentId: "main",
+      sessionKey: MIXED_CASE_KEY,
+      update: () => ({ updatedAt: 200, modelOverride: "gpt-5.5" }),
+    });
+
+    const store = readMainSessionRows();
+    expect(Object.keys(store)).toEqual([CANONICAL_KEY]);
+    expect(store[CANONICAL_KEY]).toMatchObject({
+      sessionId: "legacy-session",
+      modelOverride: "gpt-5.5",
+    });
+  });
+
   it("does not migrate legacy mixed-case entries during runtime updates", async () => {
     seedRawSessionEntry(MIXED_CASE_KEY, {
       sessionId: "legacy-session",

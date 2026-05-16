@@ -100,6 +100,24 @@ export function moveSessionEntryKey(
   return moveSqliteSessionEntryKey(options);
 }
 
+function resolvePatchSessionEntry(options: SessionEntryRowOptions & { sessionKey: string }): {
+  entry?: SessionEntry;
+  entryKey: string;
+  normalizedKey: string;
+} {
+  const trimmedKey = options.sessionKey.trim();
+  const normalizedKey = normalizeSessionRowKey(trimmedKey);
+  const canonical = readSqliteSessionEntry({ ...options, sessionKey: normalizedKey });
+  if (canonical) {
+    return { entry: canonical, entryKey: normalizedKey, normalizedKey };
+  }
+  const direct =
+    trimmedKey === normalizedKey
+      ? undefined
+      : readSqliteSessionEntry({ ...options, sessionKey: trimmedKey });
+  return { entry: direct, entryKey: direct ? trimmedKey : normalizedKey, normalizedKey };
+}
+
 export async function patchSessionEntry(
   options: SessionEntryRowOptions & {
     sessionKey: string;
@@ -110,10 +128,10 @@ export async function patchSessionEntry(
   },
 ): Promise<SessionEntry | null> {
   for (let attempt = 0; attempt < SESSION_ROW_PATCH_RETRY_LIMIT; attempt += 1) {
-    const stored = getSessionEntry(options);
-    const expected = stored ? structuredClone(stored) : null;
-    const existing = stored
-      ? structuredClone(stored)
+    const resolved = resolvePatchSessionEntry(options);
+    const expected = resolved.entry ? structuredClone(resolved.entry) : null;
+    const existing = resolved.entry
+      ? structuredClone(resolved.entry)
       : options.fallbackEntry
         ? structuredClone(options.fallbackEntry)
         : undefined;
@@ -125,13 +143,17 @@ export async function patchSessionEntry(
       return existing;
     }
     const next = mergeSessionEntry(existing, patch);
-    const normalizedKey = normalizeSessionRowKey(options.sessionKey);
+    const expectedEntries = new Map([[resolved.entryKey, expected]]);
+    if (resolved.entryKey !== resolved.normalizedKey) {
+      expectedEntries.set(resolved.normalizedKey, null);
+    }
     const applied = applySqliteSessionEntriesPatch({
       agentId: options.agentId,
       env: options.env,
       path: options.path,
-      upsertEntries: { [normalizedKey]: next },
-      expectedEntries: new Map([[normalizedKey, expected]]),
+      upsertEntries: { [resolved.normalizedKey]: next },
+      expectedEntries,
+      deleteEntries: resolved.entryKey === resolved.normalizedKey ? undefined : [resolved.entryKey],
     });
     if (applied) {
       return next;

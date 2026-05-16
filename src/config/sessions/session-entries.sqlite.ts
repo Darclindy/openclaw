@@ -41,6 +41,7 @@ export type MoveSqliteSessionEntryKeyOptions = SqliteSessionEntriesOptions & {
 export type ApplySqliteSessionEntriesPatchOptions = SqliteSessionEntriesOptions & {
   upsertEntries?: Readonly<Record<string, SessionEntry>>;
   expectedEntries?: ReadonlyMap<string, SessionEntry | null>;
+  deleteEntries?: readonly string[];
 };
 
 export type SqliteSessionDeliveryContext = {
@@ -764,6 +765,23 @@ export function applySqliteSessionEntriesPatch(
         }),
       ),
     );
+    for (const sessionKey of options.deleteEntries ?? []) {
+      if (Object.prototype.hasOwnProperty.call(upsertEntries, sessionKey)) {
+        continue;
+      }
+      executeSqliteQuerySync(
+        database.db,
+        getNodeSqliteKysely<SessionEntriesDatabase>(database.db)
+          .deleteFrom("session_entries")
+          .where("session_key", "=", sessionKey),
+      );
+      executeSqliteQuerySync(
+        database.db,
+        getNodeSqliteKysely<SessionEntriesDatabase>(database.db)
+          .deleteFrom("session_routes")
+          .where("session_key", "=", sessionKey),
+      );
+    }
     return true;
   }, options);
 }
