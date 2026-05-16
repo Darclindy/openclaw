@@ -402,6 +402,31 @@ describe("SQLite session transcript store", () => {
     ]);
   });
 
+  it("lists registered transcript scopes with their source database path", () => {
+    const stateDir = createTempDir();
+    const env = { OPENCLAW_STATE_DIR: stateDir };
+    const customPath = path.join(stateDir, "custom-agent.sqlite");
+
+    appendSqliteSessionTranscriptEvent({
+      env,
+      path: customPath,
+      agentId: "worker-1",
+      sessionId: "session-1",
+      event: { type: "message", id: "m1" },
+      now: () => 100,
+    });
+
+    expect(listSqliteSessionTranscripts({ env })).toEqual([
+      {
+        agentId: "worker-1",
+        path: customPath,
+        sessionId: "session-1",
+        updatedAt: 100,
+        eventCount: 1,
+      },
+    ]);
+  });
+
   it("deletes transcript snapshots with the transcript", () => {
     const stateDir = createTempDir();
     const env = { OPENCLAW_STATE_DIR: stateDir };

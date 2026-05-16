@@ -451,11 +451,9 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
 
   it("projects thread-bootstrap context only once for a matching context-engine epoch", async () => {
     const info = vi.spyOn(embeddedAgentLog, "info").mockImplementation(() => undefined);
-    const sessionFile = path.join(tempDir, "session.jsonl");
+    const sessionId = "session-1";
     const workspaceDir = path.join(tempDir, "workspace");
-    SessionManager.open(sessionFile).appendMessage(
-      assistantMessage("bootstrap-only context", Date.now()) as never,
-    );
+    seedSessionTranscript(sessionId, [assistantMessage("bootstrap-only context", Date.now())]);
     const contextEngine = createContextEngine({
       assemble: vi.fn(async ({ messages, prompt }) => ({
         messages: [...messages, userMessage(prompt ?? "", 10)],
@@ -465,7 +463,7 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
       })),
     });
     const firstHarness = createStartedThreadHarness();
-    const firstParams = createParams(sessionFile, workspaceDir);
+    const firstParams = createParams(sessionId, workspaceDir);
     firstParams.contextEngine = contextEngine;
 
     const firstRun = runCodexAppServerAttempt(firstParams);
@@ -475,7 +473,10 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
     await firstHarness.completeTurn();
     await firstRun;
 
-    const savedBinding = await readCodexAppServerBinding(sessionFile);
+    const savedBinding = await readCodexAppServerBinding({
+      sessionKey: `agent:main:${sessionId}`,
+      sessionId,
+    });
     expect(savedBinding?.contextEngine?.projection).toEqual({
       schemaVersion: 1,
       mode: "thread_bootstrap",
@@ -538,24 +539,30 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
 
   it("starts a fresh Codex thread and reprojects when context-engine epoch changes", async () => {
     const info = vi.spyOn(embeddedAgentLog, "info").mockImplementation(() => undefined);
-    const sessionFile = path.join(tempDir, "session.jsonl");
+    const sessionId = "session-1";
     const workspaceDir = path.join(tempDir, "workspace");
-    await writeCodexAppServerBinding(sessionFile, {
-      threadId: "thread-old",
-      cwd: workspaceDir,
-      dynamicToolsFingerprint: "[]",
-      contextEngine: {
-        schemaVersion: 1,
-        engineId: "lossless-claw",
-        policyFingerprint:
-          '{"schemaVersion":1,"engineId":"lossless-claw","ownsCompaction":true,"projectionMaxChars":24000}',
-        projection: {
+    await writeCodexAppServerBinding(
+      {
+        sessionKey: `agent:main:${sessionId}`,
+        sessionId,
+      },
+      {
+        threadId: "thread-old",
+        cwd: workspaceDir,
+        dynamicToolsFingerprint: "[]",
+        contextEngine: {
           schemaVersion: 1,
-          mode: "thread_bootstrap",
-          epoch: "epoch-old",
+          engineId: "lossless-claw",
+          policyFingerprint:
+            '{"schemaVersion":1,"engineId":"lossless-claw","ownsCompaction":true,"projectionMaxChars":24000}',
+          projection: {
+            schemaVersion: 1,
+            mode: "thread_bootstrap",
+            epoch: "epoch-old",
+          },
         },
       },
-    });
+    );
     const contextEngine = createContextEngine({
       assemble: vi.fn(async ({ prompt }) => ({
         messages: [assistantMessage("new epoch context", 10), userMessage(prompt ?? "", 11)],
@@ -570,7 +577,7 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
       }
       return undefined;
     });
-    const params = createParams(sessionFile, workspaceDir);
+    const params = createParams(sessionId, workspaceDir);
     params.contextEngine = contextEngine;
 
     const run = runCodexAppServerAttempt(params);
@@ -597,7 +604,10 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
     });
     await run;
 
-    const savedBinding = await readCodexAppServerBinding(sessionFile);
+    const savedBinding = await readCodexAppServerBinding({
+      sessionKey: `agent:main:${sessionId}`,
+      sessionId,
+    });
     expect(savedBinding?.threadId).toBe("thread-new");
     expect(savedBinding?.contextEngine?.projection?.epoch).toBe("epoch-new");
     expect(info).toHaveBeenCalledWith(
@@ -754,34 +764,38 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
   });
 
   it("retries a resumed context-engine thread on a fresh Codex thread after early context overflow", async () => {
-    const sessionFile = path.join(tempDir, "session.jsonl");
-    const successorFile = path.join(tempDir, "session.compacted.jsonl");
+    const sessionId = "session-1";
+    const successorSessionId = "session-1-compacted";
     const workspaceDir = path.join(tempDir, "workspace");
-    SessionManager.open(sessionFile).appendMessage(
-      assistantMessage("pre-compaction context", Date.now()) as never,
-    );
-    await writeCodexAppServerBinding(sessionFile, {
-      threadId: "thread-old",
-      cwd: workspaceDir,
-      dynamicToolsFingerprint: "[]",
-      contextEngine: {
-        schemaVersion: 1,
-        engineId: "lossless-claw",
-        policyFingerprint:
-          '{"schemaVersion":1,"engineId":"lossless-claw","ownsCompaction":true,"contextTokenBudget":400000,"projectionMaxChars":1000000}',
-        projection: {
+    seedSessionTranscript(sessionId, [assistantMessage("pre-compaction context", Date.now())]);
+    await writeCodexAppServerBinding(
+      {
+        sessionKey: `agent:main:${sessionId}`,
+        sessionId,
+      },
+      {
+        threadId: "thread-old",
+        cwd: workspaceDir,
+        dynamicToolsFingerprint: "[]",
+        contextEngine: {
           schemaVersion: 1,
-          mode: "thread_bootstrap",
-          epoch: "epoch-before",
+          engineId: "lossless-claw",
+          policyFingerprint:
+            '{"schemaVersion":1,"engineId":"lossless-claw","ownsCompaction":true,"contextTokenBudget":400000,"projectionMaxChars":1000000}',
+          projection: {
+            schemaVersion: 1,
+            mode: "thread_bootstrap",
+            epoch: "epoch-before",
+          },
         },
       },
-    });
+    );
     let epoch = "epoch-before";
     const compact = vi.fn(async () => {
       epoch = "epoch-after";
-      SessionManager.open(successorFile).appendMessage(
-        assistantMessage("successor compacted context", Date.now()) as never,
-      );
+      seedSessionTranscript(successorSessionId, [
+        assistantMessage("successor compacted context", Date.now()),
+      ]);
       return {
         ok: true,
         compacted: true,
@@ -789,8 +803,7 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
           summary: "summary",
           firstKeptEntryId: "entry-1",
           tokensBefore: 10,
-          sessionId: "session-1-compacted",
-          sessionFile: successorFile,
+          sessionId: successorSessionId,
         },
       };
     });
@@ -823,7 +836,7 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
       }
       return undefined;
     });
-    const params = createParams(sessionFile, workspaceDir);
+    const params = createParams(sessionId, workspaceDir);
     params.contextEngine = contextEngine;
     params.contextTokenBudget = 400_000;
 
@@ -855,7 +868,7 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
       expect.objectContaining({
         sessionId: "session-1",
         sessionKey: "agent:main:session-1",
-        sessionFile,
+        transcriptScope: { agentId: "main", sessionId },
         tokenBudget: 400_000,
         currentTokenCount: 400_000,
         compactionTarget: "threshold",
@@ -878,7 +891,10 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
     const retryInputText = getRequestInputTextAt(harness, -1);
     expect(retryInputText).toContain("successor compacted context");
     expect(retryInputText).not.toContain("pre-compaction context");
-    const savedBinding = await readCodexAppServerBinding(successorFile);
+    const savedBinding = await readCodexAppServerBinding({
+      sessionKey: `agent:main:${sessionId}`,
+      sessionId: successorSessionId,
+    });
     expect(savedBinding?.threadId).toBe("thread-fresh");
     expect(savedBinding?.contextEngine?.engineId).toBe("lossless-claw");
     expect(savedBinding?.contextEngine?.projection?.epoch).toBe("epoch-after");

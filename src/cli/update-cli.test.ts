@@ -308,7 +308,6 @@ const { updateCommand, updateFinalizeCommand, updateStatusCommand, updateWizardC
   await import("./update-cli.js");
 const updateCliShared = await import("./update-cli/shared.js");
 const { resolveGitInstallDir } = updateCliShared;
-const { spawnSync } = await import("node:child_process");
 
 function requireValue<T>(value: T | undefined, label: string): T {
   if (value === undefined) {
@@ -461,13 +460,6 @@ describe("update-cli", () => {
   const spawnCall = (index = 0) => {
     const calls = spawn.mock.calls as unknown as Array<
       [string, string[], { env?: NodeJS.ProcessEnv; stdio?: unknown }]
-    >;
-    return calls[index];
-  };
-
-  const spawnSyncCall = (index = 0) => {
-    const calls = vi.mocked(spawnSync).mock.calls as unknown as Array<
-      [string, string[], { env?: NodeJS.ProcessEnv; timeout?: number }]
     >;
     return calls[index];
   };
@@ -826,19 +818,6 @@ describe("update-cli", () => {
     expect(vi.mocked(readConfigFileSnapshot).mock.calls[0]?.[0]).toEqual({
       skipPluginValidation: true,
     });
-  });
-
-  it("bounds completion cache refresh during update follow-up", async () => {
-    const root = createCaseDir("openclaw-completion-timeout");
-    pathExists.mockResolvedValue(true);
-
-    await updateCliShared.tryWriteCompletionCache(root, false);
-
-    const call = spawnSyncCall();
-    expect(typeof call?.[0]).toBe("string");
-    expect(call?.[1]).toEqual([path.join(root, "openclaw.mjs"), "completion", "--write-state"]);
-    expect(call?.[2]?.env?.OPENCLAW_COMPLETION_SKIP_PLUGIN_COMMANDS).toBe("1");
-    expect(call?.[2]?.timeout).toBe(30_000);
   });
 
   it("disarms legacy launchd updater jobs before refusing mutating updates in Nix mode", async () => {

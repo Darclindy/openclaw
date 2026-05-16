@@ -512,6 +512,7 @@ export function listSqliteSessionTranscripts(
         return [
           {
             agentId: agentDatabase.agentId,
+            ...(agentDatabase.path ? { path: agentDatabase.path } : {}),
             sessionId: normalizeSessionId(record.session_id),
             updatedAt: Number.isFinite(updatedAt) ? updatedAt : 0,
             eventCount: Number.isFinite(eventCount) ? eventCount : 0,

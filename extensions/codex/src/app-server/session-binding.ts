@@ -33,12 +33,6 @@ export type CodexAppServerAuthProfileLookup = {
   config?: ProviderAuthAliasConfig;
 };
 
-export type CodexAppServerContextEngineBinding = {
-  schemaVersion: 1;
-  engineId: string;
-  policyFingerprint: string;
-};
-
 export type CodexAppServerThreadBinding = {
   schemaVersion: 1;
   threadId: string;

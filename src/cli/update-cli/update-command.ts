@@ -2874,12 +2874,6 @@ export async function updateCommand(opts: UpdateCommandOptions): Promise<void> {
   }
 
   let configSnapshot = await readConfigFileSnapshot({ skipPluginValidation: true });
-  if (opts.channel && !opts.dryRun && !configSnapshot.valid) {
-    configSnapshot = await maybeRepairLegacyConfigForUpdateChannel({
-      configSnapshot,
-      jsonMode: Boolean(opts.json),
-    });
-  }
   const storedChannel = configSnapshot.valid
     ? normalizeUpdateChannel(configSnapshot.config.update?.channel)
     : null;
