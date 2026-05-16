@@ -611,6 +611,39 @@ describe("command authorization planner corpus", () => {
     },
   );
 
+  it("preserves nested semantic shell wrappers instead of leaf planning payloads", async () => {
+    const command = `sh -c 'sh -e -c "false; rm marker"'`;
+    const plan = await planCommandForAuthorization({
+      dialect: "posix-shell",
+      command,
+    });
+
+    expect(plan.kind).toBe("analyzable");
+    if (plan.kind !== "analyzable") {
+      throw new Error(`expected analyzable plan, got ${plan.kind}`);
+    }
+    expect(plan.units).toEqual([
+      expect.objectContaining({
+        raw: command,
+        argv: ["sh", "-c", 'sh -e -c "false; rm marker"'],
+        promptOnlyReasons: [],
+      }),
+    ]);
+
+    const analysis = createExecCommandAnalysisFromAuthorizationPlan({ plan });
+    if (!analysis) {
+      throw new Error("expected analysis");
+    }
+    const rendered = renderAuthorizationShellCommand({
+      plan,
+      segments: analysis.segments,
+      mode: "enforced",
+    });
+    expect(rendered.ok).toBe(true);
+    expect(rendered.command).toContain(`'sh -e -c "false; rm marker"'`);
+    expect(rendered.command).not.toContain("/rm");
+  });
+
   it.each(["sh -c './tool'", "sh -c 'true; ./tool'", "sh -c 'env ./tool'"])(
     "makes relative shell wrapper payload executables prompt-only: %s",
     async (command) => {

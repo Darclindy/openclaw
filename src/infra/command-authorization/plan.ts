@@ -268,7 +268,14 @@ function selectPlanningSteps(explanation: CommandExplanation): CommandStep[] {
         stepContainsSpan(step, nestedStep.span.startIndex, nestedStep.span.endIndex),
     );
     const leafWrapperPayloadSteps = leafCommandSteps(wrapperPayloadSteps);
-    if (shouldPlanWrapperPayload(step, leafWrapperPayloadSteps, explanation.risks)) {
+    if (
+      shouldPlanWrapperPayload({
+        step,
+        wrapperPayloadSteps,
+        leafWrapperPayloadSteps,
+        risks: explanation.risks,
+      })
+    ) {
       selectedSteps.push(...leafWrapperPayloadSteps);
       continue;
     }
@@ -288,29 +295,38 @@ function leafCommandSteps(steps: readonly CommandStep[]): CommandStep[] {
   );
 }
 
-function shouldPlanWrapperPayload(
-  step: CommandStep,
-  wrapperPayloadSteps: readonly CommandStep[],
-  risks: readonly CommandRisk[],
-): boolean {
-  if (wrapperPayloadSteps.length === 0) {
+function shouldPlanWrapperPayload(params: {
+  step: CommandStep;
+  wrapperPayloadSteps: readonly CommandStep[];
+  leafWrapperPayloadSteps: readonly CommandStep[];
+  risks: readonly CommandRisk[];
+}): boolean {
+  if (params.leafWrapperPayloadSteps.length === 0) {
     return false;
   }
-  const hasShellWrapperRisk = risks.some(
+  if (
+    hasNonTransparentNestedWrapperPayload(
+      params.wrapperPayloadSteps,
+      params.leafWrapperPayloadSteps,
+    )
+  ) {
+    return false;
+  }
+  const hasShellWrapperRisk = params.risks.some(
     (risk) =>
       (risk.kind === "shell-wrapper" || risk.kind === "shell-wrapper-through-carrier") &&
-      spansOverlap(step.span.startIndex, step.span.endIndex, risk),
+      spansOverlap(params.step.span.startIndex, params.step.span.endIndex, risk),
   );
   if (!hasShellWrapperRisk) {
     return false;
   }
-  if (hasLeadingVariableAssignment(step)) {
+  if (hasLeadingVariableAssignment(params.step)) {
     return false;
   }
-  if (hasDynamicWrapperPayloadArgument(step, wrapperPayloadSteps, risks)) {
+  if (hasDynamicWrapperPayloadArgument(params.step, params.leafWrapperPayloadSteps, params.risks)) {
     return false;
   }
-  const trustPlan = resolveExecWrapperTrustPlan(step.argv);
+  const trustPlan = resolveExecWrapperTrustPlan(params.step.argv);
   if (trustPlan.policyBlocked) {
     return false;
   }
@@ -318,13 +334,27 @@ function shouldPlanWrapperPayload(
     return false;
   }
   const inlineCommand =
-    extractBindableShellWrapperInlineCommand(step.argv) ?? trustPlan.shellInlineCommand;
+    extractBindableShellWrapperInlineCommand(params.step.argv) ?? trustPlan.shellInlineCommand;
   if (!inlineCommand || isDirectShellPositionalCarrierInvocation(inlineCommand)) {
     return false;
   }
-  return !wrapperPayloadSteps.some((payloadStep) =>
+  return !params.leafWrapperPayloadSteps.some((payloadStep) =>
     hasRelativeExecutableThroughWrapperPayloadArgv(payloadStep.argv),
   );
+}
+
+function hasNonTransparentNestedWrapperPayload(
+  wrapperPayloadSteps: readonly CommandStep[],
+  leafWrapperPayloadSteps: readonly CommandStep[],
+): boolean {
+  const leafSteps = new Set(leafWrapperPayloadSteps);
+  return wrapperPayloadSteps.some((payloadStep) => {
+    if (leafSteps.has(payloadStep)) {
+      return false;
+    }
+    const trustPlan = resolveExecWrapperTrustPlan(payloadStep.argv);
+    return trustPlan.policyBlocked || hasNonTransparentPosixShellWrapperOption(trustPlan.argv);
+  });
 }
 
 function hasNonTransparentPosixShellWrapperOption(argv: readonly string[]): boolean {
@@ -1360,9 +1390,15 @@ function hasMixedWrapperPayloadGroupingRisk(explanation: CommandExplanation): bo
         nestedStep.context === "wrapper-payload" &&
         stepContainsSpan(step, nestedStep.span.startIndex, nestedStep.span.endIndex),
     );
+    const leafWrapperPayloadSteps = leafCommandSteps(wrapperPayloadSteps);
     if (
       wrapperPayloadSteps.length <= 1 ||
-      !shouldPlanWrapperPayload(step, wrapperPayloadSteps, explanation.risks)
+      !shouldPlanWrapperPayload({
+        step,
+        wrapperPayloadSteps,
+        leafWrapperPayloadSteps,
+        risks: explanation.risks,
+      })
     ) {
       return false;
     }
