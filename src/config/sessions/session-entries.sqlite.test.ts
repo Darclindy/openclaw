@@ -594,6 +594,57 @@ describe("SQLite session row backend", () => {
     });
   });
 
+  it("clears linked conversations when a session entry drops its delivery route", () => {
+    const stateDir = createTempDir();
+    const env = { OPENCLAW_STATE_DIR: stateDir };
+
+    upsertSessionEntry({
+      agentId: "ops",
+      env,
+      sessionKey: "discord:ops",
+      entry: {
+        sessionId: "ops-session",
+        updatedAt: 100,
+        chatType: "direct",
+        channel: "discord",
+        deliveryContext: {
+          channel: "discord",
+          to: "U1",
+          accountId: "work",
+        },
+      },
+    });
+    expect(
+      readSqliteSessionDeliveryContext({
+        agentId: "ops",
+        env,
+        sessionKey: "discord:ops",
+      }),
+    ).toMatchObject({
+      channel: "discord",
+      to: "U1",
+      accountId: "work",
+    });
+
+    upsertSessionEntry({
+      agentId: "ops",
+      env,
+      sessionKey: "discord:ops",
+      entry: {
+        sessionId: "ops-session",
+        updatedAt: 200,
+      },
+    });
+
+    expect(
+      readSqliteSessionDeliveryContext({
+        agentId: "ops",
+        env,
+        sessionKey: "discord:ops",
+      }),
+    ).toBeUndefined();
+  });
+
   it("records inbound metadata in the provided state directory", async () => {
     const stateDir = createTempDir();
     const env = { OPENCLAW_STATE_DIR: stateDir };

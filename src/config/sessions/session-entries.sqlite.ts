@@ -461,6 +461,10 @@ function demoteStalePrimarySessionConversations(
   for (const row of rows) {
     const primaryConversationId = row.conversations[0]?.conversationId;
     if (!primaryConversationId) {
+      executeSqliteQuerySync(
+        database.db,
+        db.deleteFrom("session_conversations").where("session_id", "=", row.session.session_id),
+      );
       continue;
     }
     const stalePrimaryRows = executeSqliteQuerySync(
