@@ -336,7 +336,6 @@ describe("gateway session utils", () => {
   test("session rows ignore malformed compaction checkpoints", () => {
     const row = buildGatewaySessionRow({
       cfg: createModelDefaultsConfig({ primary: "openai/gpt-5.4" }),
-      storePath: "",
       store: {},
       key: "agent:main:main",
       entry: {

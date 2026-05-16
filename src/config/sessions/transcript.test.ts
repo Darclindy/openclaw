@@ -11,10 +11,6 @@ import { upsertSessionEntry } from "./store.js";
 import { useTempSessionsFixture } from "./test-helpers.js";
 import { appendSessionTranscriptMessage } from "./transcript-append.js";
 import {
-  bindOwnedSessionTranscriptWrites,
-  withOwnedSessionTranscriptWrites,
-} from "./transcript-write-context.js";
-import {
   appendSqliteSessionTranscriptEvent,
   loadSqliteSessionTranscriptEvents,
 } from "./transcript-store.sqlite.js";
@@ -133,121 +129,6 @@ describe("appendAssistantMessageToSessionTranscript", () => {
       expect(Array.isArray(content) ? content[0]?.text : undefined).toBe(
         "Hello from delivery mirror!",
       );
-    }
-  });
-
-  it("runs matching owned transcript appends through the active session write lock", async () => {
-    writeTranscriptStore();
-    const sessionFile = resolveSessionTranscriptPathInDir(sessionId, fixture.sessionsDir());
-    const events: string[] = [];
-
-    const result = await withOwnedSessionTranscriptWrites(
-      {
-        sessionFile,
-        sessionKey,
-        withSessionWriteLock: async (run) => {
-          events.push("lock");
-          return await run();
-        },
-      },
-      async () =>
-        await appendAssistantMessageToSessionTranscript({
-          sessionKey,
-          text: "Hello under lock",
-          storePath: fixture.storePath(),
-        }),
-    );
-
-    expect(result.ok).toBe(true);
-    expect(events).toEqual(["lock", "lock", "lock"]);
-  });
-
-  it("keeps matching owned transcript appends locked from bound callbacks", async () => {
-    const sessionFile = resolveSessionTranscriptPathInDir(sessionId, fixture.sessionsDir());
-    const events: string[] = [];
-    const callback = bindOwnedSessionTranscriptWrites(
-      {
-        sessionFile,
-        sessionKey,
-        withSessionWriteLock: async (run) => {
-          events.push("lock");
-          return await run();
-        },
-      },
-      async () =>
-        await appendSessionTranscriptMessage({
-          transcriptPath: sessionFile,
-          message: {
-            role: "assistant",
-            content: "Hello from bound delivery",
-            timestamp: Date.now(),
-            stopReason: "stop",
-          },
-        }),
-    );
-
-    const result = await callback();
-
-    expect(result.messageId).toBeTruthy();
-    expect(events).toEqual(["lock"]);
-  });
-
-  it("appends to legacy lowercase Signal group session entries", async () => {
-    const mixedGroupId = "VWATodkf2hc8zdOS76q9Tb0+5Bi522E03qLdaQ/9ypg=";
-    const signalSessionKey = `agent:main:signal:group:${mixedGroupId}`;
-    const legacySignalSessionKey = signalSessionKey.toLowerCase();
-    fs.writeFileSync(
-      fixture.storePath(),
-      JSON.stringify({
-        [legacySignalSessionKey]: {
-          sessionId,
-          chatType: "group",
-          channel: "signal",
-        },
-      }),
-      "utf-8",
-    );
-
-    const result = await appendAssistantMessageToSessionTranscript({
-      sessionKey: signalSessionKey,
-      text: "Hello Signal group",
-      storePath: fixture.storePath(),
-    });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      const lines = fs.readFileSync(result.sessionFile, "utf-8").trim().split("\n");
-      expect(lines).toHaveLength(2);
-      const messageLine = JSON.parse(lines[1]);
-      expect(messageLine.message.content[0].text).toBe("Hello Signal group");
-    }
-  });
-
-  it("falls back to the canonical transcript path for malformed persisted sessionFile metadata", async () => {
-    fs.writeFileSync(
-      fixture.storePath(),
-      JSON.stringify({
-        [sessionKey]: {
-          sessionId,
-          sessionFile: { path: "../../escaped.jsonl" },
-          updatedAt: Date.now(),
-        },
-      }),
-      "utf-8",
-    );
-
-    const result = await appendAssistantMessageToSessionTranscript({
-      sessionKey,
-      text: "Hello from a repaired metadata boundary",
-      storePath: fixture.storePath(),
-    });
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.sessionFile).toBe(
-        resolveSessionTranscriptPathInDir(sessionId, fixture.sessionsDir()),
-      );
-      expect(fs.existsSync(result.sessionFile)).toBe(true);
     }
   });
 

@@ -50,6 +50,7 @@ import {
   resolveAgentSessionDatabaseTargetsSync,
   resolveAgentMainSessionKey,
   resolveFreshSessionTotalTokens,
+  type SessionCompactionCheckpointReason,
   type SessionEntry,
   type SessionScope,
 } from "../config/sessions.js";
@@ -246,11 +247,45 @@ function resolveNonNegativeNumber(value: number | null | undefined): number | un
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
+const VALID_COMPACTION_CHECKPOINT_REASONS = new Set<SessionCompactionCheckpointReason>([
+  "manual",
+  "auto-threshold",
+  "overflow-retry",
+  "timeout-retry",
+]);
+
+function isSessionCompactionCheckpoint(
+  checkpoint: unknown,
+): checkpoint is NonNullable<SessionEntry["compactionCheckpoints"]>[number] {
+  if (!checkpoint || typeof checkpoint !== "object" || Array.isArray(checkpoint)) {
+    return false;
+  }
+  const candidate = checkpoint as Partial<
+    NonNullable<SessionEntry["compactionCheckpoints"]>[number]
+  >;
+  return (
+    typeof candidate.checkpointId === "string" &&
+    candidate.checkpointId.length > 0 &&
+    typeof candidate.createdAt === "number" &&
+    Number.isFinite(candidate.createdAt) &&
+    typeof candidate.reason === "string" &&
+    VALID_COMPACTION_CHECKPOINT_REASONS.has(candidate.reason as SessionCompactionCheckpointReason)
+  );
+}
+
+function normalizedCompactionCheckpoints(
+  entry?: Pick<SessionEntry, "compactionCheckpoints"> | null,
+): NonNullable<SessionEntry["compactionCheckpoints"]> {
+  return Array.isArray(entry?.compactionCheckpoints)
+    ? entry.compactionCheckpoints.filter(isSessionCompactionCheckpoint)
+    : [];
+}
+
 function resolveLatestCompactionCheckpoint(
   entry?: Pick<SessionEntry, "compactionCheckpoints"> | null,
 ): NonNullable<SessionEntry["compactionCheckpoints"]>[number] | undefined {
-  const checkpoints = entry?.compactionCheckpoints;
-  if (!Array.isArray(checkpoints) || checkpoints.length === 0) {
+  const checkpoints = normalizedCompactionCheckpoints(entry);
+  if (checkpoints.length === 0) {
     return undefined;
   }
   return checkpoints.reduce((latest, checkpoint) =>
@@ -1566,7 +1601,7 @@ export function buildGatewaySessionRow(params: {
     lastTo: deliveryFields.lastTo,
     lastAccountId: deliveryFields.lastAccountId,
     lastThreadId: deliveryFields.lastThreadId,
-    compactionCheckpointCount: entry?.compactionCheckpoints?.length,
+    compactionCheckpointCount: normalizedCompactionCheckpoints(entry).length,
     latestCompactionCheckpoint,
     pluginExtensions: pluginExtensions.length > 0 ? pluginExtensions : undefined,
   };

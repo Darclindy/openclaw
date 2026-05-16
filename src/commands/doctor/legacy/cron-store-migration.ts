@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { parseAbsoluteTimeMs } from "../../../cron/parse.js";
+import { getInvalidPersistedCronJobReason } from "../../../cron/persisted-shape.js";
 import { coerceFiniteScheduleNumber } from "../../../cron/schedule.js";
 import { inferLegacyName } from "../../../cron/service/normalize.js";
 import { normalizeCronStaggerMs, resolveDefaultCronStaggerMs } from "../../../cron/stagger.js";
@@ -26,7 +27,9 @@ type CronStoreIssueKey =
   | "legacyPayloadProvider"
   | "legacyTopLevelPayloadFields"
   | "legacyTopLevelDeliveryFields"
-  | "legacyDeliveryMode";
+  | "legacyDeliveryMode"
+  | "invalidSchedule"
+  | "invalidPayload";
 
 type CronStoreIssues = Partial<Record<CronStoreIssueKey, number>>;
 
@@ -234,6 +237,7 @@ export function normalizeStoredCronJobs(
   jobs: Array<Record<string, unknown>>,
 ): NormalizeCronStoreJobsResult {
   const issues: CronStoreIssues = {};
+  const keptJobs: Array<Record<string, unknown>> = [];
   let mutated = false;
 
   for (const raw of jobs) {
@@ -560,6 +564,29 @@ export function normalizeStoredCronJobs(
       raw.delivery = normalizedLegacy.delivery;
       mutated = true;
     }
+
+    const invalidPersistedReason = getInvalidPersistedCronJobReason(raw);
+    if (
+      invalidPersistedReason === "missing-schedule" ||
+      invalidPersistedReason === "invalid-schedule"
+    ) {
+      trackIssue("invalidSchedule");
+      mutated = true;
+      continue;
+    }
+    if (
+      invalidPersistedReason === "missing-payload" ||
+      invalidPersistedReason === "invalid-payload"
+    ) {
+      trackIssue("invalidPayload");
+      mutated = true;
+      continue;
+    }
+    keptJobs.push(raw);
+  }
+
+  if (keptJobs.length !== jobs.length) {
+    jobs.splice(0, jobs.length, ...keptJobs);
   }
 
   return { issues, jobs, mutated };
