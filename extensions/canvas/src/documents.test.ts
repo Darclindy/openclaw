@@ -265,6 +265,42 @@ describe("canvas documents", () => {
     expect(await readFile(localPath ?? "", "utf8")).toContain("<div>media</div>");
   });
 
+  it("materializes nested SQLite-backed assets without basename collisions", async () => {
+    const stateDir = await mkdtemp(path.join(tmpdir(), "openclaw-canvas-documents-"));
+    tempDirs.push(stateDir);
+    const workspaceDir = await mkdtemp(path.join(tmpdir(), "openclaw-canvas-documents-workspace-"));
+    tempDirs.push(workspaceDir);
+    await mkdir(path.join(workspaceDir, "images"), { recursive: true });
+    await mkdir(path.join(workspaceDir, "thumbnails"), { recursive: true });
+    await writeFile(path.join(workspaceDir, "images/logo.png"), "full-size", "utf8");
+    await writeFile(path.join(workspaceDir, "thumbnails/logo.png"), "thumbnail", "utf8");
+
+    const document = await createCanvasDocument(
+      {
+        kind: "html_bundle",
+        entrypoint: { type: "html", value: "<div>assets</div>" },
+        assets: [
+          { logicalPath: "images/logo.png", sourcePath: "images/logo.png" },
+          { logicalPath: "thumbnails/logo.png", sourcePath: "thumbnails/logo.png" },
+        ],
+      },
+      { stateDir, workspaceDir },
+    );
+
+    const imagePath = await resolveCanvasHttpPathToMaterializedLocalPath(
+      `/__openclaw__/canvas/documents/${document.id}/images/logo.png`,
+      { stateDir },
+    );
+    const thumbnailPath = await resolveCanvasHttpPathToMaterializedLocalPath(
+      `/__openclaw__/canvas/documents/${document.id}/thumbnails/logo.png`,
+      { stateDir },
+    );
+
+    expect(imagePath).not.toBe(thumbnailPath);
+    expect(await readFile(imagePath ?? "", "utf8")).toBe("full-size");
+    expect(await readFile(thumbnailPath ?? "", "utf8")).toBe("thumbnail");
+  });
+
   it("keeps explicit canvas roots file-backed", async () => {
     const stateDir = await mkdtemp(path.join(tmpdir(), "openclaw-canvas-documents-"));
     tempDirs.push(stateDir);

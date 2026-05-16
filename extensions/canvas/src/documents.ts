@@ -560,10 +560,9 @@ export async function resolveCanvasHttpPathToMaterializedLocalPath(
     entry.documentId,
   );
   await fs.mkdir(materializationDir, { recursive: true, mode: 0o700 });
-  const filePathOut = path.join(
-    materializationDir,
-    sanitizeUntrustedFileName(path.basename(entry.logicalPath), "asset"),
-  );
+  const normalizedLogicalPath = normalizeLogicalPath(entry.logicalPath);
+  const filePathOut = path.join(materializationDir, normalizedLogicalPath);
+  await fs.mkdir(path.dirname(filePathOut), { recursive: true, mode: 0o700 });
   await fs.writeFile(filePathOut, entry.blob);
   return filePathOut;
 }
