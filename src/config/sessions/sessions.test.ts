@@ -13,6 +13,7 @@ import {
   getSessionEntry,
   listSessionEntries,
   patchSessionEntry,
+  updateLastRoute,
   upsertSessionEntry,
 } from "./store.js";
 import { useTempSessionsFixture } from "./test-helpers.js";
@@ -264,6 +265,43 @@ describe("SQLite session row patch retries", () => {
 
     const store = readSessionEntries(agentId);
     expect(store[key]?.heartbeatTaskState?.counter).toBe(N);
+  });
+
+  it("serializes route updates with concurrent session patches without data loss", async () => {
+    const key = "agent:main:test-route";
+    const { agentId } = await makeTmpStore({
+      [key]: { sessionId: "s-route", updatedAt: Date.now(), heartbeatTaskState: { counter: 0 } },
+    });
+
+    const N = 8;
+    await Promise.all(
+      Array.from({ length: N }, (_, i) => [
+        patchSessionEntry({
+          agentId,
+          sessionKey: key,
+          update: async (entry) => {
+            const current = entry.heartbeatTaskState?.counter ?? 0;
+            await Promise.resolve();
+            return {
+              heartbeatTaskState: { ...entry.heartbeatTaskState, counter: current + 1 },
+            };
+          },
+        }),
+        updateLastRoute({
+          agentId,
+          sessionKey: key,
+          channel: "webchat",
+          to: `webchat:user-${i}`,
+        }),
+      ]).flat(),
+    );
+
+    const store = readSessionEntries(agentId);
+    expect(store[key]?.heartbeatTaskState?.counter).toBe(N);
+    expect(store[key]?.deliveryContext).toMatchObject({
+      channel: "webchat",
+      to: expect.stringMatching(/^webchat:user-/),
+    });
   });
 
   it("strips malformed pending final-delivery fields on write", async () => {

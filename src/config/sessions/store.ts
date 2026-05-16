@@ -39,6 +39,15 @@ type SessionEntryRowOptions = {
   path?: string;
 };
 
+type SessionEntryPatchResult =
+  | Partial<SessionEntry>
+  | {
+      patch: Partial<SessionEntry>;
+      mergePolicy?: "preserve-activity";
+      conversationIdentities?: readonly ConversationIdentity[];
+    }
+  | null;
+
 function resolveSessionRowOptionsFromSessionKey(params: {
   agentId?: string;
   sessionKey: string;
@@ -122,9 +131,7 @@ export async function patchSessionEntry(
   options: SessionEntryRowOptions & {
     sessionKey: string;
     fallbackEntry?: SessionEntry;
-    update: (
-      entry: SessionEntry,
-    ) => Promise<Partial<SessionEntry> | null> | Partial<SessionEntry> | null;
+    update: (entry: SessionEntry) => Promise<SessionEntryPatchResult> | SessionEntryPatchResult;
   },
 ): Promise<SessionEntry | null> {
   for (let attempt = 0; attempt < SESSION_ROW_PATCH_RETRY_LIMIT; attempt += 1) {
@@ -138,11 +145,18 @@ export async function patchSessionEntry(
     if (!existing) {
       return null;
     }
-    const patch = await options.update(existing);
-    if (!patch) {
-      return existing;
+    const patchResult = await options.update(existing);
+    if (!patchResult) {
+      return resolved.entry ? existing : null;
     }
-    const next = mergeSessionEntry(existing, patch);
+    const patch =
+      "patch" in patchResult ? patchResult.patch : (patchResult as Partial<SessionEntry>);
+    const conversationIdentities =
+      "patch" in patchResult ? patchResult.conversationIdentities : undefined;
+    const next =
+      "patch" in patchResult && patchResult.mergePolicy === "preserve-activity"
+        ? mergeSessionEntryPreserveActivity(existing, patch)
+        : mergeSessionEntry(existing, patch);
     const expectedEntries = new Map([[resolved.entryKey, expected]]);
     if (resolved.entryKey !== resolved.normalizedKey) {
       expectedEntries.set(resolved.normalizedKey, null);
@@ -152,6 +166,9 @@ export async function patchSessionEntry(
       env: options.env,
       path: options.path,
       upsertEntries: { [resolved.normalizedKey]: next },
+      ...(conversationIdentities
+        ? { conversationIdentities: { [resolved.normalizedKey]: conversationIdentities } }
+        : {}),
       expectedEntries,
       deleteEntries: resolved.entryKey === resolved.normalizedKey ? undefined : [resolved.entryKey],
     });
@@ -213,37 +230,32 @@ export async function recordSessionMetaFromInbound(params: {
     sessionKey,
   });
   const normalizedKey = normalizeSessionRowKey(sessionKey);
-  const existing = getSessionEntry({ ...rowOptions, sessionKey });
-  const patch = deriveSessionMetaPatch({
-    ctx,
-    sessionKey: normalizedKey,
-    existing,
-    groupResolution: params.groupResolution,
-  });
-  if (!patch) {
-    if (existing && normalizedKey !== sessionKey.trim()) {
-      upsertSessionEntry({ ...rowOptions, sessionKey: normalizedKey, entry: existing });
-    }
-    return existing ?? null;
-  }
-  if (!existing && !createIfMissing) {
-    return null;
-  }
-  const next = existing
-    ? mergeSessionEntryPreserveActivity(existing, patch)
-    : mergeSessionEntry(existing, patch);
-  upsertSessionEntry({
+  return await patchSessionEntry({
     ...rowOptions,
-    sessionKey: normalizedKey,
-    entry: next,
-    conversationIdentities: [
-      conversationIdentityFromMsgContext({
+    sessionKey,
+    ...(createIfMissing ? { fallbackEntry: mergeSessionEntry(undefined, {}) } : {}),
+    update: (existing) => {
+      const patch = deriveSessionMetaPatch({
         ctx,
+        sessionKey: normalizedKey,
+        existing,
         groupResolution: params.groupResolution,
-      }),
-    ].filter((entry) => entry !== null),
+      });
+      if (!patch) {
+        return null;
+      }
+      return {
+        patch,
+        mergePolicy: "preserve-activity",
+        conversationIdentities: [
+          conversationIdentityFromMsgContext({
+            ctx,
+            groupResolution: params.groupResolution,
+          }),
+        ].filter((entry) => entry !== null),
+      };
+    },
   });
-  return next;
 }
 
 export async function updateLastRoute(params: {
@@ -267,10 +279,6 @@ export async function updateLastRoute(params: {
     env: params.env,
   });
   const normalizedKey = normalizeSessionRowKey(sessionKey);
-  const existing = getSessionEntry({ ...rowOptions, sessionKey });
-  if (!existing && !createIfMissing) {
-    return null;
-  }
   const explicitContext = normalizeDeliveryContext(params.deliveryContext);
   const inlineContext = normalizeDeliveryContext({
     channel,
@@ -292,51 +300,52 @@ export async function updateLastRoute(params: {
     explicitContext?.channel || explicitContext?.to || inlineContext?.channel || inlineContext?.to,
   );
   const clearThreadFromFallback = explicitRouteProvided && explicitThreadValue == null;
-  const fallbackContext = clearThreadFromFallback
-    ? removeThreadFromDeliveryContext(deliveryContextFromSession(existing))
-    : deliveryContextFromSession(existing);
-  const merged = mergeDeliveryContext(mergedInput, fallbackContext);
-  const normalized = normalizeSessionDeliveryFields({
-    deliveryContext: {
-      channel: merged?.channel,
-      to: merged?.to,
-      accountId: merged?.accountId,
-      threadId: merged?.threadId,
+  return await patchSessionEntry({
+    ...rowOptions,
+    sessionKey,
+    ...(createIfMissing ? { fallbackEntry: mergeSessionEntry(undefined, {}) } : {}),
+    update: (existing) => {
+      const fallbackContext = clearThreadFromFallback
+        ? removeThreadFromDeliveryContext(deliveryContextFromSession(existing))
+        : deliveryContextFromSession(existing);
+      const merged = mergeDeliveryContext(mergedInput, fallbackContext);
+      const normalized = normalizeSessionDeliveryFields({
+        deliveryContext: {
+          channel: merged?.channel,
+          to: merged?.to,
+          accountId: merged?.accountId,
+          threadId: merged?.threadId,
+        },
+      });
+      const metaPatch = ctx
+        ? deriveSessionMetaPatch({
+            ctx,
+            sessionKey: normalizedKey,
+            existing,
+            groupResolution: params.groupResolution,
+          })
+        : null;
+      const basePatch: Partial<SessionEntry> = {
+        channel: normalized.deliveryContext?.channel,
+        deliveryContext: normalized.deliveryContext,
+        lastChannel: normalized.lastChannel,
+        lastTo: normalized.lastTo,
+        lastAccountId: normalized.lastAccountId,
+        lastThreadId: normalized.lastThreadId,
+      };
+      return {
+        patch: metaPatch ? { ...basePatch, ...metaPatch } : basePatch,
+        mergePolicy: "preserve-activity",
+        conversationIdentities: ctx
+          ? [
+              conversationIdentityFromMsgContext({
+                ctx,
+                deliveryContext: normalized.deliveryContext,
+                groupResolution: params.groupResolution,
+              }),
+            ].filter((entry) => entry !== null)
+          : undefined,
+      };
     },
   });
-  const metaPatch = ctx
-    ? deriveSessionMetaPatch({
-        ctx,
-        sessionKey: normalizedKey,
-        existing,
-        groupResolution: params.groupResolution,
-      })
-    : null;
-  const basePatch: Partial<SessionEntry> = {
-    channel: normalized.deliveryContext?.channel,
-    deliveryContext: normalized.deliveryContext,
-    lastChannel: normalized.lastChannel,
-    lastTo: normalized.lastTo,
-    lastAccountId: normalized.lastAccountId,
-    lastThreadId: normalized.lastThreadId,
-  };
-  const next = mergeSessionEntryPreserveActivity(
-    existing,
-    metaPatch ? { ...basePatch, ...metaPatch } : basePatch,
-  );
-  upsertSessionEntry({
-    ...rowOptions,
-    sessionKey: normalizedKey,
-    entry: next,
-    conversationIdentities: ctx
-      ? [
-          conversationIdentityFromMsgContext({
-            ctx,
-            deliveryContext: normalized.deliveryContext,
-            groupResolution: params.groupResolution,
-          }),
-        ].filter((entry) => entry !== null)
-      : undefined,
-  });
-  return next;
 }

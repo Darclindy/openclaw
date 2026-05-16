@@ -40,6 +40,7 @@ export type MoveSqliteSessionEntryKeyOptions = SqliteSessionEntriesOptions & {
 
 export type ApplySqliteSessionEntriesPatchOptions = SqliteSessionEntriesOptions & {
   upsertEntries?: Readonly<Record<string, SessionEntry>>;
+  conversationIdentities?: Readonly<Record<string, readonly ConversationIdentity[]>>;
   expectedEntries?: ReadonlyMap<string, SessionEntry | null>;
   deleteEntries?: readonly string[];
 };
@@ -770,6 +771,7 @@ export function applySqliteSessionEntriesPatch(
           sessionKey,
           entry,
           updatedAt,
+          conversationIdentities: options.conversationIdentities?.[sessionKey],
         }),
       ),
     );
