@@ -1,6 +1,9 @@
+import fs from "node:fs";
+import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import type { Insertable, Selectable } from "kysely";
 import { z } from "zod";
+import { resolveStateDir } from "../config/paths.js";
 import {
   type DeviceAuthEntry,
   type DeviceAuthStore,
@@ -28,6 +31,10 @@ const DeviceAuthStoreSchema = z.object({
 type DeviceAuthDatabase = Pick<OpenClawStateKyselyDatabase, "device_auth_tokens">;
 type DeviceAuthTokenRow = Selectable<DeviceAuthDatabase["device_auth_tokens"]>;
 type DeviceAuthTokenInsert = Insertable<DeviceAuthDatabase["device_auth_tokens"]>;
+
+function resolveLegacyDeviceAuthPath(env: NodeJS.ProcessEnv = process.env): string {
+  return path.join(resolveStateDir(env), "identity", "device-auth.json");
+}
 
 function sqliteOptions(env: NodeJS.ProcessEnv | undefined): OpenClawStateDatabaseOptions {
   return env ? { env } : {};
@@ -117,6 +124,28 @@ function upsertDeviceAuthTokenRow(
   );
 }
 
+function readLegacyDeviceAuthState(env?: NodeJS.ProcessEnv): DeviceAuthStore | null {
+  try {
+    return parseDeviceAuthStoreSnapshot(
+      JSON.parse(fs.readFileSync(resolveLegacyDeviceAuthPath(env), "utf8")),
+    );
+  } catch {
+    return null;
+  }
+}
+
+function readLegacyDeviceAuthStateAndSeedSqlite(env?: NodeJS.ProcessEnv): DeviceAuthStore | null {
+  const legacy = readLegacyDeviceAuthState(env);
+  if (legacy) {
+    try {
+      writeDeviceAuthState(env, legacy);
+    } catch {
+      // Compatibility read should still succeed if opportunistic seeding fails.
+    }
+  }
+  return legacy;
+}
+
 function readDeviceAuthState(env?: NodeJS.ProcessEnv): DeviceAuthStore | null {
   try {
     const database = openOpenClawStateDatabase(sqliteOptions(env));
@@ -131,7 +160,7 @@ function readDeviceAuthState(env?: NodeJS.ProcessEnv): DeviceAuthStore | null {
         .limit(1),
     );
     if (!latest) {
-      return null;
+      return readLegacyDeviceAuthStateAndSeedSqlite(env);
     }
     const rows = executeSqliteQuerySync(
       database.db,
@@ -150,7 +179,7 @@ function readDeviceAuthState(env?: NodeJS.ProcessEnv): DeviceAuthStore | null {
       tokens: Object.fromEntries(rows.map((row) => [row.role, rowToDeviceAuthEntry(row)])),
     };
   } catch {
-    return null;
+    return readLegacyDeviceAuthStateAndSeedSqlite(env);
   }
 }
 
@@ -232,10 +261,18 @@ export function loadDeviceAuthToken(params: {
         .where("device_id", "=", params.deviceId)
         .where("role", "=", role),
     );
-    return row ? rowToDeviceAuthEntry(row) : null;
+    if (row) {
+      return rowToDeviceAuthEntry(row);
+    }
   } catch {
+    // Fall through to legacy JSON compatibility below.
+  }
+  const legacy = readLegacyDeviceAuthStateAndSeedSqlite(params.env);
+  if (!legacy || legacy.deviceId !== params.deviceId) {
     return null;
   }
+  const entry = legacy.tokens[role];
+  return entry ? coerceDeviceAuthEntry(role, entry) : null;
 }
 
 export function storeDeviceAuthToken(params: {

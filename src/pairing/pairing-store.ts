@@ -1,6 +1,11 @@
 import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { getPairingAdapter } from "../channels/plugins/pairing.js";
 import type { ChannelPairingAdapter } from "../channels/plugins/pairing.types.js";
+import { resolveOAuthDir, resolveStateDir } from "../config/paths.js";
+import { resolveRequiredHomeDir } from "../infra/home-dir.js";
 import { executeSqliteQuerySync, getNodeSqliteKysely } from "../infra/kysely-sync.js";
 import { DEFAULT_ACCOUNT_ID } from "../routing/session-key.js";
 import {
@@ -19,6 +24,7 @@ import {
 import {
   dedupePreserveOrder,
   resolveAllowFromAccountId,
+  safeAccountKey,
   safeChannelKey,
 } from "./pairing-store-keys.js";
 import type { PairingChannel } from "./pairing-store.types.js";
@@ -190,6 +196,42 @@ function channelPairingKey(channel: PairingChannel): string {
   return safeChannelKey(channel);
 }
 
+function legacyPairingCredentialsDir(env: NodeJS.ProcessEnv): string {
+  const stateDir = resolveStateDir(env, () => resolveRequiredHomeDir(env, os.homedir));
+  return resolveOAuthDir(env, stateDir);
+}
+
+function resolveLegacyAllowFromPath(
+  channel: PairingChannel,
+  env: NodeJS.ProcessEnv,
+  accountId?: string,
+): string {
+  const base = safeChannelKey(channel);
+  const accountKey = accountId ? safeAccountKey(accountId) : "";
+  return path.join(
+    legacyPairingCredentialsDir(env),
+    accountKey ? `${base}-${accountKey}-allowFrom.json` : `${base}-allowFrom.json`,
+  );
+}
+
+function readLegacyAllowFromEntries(filePath: string): string[] {
+  let raw = "";
+  try {
+    raw = fs.readFileSync(filePath, "utf8");
+  } catch {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw) as { allowFrom?: unknown };
+    const list = Array.isArray(parsed.allowFrom) ? parsed.allowFrom : [];
+    return dedupePreserveOrder(
+      list.map((entry) => normalizeOptionalString(entry) ?? "").filter(Boolean),
+    );
+  } catch {
+    return [];
+  }
+}
+
 function readChannelPairingStateFromDatabase(
   database: OpenClawStateDatabase,
   channel: PairingChannel,
@@ -332,7 +374,15 @@ export function writeChannelPairingStateSnapshot(
 function readAllowFromState(channel: PairingChannel, env: NodeJS.ProcessEnv, accountId?: string) {
   const resolvedAccountId = resolveAllowFromAccountId(accountId);
   const state = readChannelPairingState(channel, env);
-  return (state.allowFrom?.[resolvedAccountId] ?? []).slice();
+  const sqliteEntries = (state.allowFrom?.[resolvedAccountId] ?? []).slice();
+  const scopedLegacyEntries = readLegacyAllowFromEntries(
+    resolveLegacyAllowFromPath(channel, env, resolvedAccountId),
+  );
+  const defaultLegacyEntries =
+    resolvedAccountId === DEFAULT_ACCOUNT_ID
+      ? readLegacyAllowFromEntries(resolveLegacyAllowFromPath(channel, env))
+      : [];
+  return dedupePreserveOrder([...sqliteEntries, ...scopedLegacyEntries, ...defaultLegacyEntries]);
 }
 
 async function updateAllowFromStoreEntry(params: {

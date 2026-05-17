@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { DB as OpenClawStateKyselyDatabase } from "../state/openclaw-state-db.generated.js";
 import { openOpenClawStateDatabase } from "../state/openclaw-state-db.js";
@@ -75,6 +77,47 @@ describe("infra/device-auth-store", () => {
         }),
       );
       expect(loadDeviceAuthToken({ deviceId: "device-1", role: "operator", env })).toBeNull();
+    });
+  });
+
+  it("falls back to legacy JSON device auth and seeds SQLite", async () => {
+    await withTempDir("openclaw-device-auth-", async (stateDir) => {
+      const env = createEnv(stateDir);
+      const filePath = path.join(stateDir, "identity", "device-auth.json");
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(
+        filePath,
+        `${JSON.stringify({
+          version: 1,
+          deviceId: "legacy-device",
+          tokens: {
+            operator: {
+              token: "legacy-token",
+              role: "operator",
+              scopes: ["operator.admin"],
+              updatedAtMs: 42,
+            },
+          },
+        })}\n`,
+        "utf8",
+      );
+
+      expect(loadDeviceAuthToken({ deviceId: "legacy-device", role: "operator", env })).toEqual({
+        token: "legacy-token",
+        role: "operator",
+        scopes: ["operator.admin", "operator.read", "operator.write"],
+        updatedAtMs: 42,
+      });
+      expect(loadDeviceAuthStore({ env })?.deviceId).toBe("legacy-device");
+
+      const database = openOpenClawStateDatabase({ env });
+      const db = getNodeSqliteKysely<DeviceAuthTestDatabase>(database.db);
+      const rows = executeSqliteQuerySync(
+        database.db,
+        db.selectFrom("device_auth_tokens").selectAll(),
+      ).rows;
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.token).toBe("legacy-token");
     });
   });
 

@@ -12,8 +12,8 @@ import {
   type MockInstance,
   vi,
 } from "vitest";
-import { importLegacyChannelPairingFilesToSqlite } from "../commands/doctor/legacy/channel-pairing.js";
 import { resolveLegacyChannelAllowFromPath } from "../commands/doctor/legacy/channel-pairing-files.js";
+import { importLegacyChannelPairingFilesToSqlite } from "../commands/doctor/legacy/channel-pairing.js";
 import { resolveConfigPath, resolveOAuthDir } from "../config/paths.js";
 import { executeSqliteQuerySync, getNodeSqliteKysely } from "../infra/kysely-sync.js";
 import { DEFAULT_ACCOUNT_ID } from "../routing/session-key.js";
@@ -347,12 +347,12 @@ describe("pairing store", () => {
         allowFrom: 1,
       });
 
-      await expect(readChannelAllowFromStore("telegram", process.env, "work/prod")).resolves.toEqual(
-        ["sender-unsafe"],
-      );
-      await expect(readChannelAllowFromStore("telegram", process.env, "work_prod")).resolves.toEqual(
-        [],
-      );
+      await expect(
+        readChannelAllowFromStore("telegram", process.env, "work/prod"),
+      ).resolves.toEqual(["sender-unsafe"]);
+      await expect(
+        readChannelAllowFromStore("telegram", process.env, "work_prod"),
+      ).resolves.toEqual([]);
     });
   });
 
@@ -607,6 +607,32 @@ describe("pairing store", () => {
           ...(expectedLegacy !== undefined ? { expectedLegacy } : {}),
         });
       }
+    });
+  });
+
+  it("keeps legacy allowFrom fallback for runtime async reads before migration", async () => {
+    await withTempStateDir(async (stateDir) => {
+      clearOAuthFixtures(stateDir);
+      const scopedPath = resolveAllowFromFilePath(stateDir, "telegram", "yy");
+      const defaultPath = resolveAllowFromFilePath(stateDir, "telegram");
+      fsSync.mkdirSync(path.dirname(scopedPath), { recursive: true });
+      fsSync.writeFileSync(
+        scopedPath,
+        `${JSON.stringify({ version: 1, allowFrom: [" legacy-scoped ", "legacy-scoped"] })}\n`,
+        "utf8",
+      );
+      fsSync.writeFileSync(
+        defaultPath,
+        `${JSON.stringify({ version: 1, allowFrom: ["legacy-default"] })}\n`,
+        "utf8",
+      );
+
+      await expect(readChannelAllowFromStore("telegram", process.env, "yy")).resolves.toEqual([
+        "legacy-scoped",
+      ]);
+      await expect(readChannelAllowFromStore("telegram", process.env)).resolves.toEqual([
+        "legacy-default",
+      ]);
     });
   });
 
