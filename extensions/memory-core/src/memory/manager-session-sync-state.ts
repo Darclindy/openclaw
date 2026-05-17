@@ -5,6 +5,38 @@ export type MemorySessionSyncScope = {
   sessionId: string;
 };
 
+export type MemorySessionStartupTranscriptState = {
+  scopeKey: string;
+  sourceKey: string;
+  updatedAt: number;
+  size: number;
+};
+
+export function resolveMemorySessionStartupDirtyTranscripts(params: {
+  transcripts: MemorySessionStartupTranscriptState[];
+  existingRows?: MemorySourceFileStateRow[] | null;
+}): string[] {
+  const indexedRows = new Map((params.existingRows ?? []).map((row) => [row.sourceKey, row]));
+  const dirtyTranscripts: string[] = [];
+  for (const transcript of params.transcripts) {
+    const existing = indexedRows.get(transcript.sourceKey);
+    if (!existing) {
+      dirtyTranscripts.push(transcript.scopeKey);
+      continue;
+    }
+    const indexedMtimeMs = Number(existing.mtime);
+    const indexedSize = Number(existing.size);
+    if (!Number.isFinite(indexedMtimeMs) || !Number.isFinite(indexedSize)) {
+      dirtyTranscripts.push(transcript.scopeKey);
+      continue;
+    }
+    if (transcript.size !== indexedSize || transcript.updatedAt > indexedMtimeMs) {
+      dirtyTranscripts.push(transcript.scopeKey);
+    }
+  }
+  return dirtyTranscripts;
+}
+
 export function resolveMemorySessionSyncPlan(params: {
   needsFullReindex: boolean;
   transcripts: MemorySessionSyncScope[];

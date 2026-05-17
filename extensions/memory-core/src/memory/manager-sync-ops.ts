@@ -51,7 +51,11 @@ import {
   type MemoryIndexMeta,
 } from "./manager-reindex-state.js";
 import { shouldSyncSessionsForReindex } from "./manager-session-reindex.js";
-import { resolveMemorySessionSyncPlan } from "./manager-session-sync-state.js";
+import {
+  resolveMemorySessionStartupDirtyTranscripts,
+  resolveMemorySessionSyncPlan,
+  type MemorySessionStartupTranscriptState,
+} from "./manager-session-sync-state.js";
 import {
   loadMemorySourceFileState,
   resolveMemorySourceExistingHash,
@@ -456,6 +460,65 @@ export abstract class MemoryManagerSyncOps {
       });
       this.scheduleSessionDirty(sessionTranscript);
     });
+  }
+
+  protected ensureSessionStartupCatchup(): void {
+    if (!this.sources.has("sessions")) {
+      return;
+    }
+    void this.runSessionStartupCatchup().catch((err) => {
+      log.warn("memory session startup catch-up failed: " + String(err));
+    });
+  }
+
+  protected async markSessionStartupCatchupDirtyTranscripts(): Promise<string[]> {
+    if (!this.sources.has("sessions") || this.closed) {
+      return [];
+    }
+    const scopes = await listSessionTranscriptScopesForAgent(this.agentId);
+    if (scopes.length === 0 || this.closed) {
+      return [];
+    }
+    const existingRows = loadMemorySourceFileState({
+      db: this.db,
+      source: "sessions",
+    }).rows;
+    const transcripts: MemorySessionStartupTranscriptState[] = [];
+    for (const scope of scopes) {
+      const stats = readSessionTranscriptDeltaStats(scope);
+      if (!stats) {
+        continue;
+      }
+      transcripts.push({
+        scopeKey: sessionTranscriptScopeKey(scope),
+        sourceKey: sessionTranscriptSourceKeyForScope(scope),
+        updatedAt: stats.updatedAt,
+        size: stats.size,
+      });
+    }
+    const dirtyTranscripts = resolveMemorySessionStartupDirtyTranscripts({
+      transcripts,
+      existingRows,
+    });
+    if (dirtyTranscripts.length === 0 || this.closed) {
+      return dirtyTranscripts;
+    }
+    for (const transcript of dirtyTranscripts) {
+      this.dirtySessionTranscripts.add(transcript);
+    }
+    this.sessionsDirty = true;
+    return dirtyTranscripts;
+  }
+
+  protected async runSessionStartupCatchup(): Promise<string[]> {
+    const dirtyTranscripts = await this.markSessionStartupCatchupDirtyTranscripts();
+    if (dirtyTranscripts.length === 0 || this.closed) {
+      return dirtyTranscripts;
+    }
+    void this.sync({ reason: "session-startup-catchup" }).catch((err) => {
+      log.warn("memory sync failed (session-startup-catchup): " + String(err));
+    });
+    return dirtyTranscripts;
   }
 
   private scheduleSessionDirty(sessionTranscript: string) {
@@ -957,6 +1020,9 @@ export abstract class MemoryManagerSyncOps {
     });
     const targetSessionTranscriptKeys = this.normalizeTargetSessionTranscripts(params);
     const hasTargetSessionTranscripts = targetSessionTranscriptKeys !== null;
+    if (params?.reason === "cli" && !params.force && !hasTargetSessionTranscripts) {
+      await this.markSessionStartupCatchupDirtyTranscripts();
+    }
     const targetedSessionSync = await runMemoryTargetedSessionSync({
       hasSessionSource: this.sources.has("sessions"),
       targetSessionTranscriptKeys,

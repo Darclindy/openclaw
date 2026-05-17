@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  resolveMemorySessionStartupDirtyFiles,
+  resolveMemorySessionStartupDirtyTranscripts,
   resolveMemorySessionSyncPlan,
 } from "./manager-session-sync-state.js";
 
@@ -76,45 +76,59 @@ describe("memory session sync state", () => {
     expect(plan.activeSourceKeys).toEqual(new Set(["session:incremental"]));
   });
 
-  it("marks missing and changed startup session files dirty", () => {
-    const dirtyFiles = resolveMemorySessionStartupDirtyFiles({
-      files: [
+  it("marks missing and changed startup session transcripts dirty", () => {
+    const dirtyTranscripts = resolveMemorySessionStartupDirtyTranscripts({
+      transcripts: [
         {
-          absPath: "/tmp/sessions/unchanged.jsonl",
-          path: "sessions/unchanged.jsonl",
-          mtimeMs: 100,
+          scopeKey: "main\0unchanged",
+          sourceKey: "session:unchanged",
+          updatedAt: 100,
           size: 10,
         },
         {
-          absPath: "/tmp/sessions/newer.jsonl",
-          path: "sessions/newer.jsonl",
-          mtimeMs: 250,
+          scopeKey: "main\0newer",
+          sourceKey: "session:newer",
+          updatedAt: 250,
           size: 20,
         },
         {
-          absPath: "/tmp/sessions/resized.jsonl",
-          path: "sessions/resized.jsonl",
-          mtimeMs: 300,
+          scopeKey: "main\0resized",
+          sourceKey: "session:resized",
+          updatedAt: 300,
           size: 31,
         },
         {
-          absPath: "/tmp/sessions/missing.jsonl",
-          path: "sessions/missing.jsonl",
-          mtimeMs: 400,
+          scopeKey: "main\0missing",
+          sourceKey: "session:missing",
+          updatedAt: 400,
           size: 40,
         },
       ],
       existingRows: [
-        { path: "sessions/unchanged.jsonl", hash: "hash-unchanged", mtime: 100, size: 10 },
-        { path: "sessions/newer.jsonl", hash: "hash-newer", mtime: 200, size: 20 },
-        { path: "sessions/resized.jsonl", hash: "hash-resized", mtime: 300, size: 30 },
+        {
+          sourceKey: "session:unchanged",
+          path: "transcript:main:unchanged",
+          hash: "hash-unchanged",
+          mtime: 100,
+          size: 10,
+        },
+        {
+          sourceKey: "session:newer",
+          path: "transcript:main:newer",
+          hash: "hash-newer",
+          mtime: 200,
+          size: 20,
+        },
+        {
+          sourceKey: "session:resized",
+          path: "transcript:main:resized",
+          hash: "hash-resized",
+          mtime: 300,
+          size: 30,
+        },
       ],
     });
 
-    expect(dirtyFiles).toEqual([
-      "/tmp/sessions/newer.jsonl",
-      "/tmp/sessions/resized.jsonl",
-      "/tmp/sessions/missing.jsonl",
-    ]);
+    expect(dirtyTranscripts).toEqual(["main\0newer", "main\0resized", "main\0missing"]);
   });
 });

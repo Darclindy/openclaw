@@ -441,7 +441,7 @@ const CORE_SECRET_TARGET_REGISTRY: SecretTargetRegistryEntry[] = [
   {
     id: "tools.web.fetch.firecrawl.apiKey",
     targetType: "tools.web.fetch.firecrawl.apiKey",
-    configFile: "openclaw.json",
+    store: "openclaw.json",
     pathPattern: "tools.web.fetch.firecrawl.apiKey",
     secretShape: SECRET_INPUT_SHAPE,
     expectedResolvedValue: "string",
