@@ -5,12 +5,11 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveOAuthDir } from "../config/paths.js";
 import { closeOpenClawStateDatabaseForTest } from "../state/openclaw-state-db.js";
-import { legacyOAuthSidecarTestUtils } from "./auth-profiles/legacy-oauth-sidecar.js";
+import { resolveAuthStorePath } from "./auth-profiles/path-resolve.js";
 import { authProfileStoreKey } from "./auth-profiles/persisted.js";
 import {
   readAuthProfileStatePayloadResult,
   readAuthProfileStorePayloadResult,
-  writeAuthProfileStorePayload,
 } from "./auth-profiles/sqlite-storage.js";
 import { authProfileStateKey } from "./auth-profiles/state.js";
 import {
@@ -146,142 +145,78 @@ describe("saveAuthProfileStore", () => {
     }
   });
 
-  it("keeps rehydrated legacy oauthRef sidecar tokens runtime-only during ordinary saves", async () => {
+  it("preserves legacy oauthRef only as doctor migration metadata during saves", async () => {
     const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-auth-save-oauth-ref-"));
-    const previousSecretKey = process.env.OPENCLAW_AUTH_PROFILE_SECRET_KEY;
-    vi.stubEnv("OPENCLAW_OAUTH_DIR", path.join(agentDir, "credentials"));
-    vi.stubEnv("OPENCLAW_AUTH_PROFILE_SECRET_KEY", "legacy-seed");
-    const profileId = "openai-codex:default";
+    const authPath = resolveAuthStorePath(agentDir);
     const oauthRef = {
-      source: "openclaw-credentials" as const,
-      provider: "openai-codex" as const,
+      source: "openclaw-credentials",
+      provider: "openai-codex",
       id: "0123456789abcdef0123456789abcdef",
     };
     try {
-      writeAuthProfileStorePayload(authProfileStoreKey(agentDir), {
-        version: 1,
-        profiles: {
-          [profileId]: {
-            type: "oauth",
-            provider: "openai-codex",
-            expires: Date.now() + 60_000,
-            oauthRef,
-          },
-        },
-      });
-      const sidecarPath = path.join(resolveOAuthDir(), "auth-profiles", `${oauthRef.id}.json`);
-      await fs.mkdir(path.dirname(sidecarPath), { recursive: true });
+      await fs.mkdir(agentDir, { recursive: true });
       await fs.writeFile(
-        sidecarPath,
+        authPath,
         `${JSON.stringify(
           {
             version: 1,
-            profileId,
-            provider: "openai-codex",
-            encrypted: legacyOAuthSidecarTestUtils.encryptLegacyOAuthMaterial({
-              ref: oauthRef,
-              profileId,
-              provider: "openai-codex",
-              seed: "legacy-seed",
-              material: {
-                access: "legacy-access-token",
-                refresh: "legacy-refresh-token",
+            profiles: {
+              "openai-codex:default": {
+                type: "oauth",
+                provider: "openai-codex",
+                expires: Date.now() + 60_000,
+                oauthRef,
               },
-            }),
+            },
           },
           null,
           2,
         )}\n`,
       );
 
-      const runtimeStore = ensureAuthProfileStore(agentDir);
-      expectProfileFields(runtimeStore.profiles[profileId], {
-        access: "legacy-access-token",
-        refresh: "legacy-refresh-token",
-      });
-
-      vi.stubEnv("OPENCLAW_AUTH_PROFILE_SECRET_KEY", undefined);
-      saveAuthProfileStore(JSON.parse(JSON.stringify(runtimeStore)) as AuthProfileStore, agentDir);
-
-      const parsed = readRawPersistedAuthProfiles(agentDir) as {
-        profiles: Record<string, Record<string, unknown>>;
-      };
-      expect(parsed.profiles[profileId]?.oauthRef).toEqual(oauthRef);
-      expect(parsed.profiles[profileId]).not.toHaveProperty("access");
-      expect(parsed.profiles[profileId]).not.toHaveProperty("refresh");
-    } finally {
-      if (previousSecretKey === undefined) {
-        vi.stubEnv("OPENCLAW_AUTH_PROFILE_SECRET_KEY", undefined);
-      } else {
-        vi.stubEnv("OPENCLAW_AUTH_PROFILE_SECRET_KEY", previousSecretKey);
-      }
-      clearRuntimeAuthProfileStoreSnapshots();
-      await fs.rm(agentDir, { recursive: true, force: true });
-    }
-  });
-
-  it("writes refreshed legacy sidecar tokens inline when they replace runtime sidecar material", async () => {
-    const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-auth-save-oauth-ref-"));
-    vi.stubEnv("OPENCLAW_OAUTH_DIR", path.join(agentDir, "credentials"));
-    const profileId = "openai-codex:default";
-    const oauthRef = {
-      source: "openclaw-credentials" as const,
-      provider: "openai-codex" as const,
-      id: "0123456789abcdef0123456789abcdef",
-    };
-    try {
-      writeAuthProfileStorePayload(authProfileStoreKey(agentDir), {
+      const legacyRuntimeStore = {
         version: 1,
         profiles: {
-          [profileId]: {
+          "openai-codex:default": {
             type: "oauth",
             provider: "openai-codex",
             expires: Date.now() + 60_000,
-            oauthRef,
           },
         },
-      });
-      const sidecarPath = path.join(resolveOAuthDir(), "auth-profiles", `${oauthRef.id}.json`);
-      await fs.mkdir(path.dirname(sidecarPath), { recursive: true });
-      await fs.writeFile(
-        sidecarPath,
-        `${JSON.stringify(
-          {
-            version: 1,
-            profileId,
-            provider: "openai-codex",
-            access: "legacy-access-token",
-            refresh: "legacy-refresh-token",
-          },
-          null,
-          2,
-        )}\n`,
-      );
+      } as unknown as AuthProfileStore;
 
-      const runtimeStore = ensureAuthProfileStore(agentDir);
-      const refreshedStore: AuthProfileStore = {
-        ...runtimeStore,
-        profiles: {
-          ...runtimeStore.profiles,
-          [profileId]: {
-            ...runtimeStore.profiles[profileId],
-            access: "refreshed-access-token",
-            refresh: "refreshed-refresh-token",
-          } as AuthProfileStore["profiles"][string],
-        },
-      };
-      saveAuthProfileStore(refreshedStore, agentDir);
+      saveAuthProfileStore(legacyRuntimeStore, agentDir);
 
-      const parsed = readRawPersistedAuthProfiles(agentDir) as {
+      let parsed = JSON.parse(await fs.readFile(authPath, "utf8")) as {
         profiles: Record<string, Record<string, unknown>>;
       };
-      expect(parsed.profiles[profileId]?.oauthRef).toMatchObject({
-        source: "openclaw-credentials",
-        provider: "openai-codex",
-      });
-      expect((parsed.profiles[profileId]?.oauthRef as { id?: unknown }).id).not.toBe(oauthRef.id);
-      expect(parsed.profiles[profileId]?.access).toBeUndefined();
-      expect(parsed.profiles[profileId]?.refresh).toBeUndefined();
+      expect(parsed.profiles["openai-codex:default"]?.oauthRef).toEqual(oauthRef);
+      expect(ensureAuthProfileStore(agentDir).profiles["openai-codex:default"]).not.toHaveProperty(
+        "oauthRef",
+      );
+
+      saveAuthProfileStore(
+        {
+          version: 1,
+          profiles: {
+            "openai-codex:default": {
+              type: "oauth",
+              provider: "openai-codex",
+              access: "new-access-token",
+              refresh: "new-refresh-token",
+              expires: Date.now() + 60_000,
+            },
+          },
+        },
+        agentDir,
+      );
+
+      parsed = JSON.parse(await fs.readFile(authPath, "utf8")) as {
+        profiles: Record<string, Record<string, unknown>>;
+      };
+      expect(parsed.profiles["openai-codex:default"]).not.toHaveProperty("oauthRef");
+      expect(parsed.profiles["openai-codex:default"]?.access).toBe("new-access-token");
+      expect(parsed.profiles["openai-codex:default"]?.refresh).toBe("new-refresh-token");
     } finally {
       clearRuntimeAuthProfileStoreSnapshots();
       await fs.rm(agentDir, { recursive: true, force: true });

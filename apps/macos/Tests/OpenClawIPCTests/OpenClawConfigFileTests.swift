@@ -324,6 +324,56 @@ struct OpenClawConfigFileTests {
 
     @MainActor
     @Test
+    func `load dict imports legacy config health baseline`() async throws {
+        let stateDir = FileManager().temporaryDirectory
+            .appendingPathComponent("openclaw-state-\(UUID().uuidString)", isDirectory: true)
+        let configPath = stateDir.appendingPathComponent("openclaw.json")
+        let sidecars = self.legacyConfigSidecarURLs(in: stateDir)
+
+        defer { try? FileManager().removeItem(at: stateDir) }
+
+        try FileManager().createDirectory(
+            at: sidecars.health.deletingLastPathComponent(),
+            withIntermediateDirectories: true)
+        let legacyHealth: [String: Any] = [
+            "entries": [
+                configPath.path: [
+                    "lastKnownGood": [
+                        "hash": "previous-good",
+                        "bytes": 1024,
+                        "hasMeta": true,
+                        "gatewayMode": "local",
+                    ],
+                ],
+            ],
+        ]
+        let legacyData = try JSONSerialization.data(withJSONObject: legacyHealth, options: [.prettyPrinted])
+        try legacyData.write(to: sidecars.health)
+        try """
+        {
+          "update": {
+            "channel": "beta"
+          }
+        }
+        """.write(to: configPath, atomically: true, encoding: .utf8)
+
+        try await TestIsolation.withEnvValues([
+            "OPENCLAW_STATE_DIR": stateDir.path,
+            "OPENCLAW_CONFIG_PATH": configPath.path,
+        ]) {
+            let loaded = OpenClawConfigFile.loadDict()
+            #expect(((loaded["update"] as? [String: Any])?["channel"] as? String) == "beta")
+
+            let clobberedURL = try self.configRecoveryFile(
+                in: configPath.deletingLastPathComponent(),
+                configName: configPath.lastPathComponent,
+                marker: "clobbered")
+            #expect(clobberedURL != nil)
+        }
+    }
+
+    @MainActor
+    @Test
     func `save dict preserves gateway auth without audit sidecar`() async throws {
         let stateDir = FileManager().temporaryDirectory
             .appendingPathComponent("openclaw-state-\(UUID().uuidString)", isDirectory: true)

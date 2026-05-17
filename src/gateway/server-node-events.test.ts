@@ -25,6 +25,7 @@ const buildSessionLookup = (
 ): ReturnType<typeof loadSessionEntryType> => ({
   cfg: { session: { mainKey: "agent:main:main" } } as OpenClawConfig,
   agentId: "main",
+  databasePath: "/tmp/openclaw-agent.sqlite",
   store: {} as ReturnType<typeof loadSessionEntryType>["store"],
   entry: {
     sessionId: entry.sessionId ?? `sid-${sessionKey}`,

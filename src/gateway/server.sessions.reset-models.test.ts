@@ -2,7 +2,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "vitest";
 import { getSessionEntry } from "../config/sessions.js";
-import { hasSqliteSessionTranscriptEvents } from "../config/sessions/transcript-store.sqlite.js";
+import {
+  hasSqliteSessionTranscriptEvents,
+  loadSqliteSessionTranscriptEvents,
+  replaceSqliteSessionTranscriptEvents,
+} from "../config/sessions/transcript-store.sqlite.js";
 import { testState, seedGatewaySessionEntries } from "./test-helpers.js";
 import {
   setupGatewaySessionsTestHarness,
@@ -186,6 +190,53 @@ test("sessions.reset rotates topic sessions without persisting transcript file h
   ).toBe(nextSessionId);
   expect(hasSqliteSessionTranscriptEvents({ agentId: "main", sessionId: nextSessionId })).toBe(
     true,
+  );
+});
+
+test("sessions.reset preserves the previous SQLite transcript", async () => {
+  await createSessionFixtureDir();
+  const previousSessionId = "22222222-2222-4222-8222-222222222222";
+  replaceSqliteSessionTranscriptEvents({
+    agentId: "main",
+    sessionId: previousSessionId,
+    events: [
+      {
+        type: "message",
+        id: "m-before-reset",
+        message: { role: "user", content: "keep me after reset" },
+      },
+    ],
+  });
+  await seedGatewaySessionEntries({
+    entries: {
+      main: sessionStoreEntry(previousSessionId),
+    },
+  });
+
+  const reset = await directSessionReq<{
+    ok: true;
+    entry: {
+      sessionId: string;
+    };
+  }>("sessions.reset", { key: "main" });
+
+  expect(reset.ok).toBe(true);
+  const nextSessionId = reset.payload?.entry.sessionId;
+  expect(nextSessionId).toBeDefined();
+  expect(nextSessionId).not.toBe(previousSessionId);
+  expect(hasSqliteSessionTranscriptEvents({ agentId: "main", sessionId: previousSessionId })).toBe(
+    true,
+  );
+  expect(
+    loadSqliteSessionTranscriptEvents({ agentId: "main", sessionId: previousSessionId }),
+  ).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        event: expect.objectContaining({
+          id: "m-before-reset",
+        }),
+      }),
+    ]),
   );
 });
 
@@ -491,6 +542,7 @@ test("sessions.reset preserves spawned session ownership metadata", async () => 
     channel: "discord",
     to: "group-1",
     accountId: "acct-1",
+    chatType: "group",
     threadId: "thread-1",
   });
   expect(reset.payload?.entry.label).toBe("owned child");
@@ -539,6 +591,7 @@ test("sessions.reset preserves spawned session ownership metadata", async () => 
     channel: "discord",
     to: "group-1",
     accountId: "acct-1",
+    chatType: "group",
     threadId: "thread-1",
   });
   expect(stored?.label).toBe("owned child");

@@ -352,7 +352,7 @@ describe("subagent registry seam flow", () => {
       }
       return {};
     });
-    mocks.loadSessionStore.mockReturnValue({
+    mocks.sessionRows.mockReturnValue({
       "agent:main:subagent:child": {
         sessionId: "sess-child",
         updatedAt: 1,
@@ -409,7 +409,7 @@ describe("subagent registry seam flow", () => {
       }
       return {};
     });
-    mocks.loadSessionStore.mockReturnValue({
+    mocks.sessionRows.mockReturnValue({
       "agent:main:subagent:child": {
         sessionId: "sess-child",
         updatedAt: 1,
@@ -459,7 +459,7 @@ describe("subagent registry seam flow", () => {
       return {};
     });
     const staleEndedAt = Date.parse("2026-03-24T11:59:00Z");
-    mocks.loadSessionStore.mockReturnValue({
+    mocks.sessionRows.mockReturnValue({
       "agent:main:subagent:child": {
         sessionId: "sess-child",
         updatedAt: staleEndedAt,

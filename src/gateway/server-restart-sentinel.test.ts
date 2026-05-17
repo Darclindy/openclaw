@@ -49,6 +49,7 @@ const mocks = vi.hoisted(() => {
         },
         store: {},
         agentId: "main",
+        databasePath: "/tmp/openclaw-agent.sqlite",
         canonicalKey: "agent:main:main",
       }),
     ),
@@ -405,6 +406,7 @@ describe("scheduleRestartSentinelWake", () => {
         updatedAt: 0,
       },
       store: {},
+      databasePath: "/tmp/openclaw-agent.sqlite",
       canonicalKey: "agent:main:main",
     });
     mocks.readSqliteSessionDeliveryContext.mockReset();
@@ -665,6 +667,7 @@ describe("scheduleRestartSentinelWake", () => {
         updatedAt: 0,
       },
       store: {},
+      databasePath: "/tmp/openclaw-agent.sqlite",
       canonicalKey: "agent:main:group",
     });
     mocks.readSqliteSessionRoutingInfo.mockReturnValue({ chatType: "group" });
@@ -704,6 +707,7 @@ describe("scheduleRestartSentinelWake", () => {
         updatedAt: 0,
       },
       store: {},
+      databasePath: "/tmp/openclaw-agent.sqlite",
       canonicalKey: "agent:main:telegram:group:-1003826723328:topic:13757",
     });
     mocks.readSqliteSessionDeliveryContext.mockReturnValue({
@@ -1300,6 +1304,7 @@ describe("scheduleRestartSentinelWake", () => {
       },
       store: {},
       agentId: "main",
+      databasePath: "/tmp/openclaw-agent.sqlite",
       canonicalKey: "agent:main:matrix:channel:!lowercased:example.org:thread:$thread-event",
     });
     mocks.readSqliteSessionDeliveryContext.mockReturnValueOnce({

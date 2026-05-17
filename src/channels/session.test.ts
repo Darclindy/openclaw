@@ -120,7 +120,6 @@ describe("recordInboundSession", () => {
     };
 
     await recordInboundSession({
-      storePath: "/tmp/openclaw-session-store.json",
       sessionKey: `Agent:Main:Signal:Group:${mixedGroupId}`,
       ctx: signalCtx,
       updateLastRoute: {

@@ -5,6 +5,7 @@ import OpenClawProtocol
 
 enum OpenClawConfigFile {
     private static let logger = Logger(subsystem: "ai.openclaw", category: "config")
+    private static let legacyConfigHealthFileName = "config-health.json"
     private static let fileLock = NSRecursiveLock()
     private nonisolated(unsafe) static var configHealthState: [String: Any] = [:]
 
@@ -409,7 +410,25 @@ enum OpenClawConfigFile {
             self.configHealthState = persisted
             return persisted
         }
+        if let legacy = self.readLegacyConfigHealthState(), !legacy.isEmpty {
+            self.configHealthState = legacy
+            try? OpenClawSQLiteStateStore.writeConfigHealthState(legacy)
+            return legacy
+        }
         return self.configHealthState
+    }
+
+    private static func readLegacyConfigHealthState() -> [String: Any]? {
+        let url = self.stateDirURL()
+            .appendingPathComponent("logs", isDirectory: true)
+            .appendingPathComponent(self.legacyConfigHealthFileName)
+        guard FileManager().fileExists(atPath: url.path),
+              let data = try? Data(contentsOf: url),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return nil
+        }
+        return root
     }
 
     private static func writeConfigHealthState(_ root: [String: Any]) {

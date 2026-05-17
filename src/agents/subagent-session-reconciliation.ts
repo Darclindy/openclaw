@@ -1,8 +1,6 @@
-import { getRuntimeConfig } from "../config/config.js";
 import {
-  loadSessionStore,
+  getSessionEntry,
   resolveAgentIdFromSessionKey,
-  resolveStorePath,
   type SessionEntry,
 } from "../config/sessions.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -65,14 +63,11 @@ export function loadSubagentSessionEntry(params: {
     return undefined;
   }
   const agentId = resolveAgentIdFromSessionKey(key);
-  const cfg = params.cfg ?? getRuntimeConfig();
-  const storePath = resolveStorePath(cfg.session?.store, { agentId });
-  let store = params.storeCache?.get(storePath);
-  if (!store) {
-    store = loadSessionStore(storePath);
-    params.storeCache?.set(storePath, store);
+  const cached = params.storeCache?.get(agentId);
+  if (cached) {
+    return findSessionEntryByKey(cached, key);
   }
-  return findSessionEntryByKey(store, key);
+  return getSessionEntry({ agentId, sessionKey: key });
 }
 
 export function resolveCompletionFromSessionEntry(

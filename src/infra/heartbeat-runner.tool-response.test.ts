@@ -292,11 +292,10 @@ describe("runHeartbeatOnce heartbeat response tool", () => {
   });
 
   it("rewrites foreground generic runner failure payloads before heartbeat delivery", async () => {
-    await withTempTelegramHeartbeatSandbox(async ({ tmpDir, storePath, replySpy }) => {
-      const cfg = createConfig({ tmpDir, storePath });
-      await seedMainSessionStore(storePath, cfg, {
+    await withTempTelegramHeartbeatSandbox(async ({ tmpDir, agentId, replySpy }) => {
+      const cfg = createConfig({ tmpDir, agentId });
+      await seedMainHeartbeatSession(agentId, cfg, {
         lastChannel: "telegram",
-        lastProvider: "telegram",
         lastTo: TELEGRAM_GROUP,
       });
       replySpy.mockResolvedValue(

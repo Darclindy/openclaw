@@ -11,7 +11,7 @@ import { recordSentMessage } from "./sent-message-cache.js";
 import { cacheSticker, type CachedSticker } from "./sticker-cache-store.js";
 import { type TelegramThreadBindingRecord } from "./thread-bindings.js";
 import { resolveTopicNameCacheScope, updateTopicName } from "./topic-name-cache.js";
-import { writeTelegramUpdateOffset } from "./update-offset-store.js";
+import { importTelegramUpdateOffsetState } from "./update-offset-store.js";
 
 type DetectParams = { stateDir: string };
 
@@ -72,17 +72,17 @@ function updateOffsetPlans(
       return customPlan({
         label: "Telegram update offset",
         sourcePath,
-        apply: async () => {
-          const parsed = readJson(sourcePath) as { lastUpdateId?: unknown; botId?: unknown };
-          if (typeof parsed.lastUpdateId === "number") {
-            await writeTelegramUpdateOffset({
-              accountId,
-              updateId: parsed.lastUpdateId,
-              botToken: typeof parsed.botId === "string" ? `${parsed.botId}:token` : undefined,
-            });
-          }
+        apply: async (context) => {
+          const imported = await importTelegramUpdateOffsetState({
+            accountId,
+            state: readJson(sourcePath),
+            env: context.env,
+          });
           removeFile(sourcePath);
-          return { changes: ["Imported 1 Telegram update offset"], warnings: [] };
+          return {
+            changes: [`Imported ${imported ? 1 : 0} Telegram update offset`],
+            warnings: imported ? [] : [`Skipped invalid Telegram update offset: ${sourcePath}`],
+          };
         },
       });
     });

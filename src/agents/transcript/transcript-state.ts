@@ -26,6 +26,7 @@ type ThinkingLevelChangeEntry = Extract<SessionEntry, { type: "thinking_level_ch
 
 type TranscriptStateScope = {
   agentId: string;
+  path?: string;
   sessionId: string;
 };
 
@@ -75,6 +76,7 @@ function resolveTranscriptWriteScopeForSession(
   }
   return {
     agentId: resolved.agentId,
+    ...(resolved.path ? { path: resolved.path } : {}),
     sessionId,
   };
 }
@@ -412,6 +414,7 @@ export function readTranscriptStateForSessionSync(scope: TranscriptStateScope): 
 
 export async function persistTranscriptStateMutationForSession(params: {
   agentId: string;
+  path?: string;
   sessionId: string;
   state: TranscriptState;
   appendedEntries: SessionEntry[];
@@ -436,6 +439,7 @@ export async function persistTranscriptStateMutationForSession(params: {
 
 export function persistTranscriptStateMutationForSessionSync(params: {
   agentId: string;
+  path?: string;
   sessionId: string;
   state: TranscriptState;
   appendedEntries: SessionEntry[];
@@ -460,12 +464,14 @@ export function persistTranscriptStateMutationForSessionSync(params: {
 
 export function removeTailEntriesFromSqliteTranscript(params: {
   agentId: string;
+  path?: string;
   sessionId: string;
   shouldRemove: (entry: SessionEntry) => boolean;
   options?: { maxEntries?: number; minEntries?: number };
 }): number {
   const state = readTranscriptStateForSessionSync({
     agentId: params.agentId,
+    path: params.path,
     sessionId: params.sessionId,
   });
   const removed = state.removeTailEntries(params.shouldRemove, params.options);
@@ -474,6 +480,7 @@ export function removeTailEntriesFromSqliteTranscript(params: {
   }
   replaceSqliteSessionTranscriptEvents({
     agentId: params.agentId,
+    path: params.path,
     sessionId: params.sessionId,
     events: [...(state.header ? [state.header] : []), ...state.entries],
   });

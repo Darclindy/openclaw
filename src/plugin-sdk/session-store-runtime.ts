@@ -208,15 +208,15 @@ async function saveSessionStoreRows(
   store: Record<string, SessionEntry>,
   deleteScope?: ReadonlySet<string>,
 ): Promise<void> {
+  for (const [sessionKey, entry] of Object.entries(store)) {
+    upsertSessionEntry({ ...options, sessionKey, entry });
+  }
   if (deleteScope) {
     for (const sessionKey of deleteScope) {
       if (!Object.prototype.hasOwnProperty.call(store, sessionKey)) {
         deleteSessionEntry({ ...options, sessionKey });
       }
     }
-  }
-  for (const [sessionKey, entry] of Object.entries(store)) {
-    upsertSessionEntry({ ...options, sessionKey, entry });
   }
 }
 

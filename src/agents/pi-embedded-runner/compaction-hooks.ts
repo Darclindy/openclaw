@@ -80,6 +80,7 @@ function syncPostCompactionSessionMemory(params: {
 export async function runPostCompactionSideEffects(params: {
   config?: OpenClawConfig;
   agentId?: string;
+  path?: string;
   sessionId?: string;
   sessionKey?: string;
 }): Promise<void> {
@@ -88,6 +89,7 @@ export async function runPostCompactionSideEffects(params: {
   }
   const transcriptScope = {
     agentId: params.agentId,
+    ...(params.path ? { path: params.path } : {}),
     sessionId: params.sessionId,
   };
   emitSessionTranscriptUpdate({

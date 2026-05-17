@@ -1039,6 +1039,7 @@ function extractTranscriptUserText(content: unknown): string | undefined {
 
 async function rewriteChatSendUserTurnMediaPaths(params: {
   agentId: string;
+  path?: string;
   sessionId: string;
   sessionKey: string;
   message: string;
@@ -1051,6 +1052,7 @@ async function rewriteChatSendUserTurnMediaPaths(params: {
   }
   const transcriptState = await readTranscriptStateForSession({
     agentId: params.agentId,
+    path: params.path,
     sessionId: params.sessionId,
   });
   const target = transcriptState
@@ -1089,6 +1091,7 @@ async function rewriteChatSendUserTurnMediaPaths(params: {
   };
   await rewriteTranscriptEntriesInSqliteTranscript({
     agentId: params.agentId,
+    path: params.path,
     sessionId: params.sessionId,
     sessionKey: params.sessionKey,
     config: params.cfg,
@@ -2540,7 +2543,8 @@ export const chatHandlers: GatewayRequestHandlers = {
         if (transcriptMediaRewriteDone) {
           return;
         }
-        const { entry: latestEntry } = loadSessionEntry(sessionKey);
+        const { entry: latestEntry, databasePath: latestDatabasePath } =
+          loadSessionEntry(sessionKey);
         const resolvedSessionId = latestEntry?.sessionId ?? backingSessionId;
         if (!resolvedSessionId) {
           return;
@@ -2548,6 +2552,7 @@ export const chatHandlers: GatewayRequestHandlers = {
         transcriptMediaRewriteDone = true;
         await rewriteChatSendUserTurnMediaPaths({
           agentId,
+          path: latestDatabasePath,
           sessionId: resolvedSessionId,
           sessionKey,
           message: parsedMessage,
@@ -2570,7 +2575,8 @@ export const chatHandlers: GatewayRequestHandlers = {
         if (!transcriptPayload) {
           return;
         }
-        const { entry: latestEntry } = loadSessionEntry(sessionKey);
+        const { entry: latestEntry, databasePath: latestDatabasePath } =
+          loadSessionEntry(sessionKey);
         const sessionId = latestEntry?.sessionId ?? backingSessionId ?? clientRunId;
         const mediaLocalRoots = appendLocalMediaParentRoots(
           getAgentScopedMediaLocalRoots(cfg, agentId),
@@ -2615,6 +2621,7 @@ export const chatHandlers: GatewayRequestHandlers = {
           ...(persistedContentForAppend?.length ? { content: persistedContentForAppend } : {}),
           sessionId,
           agentId,
+          path: latestDatabasePath,
           createIfMissing: true,
           idempotencyKey: `${clientRunId}:assistant-media`,
           ttsSupplement: ttsSupplementMarker,

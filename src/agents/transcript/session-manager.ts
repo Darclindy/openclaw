@@ -37,12 +37,14 @@ function normalizeTranscriptScopeId(value: string, label: string): string {
 
 function createTranscriptScope(params: {
   agentId: string;
+  path?: string;
   sessionId: string;
 }): SessionTranscriptScope {
   const agentId = normalizeTranscriptScopeId(params.agentId, "agent id");
   const sessionId = normalizeTranscriptScopeId(params.sessionId, "session id");
   return {
     agentId,
+    ...(params.path ? { path: params.path } : {}),
     sessionId,
   };
 }
@@ -65,6 +67,7 @@ function persistFullTranscriptStateToSqlite(
 ): void {
   replaceSqliteSessionTranscriptEvents({
     agentId: scope.agentId,
+    path: scope.path,
     sessionId: scope.sessionId,
     events: [...(state.header ? [state.header] : []), ...state.entries],
   });
@@ -77,6 +80,7 @@ function appendTranscriptEntryToSqlite(
 ): void {
   appendSqliteSessionTranscriptEvent({
     agentId: scope.agentId,
+    path: scope.path,
     sessionId: scope.sessionId,
     event: entry,
     ...(options?.parentMode ? { parentMode: options.parentMode } : {}),
@@ -85,6 +89,7 @@ function appendTranscriptEntryToSqlite(
 
 function loadTranscriptStateForSession(params: {
   agentId: string;
+  path?: string;
   sessionId: string;
   cwd?: string;
 }): {
@@ -93,6 +98,7 @@ function loadTranscriptStateForSession(params: {
 } {
   const scope = createTranscriptScope({
     agentId: params.agentId,
+    path: params.path,
     sessionId: params.sessionId,
   });
   const sqliteEvents = loadSqliteSessionTranscriptEvents(scope).map((entry) => entry.event);
@@ -154,6 +160,7 @@ class TranscriptSessionManager implements SessionManager {
     if (this.persist && this.sqliteScope && !this.explicitBranchSelection) {
       const result = appendSqliteSessionTranscriptMessage({
         agentId: this.sqliteScope.agentId,
+        path: this.sqliteScope.path,
         sessionId: this.sqliteScope.sessionId,
         sessionVersion: this.state.getHeader()?.version ?? CURRENT_SESSION_VERSION,
         cwd: this.state.getCwd(),
@@ -318,6 +325,7 @@ class TranscriptSessionManager implements SessionManager {
 
 export function openTranscriptSessionManagerForSession(params: {
   agentId: string;
+  path?: string;
   sessionId: string;
   cwd?: string;
 }): SessionManager {

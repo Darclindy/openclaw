@@ -16,6 +16,7 @@ async function useTempStateDir(): Promise<string> {
 
 type TranscriptScope = {
   agentId: string;
+  path?: string;
   sessionId: string;
 };
 
@@ -102,6 +103,29 @@ describe("TranscriptSessionManager", () => {
         message: { role: "user", content: "seed" },
       },
     ]);
+  });
+
+  it("keeps transcript writes on the selected sqlite database path", async () => {
+    const dir = await useTempStateDir();
+    const scope = {
+      agentId: "main",
+      path: path.join(dir, "relocated", "openclaw-agent.sqlite"),
+      sessionId: "relocated-session",
+    };
+
+    const sessionManager = openTranscriptSessionManagerForSession({
+      ...scope,
+      cwd: "/tmp/workspace",
+    });
+    sessionManager.appendMessage({ role: "user", content: "custom db", timestamp: 1 });
+
+    expect(readSessionEntries(scope)).toMatchObject([
+      { type: "session", id: "relocated-session" },
+      { type: "message", message: { role: "user", content: "custom db" } },
+    ]);
+    expect(readSessionEntries({ agentId: scope.agentId, sessionId: scope.sessionId })).toHaveLength(
+      0,
+    );
   });
 
   it("persists initial user messages synchronously before the first assistant message", async () => {

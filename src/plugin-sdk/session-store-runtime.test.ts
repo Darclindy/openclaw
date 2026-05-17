@@ -3,7 +3,9 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import {
+  appendSqliteSessionTranscriptEvent,
   getSessionEntry,
+  loadSqliteSessionTranscriptEvents,
   loadSessionStore,
   readSessionUpdatedAt,
   resolveAndPersistSessionFile,
@@ -153,6 +155,58 @@ describe("session-store-runtime compatibility", () => {
         expect(
           getSessionEntry({ agentId: "main", env, sessionKey: "agent:main:new" })?.sessionId,
         ).toBe("new-session");
+      },
+    );
+  });
+
+  it("preserves transcripts when compatibility callers rename a session key", async () => {
+    await withOpenClawTestState(
+      {
+        layout: "state-only",
+        prefix: "openclaw-session-store-compat-",
+        scenario: "minimal",
+      },
+      async (state) => {
+        const env = testEnv(state.stateDir);
+        const storePath = canonicalStorePath(state.stateDir);
+        upsertSessionEntry({
+          agentId: "main",
+          env,
+          sessionKey: "agent:main:old",
+          entry: {
+            sessionId: "renamed-session",
+            updatedAt: 100,
+            sessionStartedAt: 100,
+          },
+        });
+        appendSqliteSessionTranscriptEvent({
+          agentId: "main",
+          env,
+          sessionId: "renamed-session",
+          event: { type: "message", text: "keep me" },
+        });
+
+        await updateSessionStore(storePath, (store) => {
+          const entry = store["agent:main:old"];
+          delete store["agent:main:old"];
+          if (entry) {
+            store["agent:main:new"] = { ...entry, updatedAt: 200 };
+          }
+        });
+
+        expect(
+          getSessionEntry({ agentId: "main", env, sessionKey: "agent:main:old" }),
+        ).toBeUndefined();
+        expect(
+          getSessionEntry({ agentId: "main", env, sessionKey: "agent:main:new" })?.sessionId,
+        ).toBe("renamed-session");
+        expect(
+          loadSqliteSessionTranscriptEvents({
+            agentId: "main",
+            env,
+            sessionId: "renamed-session",
+          }).map((row) => row.event),
+        ).toEqual([{ type: "message", text: "keep me" }]);
       },
     );
   });

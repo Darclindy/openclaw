@@ -103,6 +103,7 @@ export type SessionContext = {
 
 export type SessionTranscriptScope = {
   agentId: string;
+  path?: string;
   sessionId: string;
 };
 

@@ -57,6 +57,7 @@ import {
   markSubagentRunPausedAfterYield,
   type RegisterSubagentRunParams,
 } from "./subagent-registry-run-manager.js";
+import { resolveSubagentSessionCompletion } from "./subagent-session-reconciliation.js";
 import {
   getSubagentRunsSnapshotForRead,
   persistSubagentRunsToState,
@@ -1152,6 +1153,7 @@ const subagentRunManager = createSubagentRunManager({
   clearPendingLifecycleError,
   resolveSubagentWaitTimeoutMs,
   scheduleOrphanRecovery: (args) => scheduleSubagentOrphanRecovery(args),
+  resolveSubagentSessionCompletion,
   notifyContextEngineSubagentEnded,
   completeCleanupBookkeeping,
   completeSubagentRun,

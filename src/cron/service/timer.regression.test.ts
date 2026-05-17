@@ -1650,7 +1650,7 @@ describe("cron service timer regressions", () => {
   it("re-arms the pre-execution watchdog when before_agent_reply does not claim (#82811)", async () => {
     vi.useFakeTimers();
     try {
-      const store = timerRegressionFixtures.makeStorePath();
+      const store = timerRegressionFixtures.makeStoreKey();
       const scheduledAt = Date.parse("2026-05-17T03:00:00.000Z");
       const cronJob = createIsolatedRegressionJob({
         id: "isolated-before-agent-reply-unhandled-82811",
@@ -1660,7 +1660,7 @@ describe("cron service timer regressions", () => {
         payload: { kind: "agentTurn", message: "work", timeoutSeconds: 1_200 },
         state: { nextRunAtMs: scheduledAt },
       });
-      await writeCronJobs(store.storePath, [cronJob]);
+      await writeCronJobs(store.storeKey, [cronJob]);
 
       vi.setSystemTime(scheduledAt);
       let now = scheduledAt;
@@ -1669,7 +1669,7 @@ describe("cron service timer regressions", () => {
       const cleanupTimedOutAgentRun = vi.fn(async () => {});
       const state = createCronServiceState({
         cronEnabled: true,
-        storePath: store.storePath,
+        storeKey: store.storeKey,
         log: noopLogger,
         nowMs: () => now,
         enqueueSystemEvent: vi.fn(),

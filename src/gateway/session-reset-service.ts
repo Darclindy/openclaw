@@ -16,14 +16,12 @@ import { clearSessionResetRuntimeState } from "../auto-reply/reply/session-reset
 import { getRuntimeConfig } from "../config/io.js";
 import {
   getSessionEntry,
-  listSessionEntries,
   type SessionEntry,
   upsertSessionEntry,
 } from "../config/sessions.js";
 import { resolveResetPreservedSelection } from "../config/sessions/reset-preserved-selection.js";
 import {
   appendSqliteSessionTranscriptEvent,
-  deleteSqliteSessionTranscript,
   hasSqliteSessionTranscriptEvents,
   loadSqliteSessionTranscriptEvents,
 } from "../config/sessions/transcript-store.sqlite.js";
@@ -683,7 +681,6 @@ export async function performGatewaySessionReset(params: {
 
   let oldSessionId: string | undefined;
   let resetSourceEntry: SessionEntry | undefined;
-  let deleteOldTranscript = false;
   const currentEntry = getSessionEntry({
     agentId: target.agentId,
     path: target.databasePath,
@@ -780,13 +777,6 @@ export async function performGatewaySessionReset(params: {
       sessionKey: primaryKey,
       entry: nextEntry,
     });
-    deleteOldTranscript = Boolean(
-      oldSessionId &&
-      oldSessionId !== nextSessionId &&
-      !listSessionEntries({ agentId: target.agentId, path: target.databasePath }).some(
-        ({ entry }) => entry.sessionId === oldSessionId,
-      ),
-    );
     return nextEntry;
   })();
   await emitGatewayBeforeResetPluginHook({
@@ -833,13 +823,6 @@ export async function performGatewaySessionReset(params: {
     resumedFrom: oldSessionId,
     agentId: target.agentId,
   });
-  if (deleteOldTranscript && oldSessionId) {
-    deleteSqliteSessionTranscript({
-      agentId: target.agentId,
-      path: target.databasePath,
-      sessionId: oldSessionId,
-    });
-  }
   if (hadExistingEntry) {
     await emitSessionUnboundLifecycleEvent({
       targetSessionKey: target.canonicalKey ?? params.key,

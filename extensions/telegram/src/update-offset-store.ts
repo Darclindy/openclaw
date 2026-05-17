@@ -1,7 +1,7 @@
 import { createPluginStateKeyedStore } from "openclaw/plugin-sdk/plugin-state-runtime";
 import { fingerprintTelegramBotToken } from "./token-fingerprint.js";
 
-const STORE_VERSION = 2;
+const STORE_VERSION = 3;
 const UPDATE_OFFSET_STORE = createPluginStateKeyedStore<TelegramUpdateOffsetState>("telegram", {
   namespace: "update-offsets",
   maxEntries: 1_000,
@@ -158,6 +158,24 @@ export async function writeTelegramUpdateOffset(params: {
     normalizeTelegramUpdateOffsetAccountId(params.accountId),
     payload,
   );
+}
+
+export async function importTelegramUpdateOffsetState(params: {
+  accountId?: string;
+  state: unknown;
+  env?: NodeJS.ProcessEnv;
+}): Promise<boolean> {
+  const parsed = safeParseState(params.state);
+  if (!parsed || parsed.lastUpdateId === null) {
+    return false;
+  }
+  await UPDATE_OFFSET_STORE.register(normalizeTelegramUpdateOffsetAccountId(params.accountId), {
+    version: STORE_VERSION,
+    lastUpdateId: parsed.lastUpdateId,
+    botId: parsed.botId,
+    tokenFingerprint: parsed.tokenFingerprint,
+  });
+  return true;
 }
 
 export async function deleteTelegramUpdateOffset(params: {

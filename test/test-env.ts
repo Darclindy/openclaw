@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import JSON5 from "json5";
@@ -9,6 +10,27 @@ import {
 } from "../src/agents/auth-profiles/persisted.js";
 
 type RestoreEntry = { key: string; value: string | undefined };
+const requireFromHere = createRequire(import.meta.url);
+
+type LegacyConfigCompatApi = typeof import("../src/commands/doctor/shared/legacy-config-compat.js");
+type ConfigValidationApi = typeof import("../src/config/validation.js");
+
+let cachedLegacyConfigCompatApi: LegacyConfigCompatApi | undefined;
+let cachedConfigValidationApi: ConfigValidationApi | undefined;
+
+function loadLegacyConfigCompatApi(): LegacyConfigCompatApi {
+  cachedLegacyConfigCompatApi ??= requireFromHere(
+    "../src/commands/doctor/shared/legacy-config-compat.js",
+  ) as LegacyConfigCompatApi;
+  return cachedLegacyConfigCompatApi;
+}
+
+function loadConfigValidationApi(): ConfigValidationApi {
+  cachedConfigValidationApi ??= requireFromHere(
+    "../src/config/validation.js",
+  ) as ConfigValidationApi;
+  return cachedConfigValidationApi;
+}
 
 const LIVE_EXTERNAL_AUTH_DIRS = [".claude/backups", ".gemini", ".minimax"] as const;
 const LIVE_EXTERNAL_AUTH_FILES = [

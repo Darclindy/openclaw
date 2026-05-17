@@ -26,6 +26,7 @@ import {
   readTelegramUpdateOffset,
   resetTelegramUpdateOffsetsForTests,
 } from "./update-offset-store.js";
+import { fingerprintTelegramBotToken } from "./token-fingerprint.js";
 
 const tempDirs: string[] = [];
 
@@ -65,9 +66,15 @@ describe("Telegram legacy state migrations", () => {
     const telegramDir = path.join(stateDir, "telegram");
     fs.mkdirSync(telegramDir, { recursive: true });
     const sourcePath = path.join(telegramDir, "update-offset-default.json");
+    const botToken = "111111:token";
     fs.writeFileSync(
       sourcePath,
-      `${JSON.stringify({ version: 2, lastUpdateId: 42, botId: "111111" })}\n`,
+      `${JSON.stringify({
+        version: 3,
+        lastUpdateId: 42,
+        botId: "111111",
+        tokenFingerprint: fingerprintTelegramBotToken(botToken),
+      })}\n`,
     );
 
     const plan = detectTelegramLegacyStateMigrations({ stateDir }).find(
@@ -77,9 +84,7 @@ describe("Telegram legacy state migrations", () => {
     const result = await plan!.apply(applyContext(stateDir));
 
     expect(result.changes.join("\n")).toContain("Imported 1 Telegram update offset");
-    await expect(
-      readTelegramUpdateOffset({ accountId: "default", botToken: "111111:token" }),
-    ).resolves.toBe(42);
+    await expect(readTelegramUpdateOffset({ accountId: "default", botToken })).resolves.toBe(42);
     expect(fs.existsSync(sourcePath)).toBe(false);
   });
 
