@@ -4,13 +4,16 @@ import { createPluginStateSyncKeyedStore } from "openclaw/plugin-sdk/plugin-stat
 const MAX_ENTRIES = 900;
 const TOPIC_NAME_CACHE_STATE_KEY = Symbol.for("openclaw.telegramTopicNameCacheState");
 const DEFAULT_TOPIC_NAME_CACHE_KEY = "__default__";
-const TOPIC_NAME_STORE = createPluginStateSyncKeyedStore<TopicEntry & { scopeKey: string }>(
-  "telegram",
-  {
+
+function createTopicNameStore(env?: NodeJS.ProcessEnv) {
+  return createPluginStateSyncKeyedStore<TopicEntry & { scopeKey: string }>("telegram", {
     namespace: "topic-names",
     maxEntries: MAX_ENTRIES,
-  },
-);
+    ...(env ? { env } : {}),
+  });
+}
+
+const TOPIC_NAME_STORE = createTopicNameStore();
 
 type TopicEntry = {
   name: string;
@@ -141,6 +144,27 @@ function removeTopicStore(scopeKey?: string): void {
 
 function persistTopicEntry(scopeKey: string, key: string, entry: TopicEntry): void {
   TOPIC_NAME_STORE.register(key, {
+    scopeKey,
+    name: entry.name,
+    updatedAt: entry.updatedAt,
+    ...(typeof entry.iconColor === "number" ? { iconColor: entry.iconColor } : {}),
+    ...(typeof entry.iconCustomEmojiId === "string"
+      ? { iconCustomEmojiId: entry.iconCustomEmojiId }
+      : {}),
+    ...(typeof entry.closed === "boolean" ? { closed: entry.closed } : {}),
+  });
+}
+
+export function importTelegramTopicNameEntry(
+  chatId: number | string,
+  threadId: number | string,
+  entry: TopicEntry,
+  optionalScopeKey?: string,
+  options?: { env?: NodeJS.ProcessEnv },
+): void {
+  const scopeKey = optionalScopeKey ?? DEFAULT_TOPIC_NAME_CACHE_KEY;
+  const store = options?.env ? createTopicNameStore(options.env) : TOPIC_NAME_STORE;
+  store.register(topicEntryKey(scopeKey, chatId, threadId), {
     scopeKey,
     name: entry.name,
     updatedAt: entry.updatedAt,

@@ -4,16 +4,24 @@ import { logVerbose } from "openclaw/plugin-sdk/runtime-env";
 
 const TTL_MS = 24 * 60 * 60 * 1000;
 const TELEGRAM_SENT_MESSAGES_STATE_KEY = Symbol.for("openclaw.telegramSentMessagesState");
-const SENT_MESSAGE_STORE = createPluginStateSyncKeyedStore<{
+
+type PersistedSentMessage = {
   scopeKey: string;
   chatId: string;
   messageId: string;
   timestamp: number;
-}>("telegram", {
-  namespace: "sent-messages",
-  maxEntries: 100_000,
-  defaultTtlMs: TTL_MS,
-});
+};
+
+function createPersistedSentMessageStore(env?: NodeJS.ProcessEnv) {
+  return createPluginStateSyncKeyedStore<PersistedSentMessage>("telegram", {
+    namespace: "sent-messages",
+    maxEntries: 100_000,
+    defaultTtlMs: TTL_MS,
+    ...(env ? { env } : {}),
+  });
+}
+
+const SENT_MESSAGE_STORE = createPersistedSentMessageStore();
 
 type SentMessageStore = Map<string, Map<string, number>>;
 
@@ -58,6 +66,27 @@ function sentMessageEntryKey(scopeKey: string, chatId: string, messageId: string
     .digest("hex")
     .slice(0, 32);
   return digest;
+}
+
+export function importSentMessageCacheEntry(
+  chatId: number | string,
+  messageId: number | string,
+  options?: SentMessageScopeOptions & { env?: NodeJS.ProcessEnv },
+): void {
+  const scopeKey = resolveSentMessageScopeKey(options);
+  const chatKey = String(chatId);
+  const idKey = String(messageId);
+  const store = options?.env ? createPersistedSentMessageStore(options.env) : SENT_MESSAGE_STORE;
+  store.register(
+    sentMessageEntryKey(scopeKey, chatKey, idKey),
+    {
+      scopeKey,
+      chatId: chatKey,
+      messageId: idKey,
+      timestamp: Date.now(),
+    },
+    { ttlMs: TTL_MS },
+  );
 }
 
 function cleanupExpired(

@@ -7,21 +7,21 @@ import {
   importTelegramMessageCacheEntries,
   resolveTelegramMessageCacheScopeKey,
 } from "./message-cache.js";
-import { recordSentMessage } from "./sent-message-cache.js";
+import { importSentMessageCacheEntry } from "./sent-message-cache.js";
 import { cacheSticker, type CachedSticker } from "./sticker-cache-store.js";
 import { type TelegramThreadBindingRecord } from "./thread-bindings.js";
-import { resolveTopicNameCacheScope, updateTopicName } from "./topic-name-cache.js";
+import { importTelegramTopicNameEntry, resolveTopicNameCacheScope } from "./topic-name-cache.js";
 import { importTelegramUpdateOffsetState } from "./update-offset-store.js";
 
 type DetectParams = { stateDir: string };
 
-const THREAD_BINDING_STORE = createPluginStateSyncKeyedStore<TelegramThreadBindingRecord>(
-  "telegram",
-  {
+function createThreadBindingStore(env?: NodeJS.ProcessEnv) {
+  return createPluginStateSyncKeyedStore<TelegramThreadBindingRecord>("telegram", {
     namespace: "thread-bindings",
     maxEntries: 50_000,
-  },
-);
+    ...(env ? { env } : {}),
+  });
+}
 
 function readJson(filePath: string): unknown {
   return JSON.parse(fs.readFileSync(filePath, "utf8")) as unknown;
@@ -99,12 +99,12 @@ function stickerCachePlan(
     customPlan({
       label: "Telegram sticker cache",
       sourcePath,
-      apply: () => {
+      apply: (context) => {
         const parsed = readJson(sourcePath) as { stickers?: Record<string, CachedSticker> };
         let imported = 0;
         for (const sticker of Object.values(parsed.stickers ?? {})) {
           if (sticker?.fileUniqueId && sticker.description && sticker.cachedAt) {
-            cacheSticker(sticker);
+            cacheSticker(sticker, { env: context.env });
             imported += 1;
           }
         }
@@ -131,10 +131,11 @@ function threadBindingPlans(
       return customPlan({
         label: "Telegram thread bindings",
         sourcePath,
-        apply: () => {
+        apply: (context) => {
           const parsed = readJson(sourcePath) as {
             bindings?: Array<Partial<TelegramThreadBindingRecord>>;
           };
+          const store = createThreadBindingStore(context.env);
           let imported = 0;
           for (const binding of parsed.bindings ?? []) {
             if (!binding.conversationId || !binding.targetSessionKey) {
@@ -151,7 +152,7 @@ function threadBindingPlans(
               ...(typeof binding.agentId === "string" ? { agentId: binding.agentId } : {}),
               ...(typeof binding.boundBy === "string" ? { boundBy: binding.boundBy } : {}),
             };
-            THREAD_BINDING_STORE.register(
+            store.register(
               threadBindingKey(accountId, record.conversationId),
               record,
             );
@@ -171,12 +172,15 @@ function sentMessagePlans(
     customPlan({
       label: "Telegram sent-message cache",
       sourcePath,
-      apply: () => {
+      apply: (context) => {
         const parsed = readJson(sourcePath) as Record<string, Record<string, number>>;
         let imported = 0;
         for (const [chatId, messages] of Object.entries(parsed)) {
           for (const messageId of Object.keys(messages)) {
-            recordSentMessage(chatId, Number(messageId), { accountId: "default" });
+            importSentMessageCacheEntry(chatId, messageId, {
+              accountId: "default",
+              env: context.env,
+            });
             imported += 1;
           }
         }
@@ -194,12 +198,13 @@ function messageCachePlans(
     customPlan({
       label: "Telegram message cache",
       sourcePath,
-      apply: () => {
+      apply: (context) => {
         const parsed = readJson(sourcePath);
         const legacyStorePath = sourcePath.replace(/\.telegram-messages\.json$/u, "");
         const imported = importTelegramMessageCacheEntries(
           resolveTelegramMessageCacheScopeKey(legacyStorePath),
           parsed,
+          { env: context.env },
         );
         removeFile(sourcePath);
         return { changes: [`Imported ${imported} Telegram message cache`], warnings: [] };
@@ -215,7 +220,7 @@ function topicNamePlans(
     customPlan({
       label: "Telegram topic-name cache",
       sourcePath,
-      apply: () => {
+      apply: (context) => {
         const parsed = readJson(sourcePath) as Record<
           string,
           { name?: string; iconColor?: number; updatedAt?: number }
@@ -228,7 +233,17 @@ function topicNamePlans(
           if (!chatId || !threadId || !entry.name) {
             continue;
           }
-          updateTopicName(chatId, threadId, entry, topicScope);
+          importTelegramTopicNameEntry(
+            chatId,
+            threadId,
+            {
+              name: entry.name,
+              ...(typeof entry.iconColor === "number" ? { iconColor: entry.iconColor } : {}),
+              updatedAt: typeof entry.updatedAt === "number" ? entry.updatedAt : Date.now(),
+            },
+            topicScope,
+            { env: context.env },
+          );
           imported += 1;
         }
         removeFile(sourcePath);

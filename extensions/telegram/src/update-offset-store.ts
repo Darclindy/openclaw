@@ -2,10 +2,16 @@ import { createPluginStateKeyedStore } from "openclaw/plugin-sdk/plugin-state-ru
 import { fingerprintTelegramBotToken } from "./token-fingerprint.js";
 
 const STORE_VERSION = 3;
-const UPDATE_OFFSET_STORE = createPluginStateKeyedStore<TelegramUpdateOffsetState>("telegram", {
-  namespace: "update-offsets",
-  maxEntries: 1_000,
-});
+
+function createUpdateOffsetStore(env?: NodeJS.ProcessEnv) {
+  return createPluginStateKeyedStore<TelegramUpdateOffsetState>("telegram", {
+    namespace: "update-offsets",
+    maxEntries: 1_000,
+    ...(env ? { env } : {}),
+  });
+}
+
+const UPDATE_OFFSET_STORE = createUpdateOffsetStore();
 
 export type TelegramUpdateOffsetState = {
   version: number;
@@ -124,7 +130,8 @@ export async function readTelegramUpdateOffset(params: {
   env?: NodeJS.ProcessEnv;
   onRotationDetected?: (info: TelegramUpdateOffsetRotationInfo) => void | Promise<void>;
 }): Promise<number | null> {
-  const value = await UPDATE_OFFSET_STORE.lookup(
+  const store = params.env ? createUpdateOffsetStore(params.env) : UPDATE_OFFSET_STORE;
+  const value = await store.lookup(
     normalizeTelegramUpdateOffsetAccountId(params.accountId),
   );
   const parsed = safeParseState(value);
@@ -154,7 +161,8 @@ export async function writeTelegramUpdateOffset(params: {
     botId: extractBotIdFromToken(params.botToken),
     tokenFingerprint: fingerprintFromToken(params.botToken),
   };
-  await UPDATE_OFFSET_STORE.register(
+  const store = params.env ? createUpdateOffsetStore(params.env) : UPDATE_OFFSET_STORE;
+  await store.register(
     normalizeTelegramUpdateOffsetAccountId(params.accountId),
     payload,
   );
@@ -169,7 +177,8 @@ export async function importTelegramUpdateOffsetState(params: {
   if (!parsed || parsed.lastUpdateId === null) {
     return false;
   }
-  await UPDATE_OFFSET_STORE.register(normalizeTelegramUpdateOffsetAccountId(params.accountId), {
+  const store = params.env ? createUpdateOffsetStore(params.env) : UPDATE_OFFSET_STORE;
+  await store.register(normalizeTelegramUpdateOffsetAccountId(params.accountId), {
     version: STORE_VERSION,
     lastUpdateId: parsed.lastUpdateId,
     botId: parsed.botId,
@@ -182,7 +191,8 @@ export async function deleteTelegramUpdateOffset(params: {
   accountId?: string;
   env?: NodeJS.ProcessEnv;
 }): Promise<void> {
-  await UPDATE_OFFSET_STORE.delete(normalizeTelegramUpdateOffsetAccountId(params.accountId));
+  const store = params.env ? createUpdateOffsetStore(params.env) : UPDATE_OFFSET_STORE;
+  await store.delete(normalizeTelegramUpdateOffsetAccountId(params.accountId));
 }
 
 export async function resetTelegramUpdateOffsetsForTests(): Promise<void> {

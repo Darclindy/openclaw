@@ -1,9 +1,14 @@
 import { createPluginStateSyncKeyedStore } from "openclaw/plugin-sdk/plugin-state-runtime";
 
-const STICKER_CACHE_STORE = createPluginStateSyncKeyedStore<CachedSticker>("telegram", {
-  namespace: "sticker-cache",
-  maxEntries: 10_000,
-});
+function createStickerCacheStore(env?: NodeJS.ProcessEnv) {
+  return createPluginStateSyncKeyedStore<CachedSticker>("telegram", {
+    namespace: "sticker-cache",
+    maxEntries: 10_000,
+    ...(env ? { env } : {}),
+  });
+}
+
+const STICKER_CACHE_STORE = createStickerCacheStore();
 
 export interface CachedSticker {
   fileId: string;
@@ -29,8 +34,9 @@ export function getCachedSticker(fileUniqueId: string): CachedSticker | null {
 /**
  * Add or update a sticker in the cache.
  */
-export function cacheSticker(sticker: CachedSticker): void {
-  STICKER_CACHE_STORE.register(sticker.fileUniqueId, sticker);
+export function cacheSticker(sticker: CachedSticker, options?: { env?: NodeJS.ProcessEnv }): void {
+  const store = options?.env ? createStickerCacheStore(options.env) : STICKER_CACHE_STORE;
+  store.register(sticker.fileUniqueId, sticker);
 }
 
 /**

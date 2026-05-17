@@ -2,7 +2,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Message } from "grammy/types";
-import { resetPluginStateStoreForTests } from "openclaw/plugin-sdk/plugin-state-runtime";
+import {
+  createPluginStateSyncKeyedStore,
+  resetPluginStateStoreForTests,
+} from "openclaw/plugin-sdk/plugin-state-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { detectTelegramLegacyStateMigrations } from "./doctor-legacy-state.js";
 import {
@@ -14,8 +17,16 @@ import {
   resetSentMessageCacheForTest,
   wasSentByBot,
 } from "./sent-message-cache.js";
-import { getCachedSticker, resetTelegramStickerCacheForTests } from "./sticker-cache-store.js";
-import { createTelegramThreadBindingManager, __testing } from "./thread-bindings.js";
+import {
+  getCachedSticker,
+  resetTelegramStickerCacheForTests,
+  type CachedSticker,
+} from "./sticker-cache-store.js";
+import {
+  createTelegramThreadBindingManager,
+  __testing,
+  type TelegramThreadBindingRecord,
+} from "./thread-bindings.js";
 import {
   getTopicName,
   resolveTopicNameCacheScope,
@@ -45,9 +56,14 @@ afterEach(async () => {
 });
 
 function makeStateDir(): string {
+  const stateDir = makeTempStateDir();
+  vi.stubEnv("OPENCLAW_STATE_DIR", stateDir);
+  return stateDir;
+}
+
+function makeTempStateDir(): string {
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-telegram-migrate-"));
   tempDirs.push(stateDir);
-  vi.stubEnv("OPENCLAW_STATE_DIR", stateDir);
   return stateDir;
 }
 
@@ -58,6 +74,20 @@ function applyContext(stateDir: string) {
     stateDir,
     oauthDir: path.join(stateDir, "oauth"),
   };
+}
+
+function telegramStore<T>(params: {
+  namespace: string;
+  maxEntries: number;
+  env: NodeJS.ProcessEnv;
+  defaultTtlMs?: number;
+}) {
+  return createPluginStateSyncKeyedStore<T>("telegram", {
+    namespace: params.namespace,
+    maxEntries: params.maxEntries,
+    ...(params.defaultTtlMs ? { defaultTtlMs: params.defaultTtlMs } : {}),
+    env: params.env,
+  });
 }
 
 describe("Telegram legacy state migrations", () => {
@@ -258,5 +288,149 @@ describe("Telegram legacy state migrations", () => {
       "Deployments",
     );
     expect(fs.existsSync(sourcePath)).toBe(false);
+  });
+
+  it("imports plugin state rows into the doctor context env", async () => {
+    const processStateDir = makeStateDir();
+    const stateDir = makeTempStateDir();
+    const env = { ...process.env, OPENCLAW_STATE_DIR: stateDir };
+    const processEnv = { ...process.env, OPENCLAW_STATE_DIR: processStateDir };
+    const telegramDir = path.join(stateDir, "telegram");
+    const sessionsDir = path.join(stateDir, "sessions");
+    fs.mkdirSync(telegramDir, { recursive: true });
+    fs.mkdirSync(sessionsDir, { recursive: true });
+    const botToken = "111111:token";
+    fs.writeFileSync(
+      path.join(telegramDir, "update-offset-default.json"),
+      `${JSON.stringify({
+        version: 3,
+        lastUpdateId: 42,
+        botId: "111111",
+        tokenFingerprint: fingerprintTelegramBotToken(botToken),
+      })}\n`,
+    );
+    fs.writeFileSync(
+      path.join(telegramDir, "sticker-cache.json"),
+      `${JSON.stringify({
+        stickers: {
+          one: {
+            fileId: "file-env",
+            fileUniqueId: "unique-env",
+            description: "Env scoped sticker",
+            cachedAt: "2026-03-01T10:00:00.000Z",
+          },
+        },
+      })}\n`,
+    );
+    fs.writeFileSync(
+      path.join(telegramDir, "thread-bindings-work.json"),
+      `${JSON.stringify({
+        bindings: [
+          {
+            conversationId: "-100200300:topic:77",
+            targetKind: "subagent",
+            targetSessionKey: "agent:main:subagent:child-1",
+          },
+        ],
+      })}\n`,
+    );
+    const legacyStorePath = path.join(sessionsDir, "work.json");
+    fs.writeFileSync(
+      `${legacyStorePath}.telegram-sent-messages.json`,
+      `${JSON.stringify({ "-100123": { "77": Date.now() } })}\n`,
+    );
+    fs.writeFileSync(
+      `${legacyStorePath}.telegram-messages.json`,
+      `${JSON.stringify([
+        {
+          key: "work:-100123:77",
+          node: {
+            messageId: "77",
+            sourceMessage: {
+              chat: { id: -100123, type: "supergroup", title: "Deployments" },
+              message_id: 77,
+              date: 1_700_000_000,
+              text: "Ship the cache migration",
+            } satisfies Partial<Message>,
+            threadId: "42",
+          },
+        },
+      ])}\n`,
+    );
+    fs.writeFileSync(
+      `${legacyStorePath}.telegram-topic-names.json`,
+      `${JSON.stringify({
+        "-100123:42": {
+          name: "Deployments",
+          iconColor: 0x6fb9f0,
+          updatedAt: 1_700_000_000_000,
+        },
+      })}\n`,
+    );
+
+    for (const plan of detectTelegramLegacyStateMigrations({ stateDir })) {
+      await plan.apply({
+        cfg: {},
+        env,
+        stateDir,
+        oauthDir: path.join(stateDir, "oauth"),
+      });
+    }
+
+    await expect(readTelegramUpdateOffset({ botToken, env })).resolves.toBe(42);
+    await expect(readTelegramUpdateOffset({ botToken, env: processEnv })).resolves.toBeNull();
+    expect(
+      telegramStore<CachedSticker>({
+        namespace: "sticker-cache",
+        maxEntries: 10_000,
+        env,
+      }).lookup("unique-env")?.description,
+    ).toBe("Env scoped sticker");
+    expect(
+      telegramStore<CachedSticker>({
+        namespace: "sticker-cache",
+        maxEntries: 10_000,
+        env: processEnv,
+      }).lookup("unique-env"),
+    ).toBeUndefined();
+    expect(
+      telegramStore<TelegramThreadBindingRecord>({
+        namespace: "thread-bindings",
+        maxEntries: 50_000,
+        env,
+      })
+        .entries()
+        .map((entry) => entry.value.targetSessionKey),
+    ).toEqual(["agent:main:subagent:child-1"]);
+    expect(
+      telegramStore<{ scopeKey: string; chatId: string; messageId: string }>({
+        namespace: "sent-messages",
+        maxEntries: 100_000,
+        defaultTtlMs: 24 * 60 * 60 * 1000,
+        env,
+      })
+        .entries()
+        .map((entry) => `${entry.value.scopeKey}:${entry.value.chatId}:${entry.value.messageId}`),
+    ).toEqual(["default:-100123:77"]);
+    const messageScope = resolveTelegramMessageCacheScopeKey(legacyStorePath);
+    expect(
+      telegramStore<{ scopeKey: string; cacheKey: string }>({
+        namespace: "message-cache",
+        maxEntries: 100_000,
+        defaultTtlMs: 7 * 24 * 60 * 60 * 1000,
+        env,
+      })
+        .entries()
+        .map((entry) => `${entry.value.scopeKey}:${entry.value.cacheKey}`),
+    ).toEqual([`${messageScope}:work:-100123:77`]);
+    expect(
+      telegramStore<{ scopeKey: string; name: string }>({
+        namespace: "topic-names",
+        maxEntries: 900,
+        env,
+      })
+        .entries()
+        .map((entry) => `${entry.value.scopeKey}:${entry.value.name}`),
+    ).toEqual([`${resolveTopicNameCacheScope(legacyStorePath)}:Deployments`]);
   });
 });

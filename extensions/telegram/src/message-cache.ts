@@ -78,14 +78,17 @@ type TelegramPersistedMessageCacheNode = {
 const DEFAULT_MAX_MESSAGES = 5000;
 const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const persistedMessageCacheBuckets = new Map<string, TelegramMessageCacheBucket>();
-const MESSAGE_CACHE_STORE = createPluginStateSyncKeyedStore<TelegramPersistedMessageCacheNode>(
-  "telegram",
-  {
+
+function createMessageCacheStore(env?: NodeJS.ProcessEnv) {
+  return createPluginStateSyncKeyedStore<TelegramPersistedMessageCacheNode>("telegram", {
     namespace: "message-cache",
     maxEntries: 100_000,
     defaultTtlMs: DEFAULT_TTL_MS,
-  },
-);
+    ...(env ? { env } : {}),
+  });
+}
+
+const MESSAGE_CACHE_STORE = createMessageCacheStore();
 
 export function resetTelegramMessageCacheBucketsForTest(): void {
   persistedMessageCacheBuckets.clear();
@@ -390,19 +393,24 @@ function persistMessages(params: {
   }
 }
 
-export function importTelegramMessageCacheEntries(scopeKey: string, entries: unknown): number {
+export function importTelegramMessageCacheEntries(
+  scopeKey: string,
+  entries: unknown,
+  options?: { env?: NodeJS.ProcessEnv },
+): number {
   if (!Array.isArray(entries)) {
     return 0;
   }
   let imported = 0;
-  const bucket = persistedMessageCacheBuckets.get(scopeKey);
+  const store = options?.env ? createMessageCacheStore(options.env) : MESSAGE_CACHE_STORE;
+  const bucket = options?.env ? undefined : persistedMessageCacheBuckets.get(scopeKey);
   for (const entry of entries) {
     for (const parsed of parsePersistedEntry(entry)) {
       const existing = bucket?.messages.get(parsed.key);
       const node = existing
         ? mergeCachedMessageNode(existing, parsed.node, parsed.mode)
         : parsed.node;
-      MESSAGE_CACHE_STORE.register(
+      store.register(
         persistedMessageEntryKey(scopeKey, parsed.key),
         {
           scopeKey,
