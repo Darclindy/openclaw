@@ -306,15 +306,20 @@ function saveAuthProfileStoreInTransaction(
   const localStore = buildLocalAuthProfileStoreForSave({ store, agentDir, options });
   const previousRaw = readAuthProfileStorePayloadResultFromDatabase(
     database,
-    resolveAuthProfileStoreKey(agentDir),
+    resolveAuthProfileStoreKey(agentDir, options?.env),
   );
   const payload = buildPersistedAuthProfileSecretsStore(localStore, undefined, {
     agentDir,
     env: options?.env,
     existingRaw: previousRaw.exists ? previousRaw.value : undefined,
   });
-  savePersistedAuthProfileSecretsStoreInTransaction(database, payload, agentDir);
-  savePersistedAuthProfileStateInTransaction(database, localStore, agentDir);
+  const updatedAt = Date.now();
+  savePersistedAuthProfileSecretsStoreInTransaction(database, payload, agentDir, updatedAt, {
+    env: options?.env,
+  });
+  savePersistedAuthProfileStateInTransaction(database, localStore, agentDir, updatedAt, {
+    env: options?.env,
+  });
   return localStore;
 }
 
@@ -355,7 +360,7 @@ export async function updateAuthProfileStoreWithLock(params: {
     );
     if (savedStore) {
       writeCachedAuthProfileStore({
-        storeKey: resolveAuthProfileStoreKey(params.agentDir),
+        storeKey: resolveAuthProfileStoreKey(params.agentDir, params.env),
         authMtimeMs: Date.now(),
         store: savedStore,
       });
@@ -386,7 +391,7 @@ function loadAuthProfileStoreForAgent(
   options?: LoadAuthProfileStoreOptions,
 ): AuthProfileStore {
   const readOnly = options?.readOnly === true;
-  const storeKey = resolveAuthProfileStoreKey(agentDir);
+  const storeKey = resolveAuthProfileStoreKey(agentDir, options?.env);
   let persisted = loadPersistedAuthProfileStoreEntry(agentDir, { env: options?.env });
   let authMtimeMs = persisted?.updatedAt ?? null;
   if (!persisted) {
@@ -442,8 +447,8 @@ export function loadAuthProfileStoreForRuntime(
   options?: LoadAuthProfileStoreOptions,
 ): AuthProfileStore {
   const store = loadAuthProfileStoreForAgent(agentDir, options);
-  const storeKey = resolveAuthProfileStoreKey(agentDir);
-  const mainStoreKey = resolveAuthProfileStoreKey();
+  const storeKey = resolveAuthProfileStoreKey(agentDir, options?.env);
+  const mainStoreKey = resolveAuthProfileStoreKey(undefined, options?.env);
   const externalCli = resolveExternalCliOverlayOptions(options);
   if (!agentDir || storeKey === mainStoreKey) {
     return overlayExternalAuthProfiles(store, {
@@ -473,8 +478,8 @@ export function loadAuthProfileStoreWithoutExternalProfiles(
     ...(options?.env ? { env: options.env } : {}),
   };
   const store = loadAuthProfileStoreForAgent(agentDir, loadOptions);
-  const storeKey = resolveAuthProfileStoreKey(agentDir);
-  const mainStoreKey = resolveAuthProfileStoreKey();
+  const storeKey = resolveAuthProfileStoreKey(agentDir, options?.env);
+  const mainStoreKey = resolveAuthProfileStoreKey(undefined, options?.env);
   if (!agentDir || storeKey === mainStoreKey) {
     return store;
   }
@@ -603,7 +608,7 @@ export function saveAuthProfileStore(
   agentDir?: string,
   options?: SaveAuthProfileStoreOptions,
 ): void {
-  const storeKey = resolveAuthProfileStoreKey(agentDir);
+  const storeKey = resolveAuthProfileStoreKey(agentDir, options?.env);
   let updatedAt: number | null = null;
   let savedStore = store;
   runOpenClawStateWriteTransaction(

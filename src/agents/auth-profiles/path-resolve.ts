@@ -9,24 +9,39 @@ const LEGACY_AUTH_PROFILE_FILENAME = "auth-profiles.json";
 const LEGACY_AUTH_STATE_FILENAME = "auth-state.json";
 const LEGACY_AUTH_FILENAME = "auth.json";
 
-export function resolveAuthProfileStoreAgentDir(agentDir?: string): string {
-  return resolveUserPath(agentDir ?? resolveDefaultAgentDir({}));
+export function resolveAuthProfileStoreAgentDir(
+  agentDir?: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return resolveUserPath(agentDir ?? resolveDefaultAgentDir({}, env), env);
 }
 
-export function resolveAuthProfileStoreKey(agentDir?: string): string {
-  return resolveAuthProfileStoreAgentDir(agentDir);
+export function resolveAuthProfileStoreKey(
+  agentDir?: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return resolveAuthProfileStoreAgentDir(agentDir, env);
 }
 
-export function resolveAuthStorePath(agentDir?: string): string {
-  return path.join(resolveAuthProfileStoreAgentDir(agentDir), LEGACY_AUTH_PROFILE_FILENAME);
+export function resolveAuthStorePath(
+  agentDir?: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return path.join(resolveAuthProfileStoreAgentDir(agentDir, env), LEGACY_AUTH_PROFILE_FILENAME);
 }
 
-export function resolveLegacyAuthStorePath(agentDir?: string): string {
-  return path.join(resolveAuthProfileStoreAgentDir(agentDir), LEGACY_AUTH_FILENAME);
+export function resolveLegacyAuthStorePath(
+  agentDir?: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return path.join(resolveAuthProfileStoreAgentDir(agentDir, env), LEGACY_AUTH_FILENAME);
 }
 
-export function resolveAuthStatePath(agentDir?: string): string {
-  return path.join(resolveAuthProfileStoreAgentDir(agentDir), LEGACY_AUTH_STATE_FILENAME);
+export function resolveAuthStatePath(
+  agentDir?: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return path.join(resolveAuthProfileStoreAgentDir(agentDir, env), LEGACY_AUTH_STATE_FILENAME);
 }
 
 export function resolveAuthStorePathForDisplay(agentDir?: string): string {
@@ -43,7 +58,7 @@ export function resolveAuthProfileStoreLocationForDisplay(
   agentDir?: string,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
-  return `${resolveOpenClawStateSqlitePath(env)}#table/auth_profile_stores/${resolveAuthProfileStoreKey(agentDir)}`;
+  return `${resolveOpenClawStateSqlitePath(env)}#table/auth_profile_stores/${resolveAuthProfileStoreKey(agentDir, env)}`;
 }
 
 export const OAUTH_REFRESH_LOCK_SCOPE = "auth.oauth-refresh";

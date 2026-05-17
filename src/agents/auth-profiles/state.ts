@@ -42,8 +42,11 @@ const AUTH_FAILURE_REASONS = new Set<AuthProfileFailureReason>([
 const AUTH_BLOCKED_REASONS = new Set<AuthProfileBlockedReason>(["subscription_limit"]);
 const AUTH_BLOCKED_SOURCES = new Set<AuthProfileBlockedSource>(["codex_rate_limits", "wham"]);
 
-export function authProfileStateKey(agentDir?: string): string {
-  return resolveAuthProfileStoreKey(agentDir);
+export function authProfileStateKey(
+  agentDir?: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return resolveAuthProfileStoreKey(agentDir, env);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -208,7 +211,7 @@ export function loadPersistedAuthProfileState(
   agentDir?: string,
   options: OpenClawStateDatabaseOptions = {},
 ): AuthProfileState {
-  const key = authProfileStateKey(agentDir);
+  const key = authProfileStateKey(agentDir, options.env);
   const sqliteState = readAuthProfileStatePayloadResult(key, options);
   if (sqliteState.exists && sqliteState.value !== undefined) {
     return coerceAuthProfileState(sqliteState.value);
@@ -220,8 +223,9 @@ export function loadPersistedAuthProfileState(
 export function loadPersistedAuthProfileStateFromDatabase(
   database: OpenClawStateDatabase,
   agentDir?: string,
+  options: Pick<OpenClawStateDatabaseOptions, "env"> = {},
 ): AuthProfileState {
-  const key = authProfileStateKey(agentDir);
+  const key = authProfileStateKey(agentDir, options.env);
   const sqliteState = readAuthProfileStatePayloadResultFromDatabase(database, key);
   if (sqliteState.exists && sqliteState.value !== undefined) {
     return coerceAuthProfileState(sqliteState.value);
@@ -262,10 +266,11 @@ export function savePersistedAuthProfileStateInTransaction(
   store: AuthProfileState,
   agentDir?: string,
   updatedAt: number = Date.now(),
+  options: Pick<OpenClawStateDatabaseOptions, "env"> = {},
 ): AuthProfileStateStore | null {
   return savePersistedAuthProfileStatePayload({
     store,
-    key: authProfileStateKey(agentDir),
+    key: authProfileStateKey(agentDir, options.env),
     write: (key, payload) =>
       writeAuthProfileStatePayloadInTransaction(
         database,

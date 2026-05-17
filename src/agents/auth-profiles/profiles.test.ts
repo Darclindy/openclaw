@@ -9,12 +9,101 @@ import {
 } from "./profiles.js";
 import {
   clearRuntimeAuthProfileStoreSnapshots,
+  loadAuthProfileStoreWithoutExternalProfiles,
   loadAuthProfileStoreForRuntime,
   saveAuthProfileStore,
 } from "./store.js";
 import type { AuthProfileStore } from "./types.js";
 
 describe("promoteAuthProfileInOrder", () => {
+  it("uses env-scoped default agent keys when agentDir is omitted", async () => {
+    const processStateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-auth-process-state-"));
+    const envStateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-auth-env-state-"));
+    const previousStateDir = process.env.OPENCLAW_STATE_DIR;
+    process.env.OPENCLAW_STATE_DIR = processStateDir;
+    const env = { ...process.env, OPENCLAW_STATE_DIR: envStateDir };
+    const profileId = "openai-codex:env-default";
+    try {
+      saveAuthProfileStore(
+        {
+          version: AUTH_STORE_VERSION,
+          profiles: {
+            [profileId]: {
+              type: "token",
+              provider: "openai-codex",
+              token: "env-token",
+            },
+          },
+        },
+        undefined,
+        { env },
+      );
+      clearRuntimeAuthProfileStoreSnapshots();
+
+      const loaded = loadAuthProfileStoreWithoutExternalProfiles(undefined, { env });
+
+      expect(loaded.profiles[profileId]).toMatchObject({
+        type: "token",
+        provider: "openai-codex",
+        token: "env-token",
+      });
+      expect(fs.existsSync(path.join(envStateDir, "state", "openclaw.sqlite"))).toBe(true);
+      expect(fs.existsSync(path.join(processStateDir, "state", "openclaw.sqlite"))).toBe(false);
+    } finally {
+      if (previousStateDir === undefined) {
+        delete process.env.OPENCLAW_STATE_DIR;
+      } else {
+        process.env.OPENCLAW_STATE_DIR = previousStateDir;
+      }
+      fs.rmSync(processStateDir, { recursive: true, force: true });
+      fs.rmSync(envStateDir, { recursive: true, force: true });
+      clearRuntimeAuthProfileStoreSnapshots();
+    }
+  });
+
+  it("reads env-scoped legacy default auth profiles before migration", async () => {
+    const processStateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-auth-legacy-process-"));
+    const envStateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-auth-legacy-env-"));
+    const previousStateDir = process.env.OPENCLAW_STATE_DIR;
+    process.env.OPENCLAW_STATE_DIR = processStateDir;
+    const env = { ...process.env, OPENCLAW_STATE_DIR: envStateDir };
+    const agentDir = path.join(envStateDir, "agents", "main", "agent");
+    const profileId = "openai-codex:legacy-default";
+    try {
+      fs.mkdirSync(agentDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(agentDir, "auth-profiles.json"),
+        `${JSON.stringify({
+          version: AUTH_STORE_VERSION,
+          profiles: {
+            [profileId]: {
+              type: "token",
+              provider: "openai-codex",
+              token: "legacy-env-token",
+            },
+          },
+        })}\n`,
+      );
+
+      const loaded = loadAuthProfileStoreWithoutExternalProfiles(undefined, { env });
+
+      expect(loaded.profiles[profileId]).toMatchObject({
+        type: "token",
+        provider: "openai-codex",
+        token: "legacy-env-token",
+      });
+    } finally {
+      if (previousStateDir === undefined) {
+        delete process.env.OPENCLAW_STATE_DIR;
+      } else {
+        process.env.OPENCLAW_STATE_DIR = previousStateDir;
+      }
+      fs.rmSync(processStateDir, { recursive: true, force: true });
+      fs.rmSync(envStateDir, { recursive: true, force: true });
+      clearRuntimeAuthProfileStoreSnapshots();
+    }
+  });
+
   it("moves a relogin profile to the front of an existing per-agent provider order", async () => {
     const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-auth-order-promote-"));
     const agentDir = path.join(stateDir, "agents", "main", "agent");

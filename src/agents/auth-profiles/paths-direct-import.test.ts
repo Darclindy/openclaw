@@ -44,6 +44,20 @@ describe("auth profile path helpers (direct-import coverage attribution)", () =>
     expect(resolved.endsWith(path.join("agents", "main", "agent"))).toBe(true);
   });
 
+  it("resolves the default auth profile store key from an env override", async () => {
+    const otherStateDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-path-direct-env-"));
+    try {
+      const resolved = resolveAuthProfileStoreKey(undefined, {
+        ...process.env,
+        OPENCLAW_STATE_DIR: otherStateDir,
+      });
+      expect(resolved.startsWith(otherStateDir)).toBe(true);
+      expect(resolved.endsWith(path.join("agents", "main", "agent"))).toBe(true);
+    } finally {
+      await fs.rm(otherStateDir, { recursive: true, force: true });
+    }
+  });
+
   it("resolves the display location as a SQLite table target", () => {
     const agentDir = path.join(stateDir, "agents", "main", "agent");
     const resolved = resolveAuthProfileStoreLocationForDisplay(agentDir, {
