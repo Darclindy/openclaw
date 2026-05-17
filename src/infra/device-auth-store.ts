@@ -124,6 +124,17 @@ function upsertDeviceAuthTokenRow(
   );
 }
 
+function hasSqliteDeviceAuthTokens(
+  db: ReturnType<typeof getNodeSqliteKysely<DeviceAuthDatabase>>,
+  sqliteDb: DatabaseSync,
+): boolean {
+  const row = executeSqliteQueryTakeFirstSync(
+    sqliteDb,
+    db.selectFrom("device_auth_tokens").select("device_id").limit(1),
+  );
+  return Boolean(row);
+}
+
 function readLegacyDeviceAuthState(env?: NodeJS.ProcessEnv): DeviceAuthStore | null {
   try {
     return parseDeviceAuthStoreSnapshot(
@@ -263,6 +274,9 @@ export function loadDeviceAuthToken(params: {
     );
     if (row) {
       return rowToDeviceAuthEntry(row);
+    }
+    if (hasSqliteDeviceAuthTokens(db, database.db)) {
+      return null;
     }
   } catch {
     // Fall through to legacy JSON compatibility below.

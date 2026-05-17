@@ -121,6 +121,50 @@ describe("infra/device-auth-store", () => {
     });
   });
 
+  it("does not re-seed stale legacy JSON after SQLite has current auth rows", async () => {
+    await withTempDir("openclaw-device-auth-", async (stateDir) => {
+      const env = createEnv(stateDir);
+      const filePath = path.join(stateDir, "identity", "device-auth.json");
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(
+        filePath,
+        `${JSON.stringify({
+          version: 1,
+          deviceId: "device-1",
+          tokens: {
+            admin: {
+              token: "stale-admin-token",
+              role: "admin",
+              scopes: ["operator.admin"],
+              updatedAtMs: 1,
+            },
+          },
+        })}\n`,
+        "utf8",
+      );
+
+      storeDeviceAuthToken({
+        deviceId: "device-1",
+        role: "operator",
+        token: "fresh-operator-token",
+        env,
+      });
+
+      expect(loadDeviceAuthToken({ deviceId: "device-1", role: "admin", env })).toBeNull();
+      expect(loadDeviceAuthToken({ deviceId: "device-1", role: "operator", env })?.token).toBe(
+        "fresh-operator-token",
+      );
+
+      const database = openOpenClawStateDatabase({ env });
+      const db = getNodeSqliteKysely<DeviceAuthTestDatabase>(database.db);
+      const rows = executeSqliteQuerySync(
+        database.db,
+        db.selectFrom("device_auth_tokens").select(["role", "token"]).orderBy("role", "asc"),
+      ).rows.map((row) => ({ role: row.role, token: row.token }));
+      expect(rows).toEqual([{ role: "operator", token: "fresh-operator-token" }]);
+    });
+  });
+
   it("drops tokens from previous devices when storing a replacement device token", async () => {
     await withTempDir("openclaw-device-auth-", async (stateDir) => {
       const env = createEnv(stateDir);
