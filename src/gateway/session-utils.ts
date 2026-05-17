@@ -776,6 +776,7 @@ export function loadSessionEntry(sessionKey: string, opts?: { agentId?: string }
   return {
     cfg,
     agentId: target.agentId,
+    databasePath: target.databasePath,
     store,
     entry,
     canonicalKey: target.canonicalKey,
@@ -1704,12 +1705,13 @@ export function loadGatewaySessionRow(
     transcriptUsageMaxBytes?: number;
   },
 ): GatewaySessionRow | null {
-  const { cfg, store, entry, canonicalKey } = loadSessionEntry(sessionKey);
+  const { cfg, databasePath, store, entry, canonicalKey } = loadSessionEntry(sessionKey);
   if (!entry) {
     return null;
   }
   return buildGatewaySessionRow({
     cfg,
+    databasePath,
     store,
     key: canonicalKey,
     entry,

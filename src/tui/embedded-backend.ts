@@ -305,7 +305,7 @@ export class EmbeddedTuiBackend implements TuiBackend {
   }
 
   async loadHistory(opts: { sessionKey: string; limit?: number }) {
-    const { cfg, entry } = loadSessionEntry(opts.sessionKey);
+    const { cfg, databasePath, entry } = loadSessionEntry(opts.sessionKey);
     const sessionId = entry?.sessionId;
     const sessionAgentId = resolveSessionAgentId({ sessionKey: opts.sessionKey, config: cfg });
     const resolvedSessionModel = resolveSessionModelRef(cfg, entry, sessionAgentId);
@@ -315,6 +315,7 @@ export class EmbeddedTuiBackend implements TuiBackend {
       ? await readSessionMessagesAsync(
           {
             agentId: sessionAgentId,
+            path: databasePath,
             sessionId,
           },
           {
@@ -387,12 +388,15 @@ export class EmbeddedTuiBackend implements TuiBackend {
     const cfg = getRuntimeConfig();
     const target = resolveGatewaySessionDatabaseTarget({ cfg, key: opts.key });
     const store = Object.fromEntries(
-      listSessionEntries({ agentId: target.agentId }).map(({ sessionKey, entry }) => [
-        sessionKey,
-        entry,
-      ]),
+      listSessionEntries({ agentId: target.agentId, path: target.databasePath }).map(
+        ({ sessionKey, entry }) => [sessionKey, entry],
+      ),
     ) as Record<string, SessionEntry>;
-    const current = getSessionEntry({ agentId: target.agentId, sessionKey: target.canonicalKey });
+    const current = getSessionEntry({
+      agentId: target.agentId,
+      path: target.databasePath,
+      sessionKey: target.canonicalKey,
+    });
     if (current) {
       store[target.canonicalKey] = current;
     }
@@ -408,6 +412,7 @@ export class EmbeddedTuiBackend implements TuiBackend {
     }
     upsertSessionEntry({
       agentId: target.agentId,
+      path: target.databasePath,
       sessionKey: target.canonicalKey,
       entry: applied.entry,
     });

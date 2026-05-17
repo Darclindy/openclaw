@@ -7,8 +7,8 @@ import {
 } from "openclaw/plugin-sdk/reply-payload";
 import type { AgentMessage } from "../../agents/agent-core-contract.js";
 import { resolveAgentWorkspaceDir, resolveSessionAgentId } from "../../agents/agent-scope.js";
-import { resolveProviderIdForAuth } from "../../agents/provider-auth-aliases.js";
 import { rewriteTranscriptEntriesInSqliteTranscript } from "../../agents/pi-embedded-runner/transcript-rewrite.js";
+import { resolveProviderIdForAuth } from "../../agents/provider-auth-aliases.js";
 import { ensureSandboxWorkspaceForSession } from "../../agents/sandbox/context.js";
 import { resolveAgentTimeoutMs } from "../../agents/timeout.js";
 import { readTranscriptStateForSession } from "../../agents/transcript/transcript-state.js";
@@ -1343,6 +1343,7 @@ async function appendAssistantTranscriptMessage(params: {
   content?: Array<Record<string, unknown>>;
   sessionId: string;
   agentId?: string;
+  path?: string;
   createIfMissing?: boolean;
   idempotencyKey?: string;
   abortMeta?: {
@@ -1356,6 +1357,7 @@ async function appendAssistantTranscriptMessage(params: {
   return await appendInjectedAssistantMessageToTranscript({
     message: params.message,
     ...(params.agentId ? { agentId: params.agentId } : {}),
+    ...(params.path ? { path: params.path } : {}),
     sessionId: params.sessionId,
     label: params.label,
     content: params.content,
@@ -1399,7 +1401,7 @@ async function persistAbortedPartials(params: {
   if (params.snapshots.length === 0) {
     return;
   }
-  const { cfg, entry } = loadSessionEntry(params.sessionKey);
+  const { cfg, databasePath, entry } = loadSessionEntry(params.sessionKey);
   const agentId = resolveSessionAgentId({ sessionKey: params.sessionKey, config: cfg });
   for (const snapshot of params.snapshots) {
     const sessionId = entry?.sessionId ?? snapshot.sessionId ?? snapshot.runId;
@@ -1407,6 +1409,7 @@ async function persistAbortedPartials(params: {
       message: snapshot.text,
       sessionId,
       agentId,
+      path: databasePath,
       createIfMissing: true,
       idempotencyKey: `${snapshot.runId}:assistant`,
       cfg,
@@ -1859,7 +1862,7 @@ export const chatHandlers: GatewayRequestHandlers = {
       limit?: number;
       maxChars?: number;
     };
-    const { cfg, entry } = loadSessionEntry(sessionKey);
+    const { cfg, databasePath, entry } = loadSessionEntry(sessionKey);
     const sessionId = entry?.sessionId;
     const sessionAgentId = resolveSessionAgentId({ sessionKey, config: cfg });
     const resolvedSessionModel = resolveSessionModelRef(cfg, entry, sessionAgentId);
@@ -1872,6 +1875,7 @@ export const chatHandlers: GatewayRequestHandlers = {
       ? await readRecentSessionMessagesAsync(
           {
             agentId: sessionAgentId,
+            path: databasePath,
             sessionId,
           },
           {
@@ -3042,7 +3046,7 @@ export const chatHandlers: GatewayRequestHandlers = {
 
     // Load session to find transcript file
     const rawSessionKey = p.sessionKey;
-    const { cfg, entry, canonicalKey: sessionKey } = loadSessionEntry(rawSessionKey);
+    const { cfg, databasePath, entry, canonicalKey: sessionKey } = loadSessionEntry(rawSessionKey);
     const sessionId = entry?.sessionId;
     if (!sessionId) {
       respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "session not found"));
@@ -3055,6 +3059,7 @@ export const chatHandlers: GatewayRequestHandlers = {
       label: p.label,
       sessionId,
       agentId,
+      path: databasePath,
       createIfMissing: true,
       cfg,
     });

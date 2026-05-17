@@ -51,6 +51,7 @@ function resolveInjectedAssistantContent(params: {
 export async function appendInjectedAssistantMessageToTranscript(params: {
   message: string;
   agentId?: string;
+  path?: string;
   sessionId: string;
   label?: string;
   /** When set, used as the assistant `content` array (e.g. text + embedded audio blocks). */
@@ -115,6 +116,7 @@ export async function appendInjectedAssistantMessageToTranscript(params: {
     const sessionId = params.sessionId;
     const { messageId, message: appendedMessage } = await appendSessionTranscriptMessage({
       agentId,
+      ...(params.path ? { path: params.path } : {}),
       sessionId,
       message: messageBody,
       now,

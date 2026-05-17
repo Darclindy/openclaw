@@ -780,6 +780,7 @@ describe("gateway session utils", () => {
 
       expect(target.databasePath).toBe(databasePath);
       expect(target.canonicalKey).toBe("agent:main:archived");
+      expect(loaded.databasePath).toBe(databasePath);
       expect(loaded.entry?.sessionId).toBe("archived-session");
     } finally {
       closeOpenClawAgentDatabasesForTest();

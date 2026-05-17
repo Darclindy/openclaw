@@ -1111,6 +1111,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     }
     const row = buildGatewaySessionRow({
       cfg,
+      databasePath: target.databasePath,
       store,
       key: target.canonicalKey,
       entry,
