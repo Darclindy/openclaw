@@ -10,9 +10,12 @@ import { resolveUserPath } from "../utils.js";
 import { resolveCompatibilityHostVersion } from "../version.js";
 import { resolveDefaultPluginNpmDir } from "./install-paths.js";
 import { hashJson } from "./installed-plugin-index-hash.js";
+import {
+  readPersistedInstalledPluginIndexFingerprintSync,
+  readPersistedInstalledPluginIndexSync,
+} from "./installed-plugin-index-persisted-read.js";
 import { resolveInstalledPluginIndexPolicyHash } from "./installed-plugin-index-policy.js";
 import { loadInstalledPluginIndexInstallRecordsSync } from "./installed-plugin-index-record-reader.js";
-import { resolveInstalledPluginIndexStorePath } from "./installed-plugin-index-store-path.js";
 import type { InstalledPluginIndex } from "./installed-plugin-index.js";
 import {
   loadPluginManifestRegistryForInstalledIndex,
@@ -349,15 +352,14 @@ function resolvePersistedRegistryFastMemoFingerprint(params: {
   if (disabled) {
     return { disabled: true };
   }
-  const indexPath = resolveInstalledPluginIndexStorePath({
-    env: params.env,
-    ...(params.stateDir ? { stateDir: params.stateDir } : {}),
-  });
   const npmRoot = params.stateDir
     ? path.join(params.stateDir, "npm")
     : resolveDefaultPluginNpmDir(params.env);
   return {
-    index: fileFingerprint(indexPath),
+    index: readPersistedInstalledPluginIndexFingerprintSync({
+      env: params.env,
+      ...(params.stateDir ? { stateDir: params.stateDir } : {}),
+    }),
     npmPackageJson: fileFingerprint(path.join(npmRoot, "package.json")),
   };
 }
@@ -401,14 +403,16 @@ function resolvePersistedRegistryMemoState(params: {
       watchedFilesHash: hashJson([]),
     };
   }
-  const indexPath = resolveInstalledPluginIndexStorePath({
-    env: params.env,
-    ...(params.stateDir ? { stateDir: params.stateDir } : {}),
-  });
   const npmRoot = params.stateDir
     ? path.join(params.stateDir, "npm")
     : resolveDefaultPluginNpmDir(params.env);
-  const index = params.index ?? readJsonObject(indexPath);
+  const index =
+    params.index ??
+    readPersistedInstalledPluginIndexSync({
+      env: params.env,
+      ...(params.stateDir ? { stateDir: params.stateDir } : {}),
+    }) ??
+    undefined;
   const plugins = Array.isArray(index?.plugins) ? index.plugins : [];
   const diagnostics = Array.isArray(index?.diagnostics) ? index.diagnostics : [];
   const pluginRootById = new Map<string, string>();

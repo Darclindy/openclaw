@@ -11,7 +11,9 @@ import {
   openOpenClawStateDatabase,
   runOpenClawStateWriteTransaction,
 } from "../state/openclaw-state-db.js";
+import { resolveOpenClawStateSqlitePath } from "../state/openclaw-state-db.paths.js";
 import { safeParseWithSchema } from "../utils/zod-parse.js";
+import { hashJson } from "./installed-plugin-index-hash.js";
 import { extractPluginInstallRecordsFromInstalledPluginIndex } from "./installed-plugin-index-install-records.js";
 import { type InstalledPluginIndexStoreOptions } from "./installed-plugin-index-store-options.js";
 import {
@@ -245,6 +247,42 @@ export function deletePersistedInstalledPluginIndexFromSqliteSync(
     );
     return Number(result.numAffectedRows ?? 0) > 0;
   }, resolveInstalledPluginIndexStateDbOptions(options));
+}
+
+export function readPersistedInstalledPluginIndexFingerprintSync(
+  options: InstalledPluginIndexStoreOptions = {},
+): Record<string, unknown> {
+  const databaseOptions = resolveInstalledPluginIndexStateDbOptions(options);
+  let databasePath = resolveOpenClawStateSqlitePath(databaseOptions.env ?? process.env);
+  try {
+    const database = openOpenClawStateDatabase(databaseOptions);
+    databasePath = database.path;
+    const db = getNodeSqliteKysely<InstalledPluginIndexDatabase>(database.db);
+    const row = executeSqliteQueryTakeFirstSync(
+      database.db,
+      db
+        .selectFrom("installed_plugin_index")
+        .selectAll()
+        .where("index_key", "=", INSTALLED_PLUGIN_INDEX_ROW_KEY),
+    );
+    return {
+      source: "sqlite",
+      databasePath,
+      row: row
+        ? {
+            updatedAtMs: row.updated_at_ms,
+            generatedAtMs: row.generated_at_ms,
+            hash: hashJson(row),
+          }
+        : null,
+    };
+  } catch (error) {
+    return {
+      source: "sqlite",
+      databasePath,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 function readPersistedInstalledPluginIndexSyncFromSqlite(
