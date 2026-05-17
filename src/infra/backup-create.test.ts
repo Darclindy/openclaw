@@ -18,6 +18,7 @@ import {
   type BackupCreateResult,
 } from "./backup-create.js";
 import { executeSqliteQuerySync, getNodeSqliteKysely } from "./kysely-sync.js";
+import { requireNodeSqlite } from "./node-sqlite.js";
 
 function makeResult(overrides: Partial<BackupCreateResult> = {}): BackupCreateResult {
   return {
@@ -37,7 +38,7 @@ function makeResult(overrides: Partial<BackupCreateResult> = {}): BackupCreateRe
 
 type BackupCreateTestDatabase = Pick<
   OpenClawStateKyselyDatabase,
-  "diagnostic_events" | "backup_runs"
+  "diagnostic_events" | "backup_runs" | "delivery_queue_entries"
 >;
 
 async function listArchiveEntries(archivePath: string): Promise<string[]> {
@@ -51,6 +52,30 @@ async function listArchiveEntries(archivePath: string): Promise<string[]> {
     },
   });
   return entries;
+}
+
+async function extractArchiveToTemp(archivePath: string): Promise<string> {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-backup-test-extract-"));
+  await tar.x({
+    file: archivePath,
+    gzip: true,
+    cwd: tempDir,
+  });
+  return tempDir;
+}
+
+function countDeliveryQueueRows(sqlitePath: string): number {
+  const sqlite = requireNodeSqlite();
+  const db = new sqlite.DatabaseSync(sqlitePath, { readOnly: true });
+  try {
+    const row = db.prepare("SELECT COUNT(*) AS count FROM delivery_queue_entries").get() as
+      | { count?: number | bigint }
+      | undefined;
+    const count = row?.count ?? 0;
+    return typeof count === "bigint" ? Number(count) : count;
+  } finally {
+    db.close();
+  }
 }
 
 afterEach(() => {
@@ -285,6 +310,58 @@ describe("createBackupArchive", () => {
           true,
         );
         expect(result.skippedVolatileCount).toBe(4);
+      },
+    );
+  });
+
+  it("scrubs volatile delivery queue rows from SQLite snapshots", async () => {
+    await withOpenClawTestState(
+      {
+        layout: "state-only",
+        prefix: "openclaw-backup-queue-scrub-",
+        scenario: "minimal",
+      },
+      async (state) => {
+        const outputDir = state.path("backups");
+        await fs.mkdir(outputDir, { recursive: true });
+        const database = openOpenClawStateDatabase();
+        const db = getNodeSqliteKysely<BackupCreateTestDatabase>(database.db);
+        executeSqliteQuerySync(
+          database.db,
+          db.insertInto("delivery_queue_entries").values({
+            queue_name: "outbound",
+            id: "queued-send",
+            status: "pending",
+            entry_kind: "message",
+            session_key: "session-1",
+            channel: "telegram",
+            target: "chat-1",
+            account_id: null,
+            entry_json: JSON.stringify({ text: "do not replay" }),
+            enqueued_at: 1,
+            updated_at: 1,
+          }),
+        );
+
+        const result = await createBackupArchive({
+          output: outputDir,
+          includeWorkspace: false,
+          nowMs: Date.UTC(2026, 4, 11, 12, 0, 0),
+        });
+        const stateAsset = result.assets.find((asset) => asset.kind === "state");
+        expect(stateAsset).toBeDefined();
+        const extractDir = await extractArchiveToTemp(result.archivePath);
+        try {
+          const archivedStateDb = path.join(
+            extractDir,
+            stateAsset!.archivePath,
+            "state",
+            "openclaw.sqlite",
+          );
+          expect(countDeliveryQueueRows(archivedStateDb)).toBe(0);
+        } finally {
+          await fs.rm(extractDir, { recursive: true, force: true });
+        }
       },
     );
   });

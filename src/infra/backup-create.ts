@@ -157,6 +157,7 @@ function buildTempArchivePath(outputPath: string): string {
 
 const BACKUP_TAR_MAX_ATTEMPTS = 3;
 const BACKUP_TAR_BACKOFF_MS = [250, 1000] as const;
+const VOLATILE_SQLITE_TABLES = ["delivery_queue_entries"] as const;
 
 function isTarEofRaceError(err: unknown): boolean {
   const code = (err as NodeJS.ErrnoException | undefined)?.code;
@@ -454,6 +455,27 @@ function sqlStringLiteral(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
 }
 
+function sqliteTableExists(db: import("node:sqlite").DatabaseSync, tableName: string): boolean {
+  const row = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1")
+    .get(tableName);
+  return row !== undefined;
+}
+
+function scrubVolatileSqliteSnapshotRows(db: import("node:sqlite").DatabaseSync): void {
+  let scrubbed = false;
+  for (const tableName of VOLATILE_SQLITE_TABLES) {
+    if (!sqliteTableExists(db, tableName)) {
+      continue;
+    }
+    db.exec(`DELETE FROM ${tableName};`);
+    scrubbed = true;
+  }
+  if (scrubbed) {
+    db.exec("VACUUM;");
+  }
+}
+
 async function listSqliteDatabasePaths(root: string): Promise<string[]> {
   const results: string[] = [];
   async function walk(dir: string): Promise<void> {
@@ -518,6 +540,16 @@ async function snapshotSqliteDatabase(params: {
     );
   } finally {
     integrityDb.close();
+  }
+  const snapshotDb = new sqlite.DatabaseSync(params.snapshotPath);
+  try {
+    scrubVolatileSqliteSnapshotRows(snapshotDb);
+    assertSqliteIntegrityOk(
+      snapshotDb,
+      `SQLite integrity check failed after volatile backup scrub: ${params.sourcePath}`,
+    );
+  } finally {
+    snapshotDb.close();
   }
   const stat = await fs.stat(params.snapshotPath);
   return { byteSize: stat.size };
