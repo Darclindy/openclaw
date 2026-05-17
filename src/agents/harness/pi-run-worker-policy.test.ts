@@ -54,6 +54,19 @@ describe("collectPiRunWorkerBlockers", () => {
     ).toEqual([]);
   });
 
+  it("blocks caller-owned agent filesystems", () => {
+    expect(
+      collectPiRunWorkerBlockers({
+        ...BASE_PARAMS,
+        agentFilesystem: { scratch: {} as never },
+      }),
+    ).toContainEqual({
+      code: "custom_agent_filesystem",
+      field: "agentFilesystem",
+      message: "agentFilesystem is caller-owned and cannot be replaced by a worker filesystem",
+    });
+  });
+
   it("blocks non-parent function fields", () => {
     expect(
       collectPiRunWorkerBlockers({

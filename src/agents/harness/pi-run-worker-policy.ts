@@ -13,6 +13,7 @@ import { normalizeAgentWorkerLaunchMode, type AgentWorkerLaunchMode } from "./wo
 export type PiRunWorkerMode = AgentWorkerLaunchMode;
 
 export type PiRunWorkerBlockerCode =
+  | "custom_agent_filesystem"
   | "non_cloneable_run_params"
   | "unbridgeable_function"
   | "worker_entry_unavailable";
@@ -42,7 +43,7 @@ const PARENT_OWNED_FIELDS = new Set<string>([
   "replyOperation",
 ]);
 
-const SEMANTIC_BLOCKER_FIELDS = new Set<string>();
+const SEMANTIC_BLOCKER_FIELDS = new Set<string>(["agentFilesystem"]);
 
 export function isDefaultPiRunWorkerEntryAvailable(): boolean {
   return existsSync(fileURLToPath(new URL("../runtime-worker.entry.js", import.meta.url)));
@@ -59,6 +60,14 @@ export function collectPiRunWorkerBlockers(params: RunEmbeddedPiAgentParams): Pi
   const blockers: PiRunWorkerBlocker[] = [];
 
   for (const [field, value] of Object.entries(params)) {
+    if (field === "agentFilesystem" && value !== undefined) {
+      blockers.push({
+        code: "custom_agent_filesystem",
+        field,
+        message: "agentFilesystem is caller-owned and cannot be replaced by a worker filesystem",
+      });
+      continue;
+    }
     if (PARENT_OWNED_FIELDS.has(field) || SEMANTIC_BLOCKER_FIELDS.has(field)) {
       continue;
     }

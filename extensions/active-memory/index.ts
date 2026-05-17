@@ -251,6 +251,11 @@ type TranscriptScope = {
   sessionId: string;
 };
 
+type TranscriptScopeTracker = {
+  current?: TranscriptScope;
+  scopes: TranscriptScope[];
+};
+
 type RecallSubagentResult = {
   rawReply: string;
   resultStatus?: "failed" | "unavailable";
@@ -1578,6 +1583,31 @@ function deleteTransientRecallTranscript(transcriptScope: TranscriptScope | unde
   }
 }
 
+function rememberTranscriptScope(
+  tracker: TranscriptScopeTracker,
+  scope: TranscriptScope | undefined,
+): void {
+  if (!scope) {
+    return;
+  }
+  tracker.current = scope;
+  if (
+    !tracker.scopes.some(
+      (known) => known.agentId === scope.agentId && known.sessionId === scope.sessionId,
+    )
+  ) {
+    tracker.scopes.push(scope);
+  }
+}
+
+function resolveRunTranscriptScope(
+  fallback: TranscriptScope,
+  result: { meta?: { agentMeta?: { sessionId?: string } } },
+): TranscriptScope {
+  const sessionId = result.meta?.agentMeta?.sessionId?.trim();
+  return sessionId ? { ...fallback, sessionId } : fallback;
+}
+
 function extractActiveMemorySearchDebugFromSessionRecord(
   value: unknown,
 ): ActiveMemorySearchDebug | undefined {
@@ -2439,12 +2469,14 @@ async function runRecallSubagent(params: {
       .filter(Boolean)
       .join("\n")
       .trim();
+    const resultTranscriptScope = resolveRunTranscriptScope(transcriptScope, result);
+    params.onTranscriptScope?.(resultTranscriptScope);
     const searchDebug =
-      (await readActiveMemorySearchDebug(transcriptScope)) ??
+      (await readActiveMemorySearchDebug(resultTranscriptScope)) ??
       readActiveMemorySearchDebugFromRunResult(result);
     return {
       rawReply: rawReply || "NONE",
-      transcriptScope: params.config.persistTranscripts ? transcriptScope : undefined,
+      transcriptScope: params.config.persistTranscripts ? resultTranscriptScope : undefined,
       searchDebug,
     };
   } catch (error) {
@@ -2570,7 +2602,7 @@ async function maybeResolveActiveRecall(params: {
 
   const controller = new AbortController();
   const TIMEOUT_SENTINEL = Symbol("timeout");
-  let transcriptScope: TranscriptScope | undefined;
+  const transcriptScopes: TranscriptScopeTracker = { scopes: [] };
   const watchdogTimeoutMs = params.config.timeoutMs + params.config.setupGraceTimeoutMs;
   const timeoutId = setTimeout(() => {
     controller.abort(new Error(`active-memory timeout after ${watchdogTimeoutMs}ms`));
@@ -2595,11 +2627,11 @@ async function maybeResolveActiveRecall(params: {
       modelRef: resolvedModelRef,
       abortSignal: controller.signal,
       onTranscriptScope: (value) => {
-        transcriptScope = value;
+        rememberTranscriptScope(transcriptScopes, value);
       },
     });
     terminalMemorySearchWatch = watchTerminalMemorySearchResult({
-      getTranscriptScope: () => transcriptScope,
+      getTranscriptScope: () => transcriptScopes.current,
       abortSignal: controller.signal,
     });
     // Silently catch late rejections after timeout so they don't become
@@ -2617,7 +2649,7 @@ async function maybeResolveActiveRecall(params: {
       const result = await buildTimeoutRecallResult({
         elapsedMs: Date.now() - startedAt,
         maxSummaryChars: params.config.maxSummaryChars,
-        transcriptScope,
+        transcriptScope: transcriptScopes.current,
         subagentPromise,
       });
       if (params.config.logging) {
@@ -2733,7 +2765,7 @@ async function maybeResolveActiveRecall(params: {
       const result = await buildTimeoutRecallResult({
         elapsedMs: Date.now() - startedAt,
         maxSummaryChars: params.config.maxSummaryChars,
-        transcriptScope,
+        transcriptScope: transcriptScopes.current,
         rawReply: partialTimeoutData.rawReply,
         searchDebug: partialTimeoutData.searchDebug,
       });
@@ -2775,10 +2807,14 @@ async function maybeResolveActiveRecall(params: {
     terminalMemorySearchWatch?.stop();
     clearTimeout(timeoutId);
     if (!params.config.persistTranscripts) {
-      deleteTransientRecallTranscript(transcriptScope);
+      for (const scope of transcriptScopes.scopes) {
+        deleteTransientRecallTranscript(scope);
+      }
       subagentPromise
         ?.finally(() => {
-          deleteTransientRecallTranscript(transcriptScope);
+          for (const scope of transcriptScopes.scopes) {
+            deleteTransientRecallTranscript(scope);
+          }
         })
         .catch(() => undefined);
     }

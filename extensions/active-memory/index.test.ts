@@ -4093,6 +4093,45 @@ describe("active-memory plugin", () => {
     expect(rmSpy).not.toHaveBeenCalled();
   });
 
+  it("tracks rotated sqlite transcript scopes from completed recall runs", async () => {
+    let originalScope: TranscriptScope | undefined;
+    let rotatedScope: TranscriptScope | undefined;
+    runEmbeddedPiAgent.mockImplementationOnce(
+      async (params: { agentId?: string; sessionId: string }) => {
+        originalScope = transcriptScopeFromRunParams(params);
+        rotatedScope = {
+          agentId: params.agentId ?? "main",
+          sessionId: `${params.sessionId}-compact`,
+        };
+        await writeSqliteTranscriptEvents(rotatedScope, [
+          { type: "message", message: { role: "assistant", content: "rotated recall summary" } },
+        ]);
+        return {
+          payloads: [{ text: "rotated recall summary" }],
+          meta: { durationMs: 1, agentMeta: { sessionId: rotatedScope.sessionId } },
+        };
+      },
+    );
+
+    const result = await hooks.before_prompt_build(
+      { prompt: "what wings should i order? rotated sqlite transcript", messages: [] },
+      {
+        agentId: "main",
+        trigger: "user",
+        sessionKey: "agent:main:main",
+        messageProvider: "webchat",
+      },
+    );
+
+    expect(result).toMatchObject({
+      prependContext: expect.stringContaining("rotated recall summary"),
+    });
+    expect(originalScope).toBeDefined();
+    expect(rotatedScope).toBeDefined();
+    expect(hasSqliteSessionTranscriptEvents(originalScope as TranscriptScope)).toBe(false);
+    expect(hasSqliteSessionTranscriptEvents(rotatedScope as TranscriptScope)).toBe(false);
+  });
+
   it("logs sqlite transcript scope when transcript persistence is enabled", async () => {
     api.pluginConfig = {
       agents: ["main"],
