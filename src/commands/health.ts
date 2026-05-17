@@ -213,6 +213,7 @@ const buildSessionSummary = async (params: { agentId: string; databasePath: stri
     age: s.updatedAt ? Date.now() - s.updatedAt : null,
   }));
   return {
+    path: params.databasePath,
     databasePath: params.databasePath,
     count: sessions.length,
     recent,
@@ -589,6 +590,7 @@ export async function getHealthSnapshot(params?: {
     defaultAgentId,
     agents,
     sessions: {
+      path: sessions.databasePath,
       databasePath: sessions.databasePath,
       count: sessions.count,
       recent: sessions.recent,
