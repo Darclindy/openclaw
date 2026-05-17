@@ -114,6 +114,7 @@ export async function loadSubagentSpawnModuleForTest(params: {
   callGatewayMock: MockFn;
   getRuntimeConfig?: () => Record<string, unknown>;
   ensureContextEnginesInitializedMock?: MockFn;
+  listSessionEntriesMock?: MockFn;
   upsertSessionEntryMock?: MockFn;
   forkSessionFromParentMock?: MockFn;
   resolveContextEngineMock?: MockFn;
@@ -213,13 +214,16 @@ export async function loadSubagentSpawnModuleForTest(params: {
       ...current,
       ...next,
     }),
-    listSessionEntries: () =>
-      Object.entries(currentSessionStore()).map(([sessionKey, entry]) => ({
+    listSessionEntries: (opts: unknown) => {
+      params.listSessionEntriesMock?.(opts);
+      return Object.entries(currentSessionStore()).map(([sessionKey, entry]) => ({
         sessionKey,
         entry,
-      })),
+      }));
+    },
     upsertSessionEntry: (opts: {
       agentId?: string;
+      path?: string;
       sessionKey: string;
       entry: Record<string, unknown>;
     }) => {

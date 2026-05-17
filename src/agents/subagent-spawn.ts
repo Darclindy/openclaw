@@ -188,9 +188,17 @@ export type SpawnSubagentResult = {
 
 export { splitModelRef } from "./subagent-spawn-plan.js";
 
-function loadSubagentSessionRows(agentId: string): Record<string, SessionEntry> {
+function loadSubagentSessionRows(params: { agentId: string; databasePath?: string }): Record<
+  string,
+  SessionEntry
+> {
   return Object.fromEntries(
-    subagentSpawnDeps.listSessionEntries({ agentId }).map((row) => [row.sessionKey, row.entry]),
+    subagentSpawnDeps
+      .listSessionEntries({
+        agentId: params.agentId,
+        ...(params.databasePath ? { path: params.databasePath } : {}),
+      })
+      .map((row) => [row.sessionKey, row.entry]),
   );
 }
 
@@ -297,9 +305,13 @@ async function persistInitialChildSessionRuntimeModel(params: {
       cfg: params.cfg,
       key: params.childSessionKey,
     });
-    const store = loadSubagentSessionRows(target.agentId);
+    const store = loadSubagentSessionRows({
+      agentId: target.agentId,
+      databasePath: target.databasePath,
+    });
     await subagentSpawnDeps.upsertSessionEntry({
       agentId: target.agentId,
+      path: target.databasePath,
       sessionKey: target.canonicalKey,
       entry: mergeSessionEntry(store[target.canonicalKey], {
         model,
@@ -360,7 +372,10 @@ async function prepareSubagentSessionContext(params: {
         'context="fork" currently requires the same target agent as the requester; use context="isolated" for cross-agent spawns.',
       );
     }
-    const store = loadSubagentSessionRows(childTarget.agentId);
+    const store = loadSubagentSessionRows({
+      agentId: childTarget.agentId,
+      databasePath: childTarget.databasePath,
+    });
     parentEntry = store[parentTarget.canonicalKey];
     childEntry = store[childTarget.canonicalKey];
     if (!parentEntry?.sessionId) {
@@ -391,6 +406,7 @@ async function prepareSubagentSessionContext(params: {
       });
       await subagentSpawnDeps.upsertSessionEntry({
         agentId: childTarget.agentId,
+        path: childTarget.databasePath,
         sessionKey: childTarget.canonicalKey,
         entry: nextChildEntry,
       });
@@ -877,9 +893,13 @@ export async function spawnSubagentDirect(
         cfg,
         key: childSessionKey,
       });
-      const store = loadSubagentSessionRows(target.agentId);
+      const store = loadSubagentSessionRows({
+        agentId: target.agentId,
+        databasePath: target.databasePath,
+      });
       await subagentSpawnDeps.upsertSessionEntry({
         agentId: target.agentId,
+        path: target.databasePath,
         sessionKey: target.canonicalKey,
         entry: mergeSessionEntry(store[target.canonicalKey], buildDirectChildSessionPatch(patch)),
       });

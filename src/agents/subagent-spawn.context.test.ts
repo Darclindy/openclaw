@@ -9,6 +9,7 @@ type GatewayRequest = { method?: string; params?: Record<string, unknown> };
 
 describe("sessions_spawn context modes", () => {
   const callGatewayMock = vi.fn();
+  const listSessionEntriesMock = vi.fn();
   const upsertSessionEntryMock = vi.fn();
   const forkSessionFromParentMock = vi.fn();
   const ensureContextEnginesInitializedMock = vi.fn();
@@ -21,6 +22,7 @@ describe("sessions_spawn context modes", () => {
   beforeAll(async () => {
     ({ spawnSubagentDirect } = await loadSubagentSpawnModuleForTest({
       callGatewayMock,
+      listSessionEntriesMock,
       upsertSessionEntryMock,
       forkSessionFromParentMock,
       ensureContextEnginesInitializedMock,
@@ -32,6 +34,7 @@ describe("sessions_spawn context modes", () => {
   beforeEach(() => {
     sessionStore = {};
     callGatewayMock.mockReset();
+    listSessionEntriesMock.mockReset();
     upsertSessionEntryMock.mockReset();
     forkSessionFromParentMock.mockReset();
     ensureContextEnginesInitializedMock.mockReset();
@@ -113,10 +116,21 @@ describe("sessions_spawn context modes", () => {
       parentEntry: store.main,
       agentId: "main",
     });
+    expect(listSessionEntriesMock).toHaveBeenCalledWith({
+      agentId: "main",
+      path: "/tmp/subagent-spawn-model-session.sqlite",
+    });
     const childSessionKey = requireChildSessionKey(accepted);
     const childEntry = requireStoreEntry(store, childSessionKey);
     expect(childEntry.sessionId).toBe("forked-session-id");
     expect(childEntry.forkedFromParent).toBe(true);
+    expect(upsertSessionEntryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "main",
+        path: "/tmp/subagent-spawn-model-session.sqlite",
+        sessionKey: childSessionKey,
+      }),
+    );
 
     const prepareContext = requireFirstMockArg(prepareSubagentSpawn);
     expect(prepareContext.parentSessionKey).toBe("main");

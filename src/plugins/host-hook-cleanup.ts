@@ -210,7 +210,10 @@ async function clearPluginOwnedSessionEntries(params: {
   let cleared = 0;
   for (const target of resolveAllAgentSessionDatabaseTargetsSync(params.cfg)) {
     const now = Date.now();
-    for (const { sessionKey, entry } of listSessionEntries({ agentId: target.agentId })) {
+    for (const { sessionKey, entry } of listSessionEntries({
+      agentId: target.agentId,
+      path: target.databasePath,
+    })) {
       if (
         !matchesCleanupSession(sessionKey, entry, params.sessionKey) ||
         !hasPluginOwnedSessionState(entry, params.pluginId, params.sessionEntrySlotKeys)
@@ -221,6 +224,7 @@ async function clearPluginOwnedSessionEntries(params: {
       entry.updatedAt = now;
       upsertSessionEntry({
         agentId: target.agentId,
+        path: target.databasePath,
         sessionKey,
         entry,
       });
@@ -242,7 +246,10 @@ async function clearPromotedSessionEntrySlotRows(params: {
   let cleared = 0;
   for (const target of resolveAllAgentSessionDatabaseTargetsSync(params.cfg)) {
     const now = Date.now();
-    for (const { sessionKey, entry } of listSessionEntries({ agentId: target.agentId })) {
+    for (const { sessionKey, entry } of listSessionEntries({
+      agentId: target.agentId,
+      path: target.databasePath,
+    })) {
       if (
         !matchesCleanupSession(sessionKey, entry, params.sessionKey) ||
         !hasPromotedSessionEntrySlot(entry, params.pluginId, params.sessionEntrySlotKeys)
@@ -256,6 +263,7 @@ async function clearPromotedSessionEntrySlotRows(params: {
       entry.updatedAt = now;
       upsertSessionEntry({
         agentId: target.agentId,
+        path: target.databasePath,
         sessionKey,
         entry,
       });
