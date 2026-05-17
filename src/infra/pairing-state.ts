@@ -142,6 +142,7 @@ export function readPairingStateRecord<T>(params: {
           publicKey: row.public_key ?? undefined,
           profile: parseJsonField(row.profile_json),
           redeemedProfile: parseJsonField(row.redeemed_profile_json),
+          pendingProfile: parseJsonField(row.pending_profile_json),
           issuedAtMs: row.issued_at_ms,
           lastUsedAtMs: row.last_used_at_ms ?? undefined,
         }),
@@ -369,6 +370,7 @@ export function writePairingStateRecord<T>(params: {
           public_key: sqliteNullableText(entryValue.publicKey),
           profile_json: encodeJsonField(entryValue.profile),
           redeemed_profile_json: encodeJsonField(entryValue.redeemedProfile),
+          pending_profile_json: encodeJsonField(entryValue.pendingProfile),
           issued_at_ms: numberOrZero(entryValue.issuedAtMs),
           last_used_at_ms: sqliteNullableNumber(entryValue.lastUsedAtMs),
         });
@@ -399,6 +401,7 @@ export function writePairingStateRecord<T>(params: {
                 public_key: (eb) => eb.ref("excluded.public_key"),
                 profile_json: (eb) => eb.ref("excluded.profile_json"),
                 redeemed_profile_json: (eb) => eb.ref("excluded.redeemed_profile_json"),
+                pending_profile_json: (eb) => eb.ref("excluded.pending_profile_json"),
                 issued_at_ms: (eb) => eb.ref("excluded.issued_at_ms"),
                 last_used_at_ms: (eb) => eb.ref("excluded.last_used_at_ms"),
               }),

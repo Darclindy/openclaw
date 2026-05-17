@@ -341,6 +341,7 @@ export interface DeviceBootstrapTokens {
   device_id: string | null;
   issued_at_ms: number;
   last_used_at_ms: number | null;
+  pending_profile_json: string | null;
   profile_json: string | null;
   public_key: string | null;
   redeemed_profile_json: string | null;

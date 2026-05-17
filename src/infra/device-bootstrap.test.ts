@@ -272,6 +272,35 @@ describe("device bootstrap tokens", () => {
     ).resolves.toEqual({ ok: true });
   });
 
+  it("persists pending bootstrap profiles before redemption", async () => {
+    const baseDir = await createTempDir();
+    const issued = await issueDeviceBootstrapToken({
+      baseDir,
+      profile: {
+        roles: ["operator"],
+        scopes: ["operator.read", "operator.write"],
+      },
+    });
+
+    await expect(
+      verifyBootstrapToken(baseDir, issued.token, {
+        role: "operator",
+        scopes: ["operator.read"],
+      }),
+    ).resolves.toEqual({ ok: true });
+    expect(readBootstrapState(baseDir)[issued.token]?.pendingProfile).toEqual({
+      roles: ["operator"],
+      scopes: ["operator.read"],
+    });
+
+    await expect(
+      verifyBootstrapToken(baseDir, issued.token, {
+        role: "operator",
+        scopes: ["operator.write"],
+      }),
+    ).resolves.toEqual({ ok: false, reason: "bootstrap_token_invalid" });
+  });
+
   it("rejects cross-role scope escalation (node role requesting operator scopes)", async () => {
     const baseDir = await createTempDir();
     const issued = await issueDeviceBootstrapToken({ baseDir });

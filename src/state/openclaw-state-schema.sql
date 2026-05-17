@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS device_bootstrap_tokens (
   public_key TEXT,
   profile_json TEXT,
   redeemed_profile_json TEXT,
+  pending_profile_json TEXT,
   issued_at_ms INTEGER NOT NULL,
   last_used_at_ms INTEGER
 );
