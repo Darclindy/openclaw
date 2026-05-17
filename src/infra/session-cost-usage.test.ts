@@ -2,12 +2,20 @@ import nodeFs from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import {
   __setGatewayModelPricingForTest,
   clearGatewayModelPricingCacheState,
 } from "../gateway/model-pricing-cache-state.js";
+import {
+  clearCurrentPluginMetadataSnapshot,
+  resolvePluginMetadataControlPlaneFingerprint,
+  setCurrentPluginMetadataSnapshot,
+} from "../plugins/current-plugin-metadata-snapshot.js";
+import { resolveInstalledPluginIndexPolicyHash } from "../plugins/installed-plugin-index-policy.js";
+import type { InstalledPluginIndex } from "../plugins/installed-plugin-index.js";
+import type { PluginMetadataSnapshot } from "../plugins/plugin-metadata-snapshot.js";
 import { createSuiteTempRootTracker } from "../test-helpers/temp-dir.js";
 import { withEnvAsync } from "../test-utils/env.js";
 import {
@@ -46,6 +54,98 @@ describe("session cost usage", () => {
     }
     return value;
   };
+  const createModelNormalizationSnapshot = (params: {
+    manifestHash: string;
+    aliasFrom: string;
+    aliasTo: string;
+  }): PluginMetadataSnapshot => {
+    const policyHash = resolveInstalledPluginIndexPolicyHash({});
+    const index: InstalledPluginIndex = {
+      version: 1,
+      hostContractVersion: "test-host",
+      compatRegistryVersion: "test-compat",
+      migrationVersion: 1,
+      policyHash,
+      generatedAtMs: 0,
+      installRecords: {},
+      plugins: [
+        {
+          pluginId: "normalizer",
+          manifestPath: `/tmp/normalizer-${params.manifestHash}/openclaw.plugin.json`,
+          manifestHash: params.manifestHash,
+          source: `/tmp/normalizer-${params.manifestHash}/index.ts`,
+          rootDir: `/tmp/normalizer-${params.manifestHash}`,
+          origin: "global",
+          enabled: true,
+          startup: {
+            sidecar: false,
+            memory: false,
+            deferConfiguredChannelFullLoadUntilAfterListen: false,
+            agentHarnesses: [],
+          },
+          compat: [],
+        },
+      ],
+      diagnostics: [],
+    };
+    return {
+      policyHash,
+      configFingerprint: resolvePluginMetadataControlPlaneFingerprint(
+        {},
+        { env: process.env, index, policyHash },
+      ),
+      index,
+      registryDiagnostics: [],
+      manifestRegistry: {
+        diagnostics: [],
+        plugins: [],
+      },
+      plugins: [
+        {
+          id: "normalizer",
+          channels: [],
+          providers: [],
+          cliBackends: [],
+          skills: [],
+          hooks: [],
+          origin: "global",
+          rootDir: `/tmp/normalizer-${params.manifestHash}`,
+          source: `/tmp/normalizer-${params.manifestHash}/index.ts`,
+          manifestPath: `/tmp/normalizer-${params.manifestHash}/openclaw.plugin.json`,
+          modelIdNormalization: {
+            providers: {
+              anthropic: {
+                aliases: {
+                  [params.aliasFrom]: params.aliasTo,
+                },
+              },
+            },
+          },
+        },
+      ],
+      diagnostics: [],
+      byPluginId: new Map(),
+      normalizePluginId: (pluginId: string) => pluginId,
+      owners: {
+        channels: new Map(),
+        channelConfigs: new Map(),
+        providers: new Map(),
+        modelCatalogProviders: new Map(),
+        cliBackends: new Map(),
+        setupProviders: new Map(),
+        commandAliases: new Map(),
+        contracts: new Map(),
+      },
+      metrics: {
+        registrySnapshotMs: 0,
+        manifestRegistryMs: 0,
+        ownerMapsMs: 0,
+        totalMs: 0,
+        indexPluginCount: 1,
+        manifestPluginCount: 1,
+      },
+    } as PluginMetadataSnapshot;
+  };
 
   beforeAll(async () => {
     await suiteRootTracker.setup();
@@ -53,6 +153,11 @@ describe("session cost usage", () => {
 
   afterAll(async () => {
     await suiteRootTracker.cleanup();
+  });
+
+  afterEach(() => {
+    clearGatewayModelPricingCacheState();
+    clearCurrentPluginMetadataSnapshot();
   });
 
   it("aggregates daily totals with log cost and pricing fallback", async () => {
@@ -646,6 +751,72 @@ describe("session cost usage", () => {
         } finally {
           clearGatewayModelPricingCacheState();
         }
+      },
+    );
+  });
+
+  it("preserves manifest-normalized gateway pricing in usage cache refreshes", async () => {
+    const root = await makeSessionCostRoot("cost-cache-manifest-normalized-pricing");
+    const sessionsDir = path.join(root, "agents", "main", "sessions");
+    await fs.mkdir(sessionsDir, { recursive: true });
+    await fs.writeFile(
+      path.join(sessionsDir, "sess-cache-manifest-normalized-pricing.jsonl"),
+      transcriptText("sess-cache-manifest-normalized-pricing", {
+        type: "message",
+        timestamp: "2026-02-05T12:00:00.000Z",
+        message: {
+          role: "assistant",
+          provider: "anthropic",
+          model: "sonnet-4.6",
+          usage: {
+            input: 1000,
+            output: 1000,
+            totalTokens: 2000,
+          },
+        },
+      }),
+      "utf-8",
+    );
+
+    setCurrentPluginMetadataSnapshot(
+      createModelNormalizationSnapshot({
+        manifestHash: "cost-cache-manifest-normalized-pricing",
+        aliasFrom: "sonnet-4.6",
+        aliasTo: "claude-sonnet-4-6",
+      }),
+      { config: {}, env: process.env },
+    );
+    __setGatewayModelPricingForTest([
+      {
+        provider: "anthropic",
+        model: "claude-sonnet-4-6",
+        pricing: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+      },
+    ]);
+
+    await withEnvAsync(
+      { OPENCLAW_STATE_DIR: root, OPENCLAW_USAGE_COST_REFRESH_WORKER: "1" },
+      async () => {
+        const cold = await loadCostUsageSummary({
+          startMs: Date.UTC(2026, 1, 5),
+          endMs: Date.UTC(2026, 1, 5) + 24 * 60 * 60 * 1000 - 1,
+        });
+        expect(cold.totals.totalCost).toBeCloseTo(0.002, 8);
+        expect(cold.totals.missingCostEntries).toBe(0);
+
+        requestCostUsageCacheRefresh();
+        await waitFor(async () => {
+          const cached = await loadCostUsageSummaryFromCache({
+            startMs: Date.UTC(2026, 1, 5),
+            endMs: Date.UTC(2026, 1, 5) + 24 * 60 * 60 * 1000 - 1,
+            requestRefresh: false,
+          });
+          return (
+            cached.cacheStatus?.status === "fresh" &&
+            Math.abs(cached.totals.totalCost - 0.002) < 0.00001 &&
+            cached.totals.missingCostEntries === 0
+          );
+        }, 10_000);
       },
     );
   });

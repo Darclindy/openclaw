@@ -1,4 +1,7 @@
-import { normalizeModelRef } from "../agents/model-selection.js";
+import {
+  normalizeModelRef,
+  type ModelManifestNormalizationContext,
+} from "../agents/model-selection.js";
 import { normalizeProviderId } from "../agents/provider-id.js";
 import { normalizeLowercaseStringOrEmpty } from "../shared/string-coerce.js";
 
@@ -163,12 +166,14 @@ export function getGatewayModelPricingHealth(params?: {
   };
 }
 
-export function getCachedGatewayModelPricing(params: {
-  provider?: string;
-  model?: string;
-  allowManifestNormalization?: boolean;
-  allowPluginNormalization?: boolean;
-}): CachedModelPricing | undefined {
+export function getCachedGatewayModelPricing(
+  params: {
+    provider?: string;
+    model?: string;
+    allowManifestNormalization?: boolean;
+    allowPluginNormalization?: boolean;
+  } & ModelManifestNormalizationContext,
+): CachedModelPricing | undefined {
   const provider = params.provider?.trim();
   const model = params.model?.trim();
   if (!provider || !model) {
@@ -181,7 +186,8 @@ export function getCachedGatewayModelPricing(params: {
   }
   const normalized = normalizeModelRef(provider, model, {
     allowManifestNormalization: params.allowManifestNormalization,
-    allowPluginNormalization: params.allowPluginNormalization ?? false,
+    allowPluginNormalization: params.allowPluginNormalization,
+    manifestPlugins: params.manifestPlugins,
   });
   const normalizedKey = modelPricingCacheKey(normalized.provider, normalized.model);
   if (normalizedKey === key) {

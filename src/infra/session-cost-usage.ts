@@ -4,6 +4,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { setImmediate as setImmediatePromise } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import type { ModelManifestNormalizationContext } from "../agents/model-selection.js";
 import type { NormalizedUsage, UsageLike } from "../agents/usage.js";
 import { normalizeUsage } from "../agents/usage.js";
 import { stripInboundMetadata } from "../auto-reply/reply/strip-inbound-meta.js";
@@ -25,6 +26,7 @@ import {
   type GatewayModelPricingCacheSnapshot,
 } from "../gateway/model-pricing-cache-state.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { getCurrentPluginMetadataSnapshot } from "../plugins/current-plugin-metadata-snapshot.js";
 import { stripEnvelope, stripMessageIdHints } from "../shared/chat-envelope.js";
 import { asFiniteNumber } from "../shared/number-coercion.js";
 import { normalizeOptionalString } from "../shared/string-coerce.js";
@@ -97,11 +99,14 @@ const logger = createSubsystemLogger("usage-cost-cache");
 type UsageCostRefreshState = {
   agentId?: string;
   config?: OpenClawConfig;
+  manifestPlugins?: UsageCostManifestPlugins;
   fullRefreshRequested: boolean;
   pendingSessionFiles: Set<string>;
   running: boolean;
   timer?: ReturnType<typeof setTimeout>;
 };
+
+type UsageCostManifestPlugins = NonNullable<ModelManifestNormalizationContext["manifestPlugins"]>;
 
 export type UsageCostRefreshResult = "refreshed" | "partial" | "busy";
 
@@ -109,6 +114,7 @@ export type UsageCostRefreshParams = {
   config?: OpenClawConfig;
   agentId?: string;
   gatewayModelPricingCache?: GatewayModelPricingCacheSnapshot;
+  manifestPlugins?: UsageCostManifestPlugins;
   maxFiles?: number;
   sessionFiles?: string[];
   startMs?: number;
@@ -254,10 +260,25 @@ const addTotals = (target: CostUsageTotals, source: CostUsageTotals): void => {
   target.missingCostEntries += source.missingCostEntries;
 };
 
-function resolveUsageCostPricingFingerprint(config?: OpenClawConfig): string {
+function resolveUsageCostManifestPlugins(
+  config?: OpenClawConfig,
+): UsageCostManifestPlugins | undefined {
+  return getCurrentPluginMetadataSnapshot({
+    config,
+    env: process.env,
+    allowWorkspaceScopedSnapshot: true,
+  })?.plugins.map((plugin) => ({
+    ...(plugin.modelIdNormalization ? { modelIdNormalization: plugin.modelIdNormalization } : {}),
+  }));
+}
+
+function resolveUsageCostPricingFingerprint(
+  config?: OpenClawConfig,
+  manifestPlugins = resolveUsageCostManifestPlugins(config),
+): string {
   return resolveModelCostConfigFingerprint(config, {
-    allowManifestNormalization: false,
     allowPluginNormalization: false,
+    manifestPlugins,
   });
 }
 
@@ -1176,6 +1197,7 @@ async function* readJsonlRecords(
 async function scanTranscriptFile(params: {
   filePath: string;
   config?: OpenClawConfig;
+  manifestPlugins?: UsageCostManifestPlugins;
   startOffset?: number;
   endOffset?: number;
   onEntry: (entry: ParsedTranscriptEntry) => void;
@@ -1193,8 +1215,8 @@ async function scanTranscriptFile(params: {
         provider: entry.provider,
         model: entry.model,
         config: params.config,
-        allowManifestNormalization: false,
         allowPluginNormalization: false,
+        manifestPlugins: params.manifestPlugins,
       }) ?? null;
     modelCostCache.set(key, cost);
     return cost ?? undefined;
@@ -1235,6 +1257,7 @@ async function scanTranscriptFile(params: {
 async function scanUsageFile(params: {
   filePath: string;
   config?: OpenClawConfig;
+  manifestPlugins?: UsageCostManifestPlugins;
   startOffset?: number;
   endOffset?: number;
   onEntry: (entry: ParsedUsageEntry) => void;
@@ -1242,6 +1265,7 @@ async function scanUsageFile(params: {
   await scanTranscriptFile({
     filePath: params.filePath,
     config: params.config,
+    manifestPlugins: params.manifestPlugins,
     startOffset: params.startOffset,
     endOffset: params.endOffset,
     onEntry: (entry) => {
@@ -1349,6 +1373,7 @@ export async function loadCostUsageSummary(params?: {
 
   const dailyMap = new Map<string, CostUsageTotals>();
   const totals = emptyTotals();
+  const manifestPlugins = resolveUsageCostManifestPlugins(params?.config);
 
   const sessionsDir = resolveSessionTranscriptsDirForAgent(params?.agentId);
   const entries = await fs.promises.readdir(sessionsDir, { withFileTypes: true }).catch(() => []);
@@ -1375,6 +1400,7 @@ export async function loadCostUsageSummary(params?: {
     await scanUsageFile({
       filePath,
       config: params?.config,
+      manifestPlugins,
       onEntry: (entry) => {
         const ts = entry.timestamp?.getTime();
         if (!ts || ts < sinceTime || ts > untilTime) {
@@ -1418,10 +1444,14 @@ export async function loadCostUsageSummary(params?: {
 async function scanUsageFileForCache(params: {
   file: UsageCostTranscriptFile;
   config?: OpenClawConfig;
+  manifestPlugins?: UsageCostManifestPlugins;
   previous?: UsageCostCacheFileEntry;
   includeSessionSummary?: boolean;
 }): Promise<UsageCostCacheFileEntry> {
-  const pricingFingerprint = resolveUsageCostPricingFingerprint(params.config);
+  const pricingFingerprint = resolveUsageCostPricingFingerprint(
+    params.config,
+    params.manifestPlugins,
+  );
   const appendOnlyPreviousCandidate =
     params.previous &&
     params.previous.filePath === params.file.filePath &&
@@ -1453,6 +1483,7 @@ async function scanUsageFileForCache(params: {
   await scanTranscriptFile({
     filePath: params.file.filePath,
     config: params.config,
+    manifestPlugins: params.manifestPlugins,
     startOffset,
     endOffset: params.file.size,
     onEntry: (entry) => {
@@ -1570,7 +1601,9 @@ export async function refreshCostUsageCache(
     return "busy";
   }
   try {
-    const pricingFingerprint = resolveUsageCostPricingFingerprint(params?.config);
+    const manifestPlugins =
+      params?.manifestPlugins ?? resolveUsageCostManifestPlugins(params?.config);
+    const pricingFingerprint = resolveUsageCostPricingFingerprint(params?.config, manifestPlugins);
     const cache = await readUsageCostCache(cachePath);
     const files = await listUsageCountedTranscriptFiles(params?.agentId);
     const requestedSessionFiles = await expandExistingFilePathSet(params?.sessionFiles ?? []);
@@ -1618,6 +1651,7 @@ export async function refreshCostUsageCache(
       cache.files[file.filePath] = await scanUsageFileForCache({
         file,
         config: params?.config,
+        manifestPlugins,
         previous: cache.files[file.filePath],
         includeSessionSummary: sessionSummaryFiles.has(file.filePath),
       });
@@ -1695,6 +1729,7 @@ async function refreshCostUsageCacheInWorker(
   const workerParams: UsageCostRefreshParams = {
     ...params,
     gatewayModelPricingCache: snapshotGatewayModelPricingCache(),
+    manifestPlugins: params?.manifestPlugins ?? resolveUsageCostManifestPlugins(params?.config),
   };
   const child = spawn(process.execPath, buildUsageCostRefreshWorkerArgs(workerPath), {
     env: {
@@ -1741,7 +1776,8 @@ export async function loadCostUsageSummaryFromCache(params: {
   refreshMode?: "background" | "sync-when-empty";
 }): Promise<CostUsageSummary> {
   const cachePath = resolveUsageCostCachePath(params.agentId);
-  const pricingFingerprint = resolveUsageCostPricingFingerprint(params.config);
+  const manifestPlugins = resolveUsageCostManifestPlugins(params.config);
+  const pricingFingerprint = resolveUsageCostPricingFingerprint(params.config, manifestPlugins);
   let [cache, files] = await Promise.all([
     readUsageCostCache(cachePath),
     listUsageCountedTranscriptFiles(params.agentId),
@@ -1761,6 +1797,7 @@ export async function loadCostUsageSummaryFromCache(params: {
       const result = await refreshCostUsageCache({
         config: params.config,
         agentId: params.agentId,
+        manifestPlugins,
         startMs: params.startMs,
       });
       [cache, files] = await Promise.all([
@@ -1774,11 +1811,19 @@ export async function loadCostUsageSummaryFromCache(params: {
           pricingFingerprint,
         });
         if (remainingStaleFiles.length > 0) {
-          requestCostUsageCacheRefresh({ config: params.config, agentId: params.agentId });
+          requestCostUsageCacheRefresh({
+            config: params.config,
+            agentId: params.agentId,
+            manifestPlugins,
+          });
         }
       }
     } else {
-      requestCostUsageCacheRefresh({ config: params.config, agentId: params.agentId });
+      requestCostUsageCacheRefresh({
+        config: params.config,
+        agentId: params.agentId,
+        manifestPlugins,
+      });
     }
   }
   const refreshRunning = await isUsageCostCacheRefreshRunning(cachePath);
@@ -1804,7 +1849,8 @@ export async function loadSessionCostSummaryFromCache(params: {
   refreshMode?: "background" | "sync-when-empty";
 }): Promise<{ summary: SessionCostSummary | null; cacheStatus: UsageCacheStatus }> {
   const cachePath = resolveUsageCostCachePath(params.agentId);
-  const pricingFingerprint = resolveUsageCostPricingFingerprint(params.config);
+  const manifestPlugins = resolveUsageCostManifestPlugins(params.config);
+  const pricingFingerprint = resolveUsageCostPricingFingerprint(params.config, manifestPlugins);
   let [cache, stats] = await Promise.all([
     readUsageCostCache(cachePath),
     fs.promises.stat(params.sessionFile).catch(() => null),
@@ -1827,6 +1873,7 @@ export async function loadSessionCostSummaryFromCache(params: {
       const result = await refreshCostUsageCache({
         config: params.config,
         agentId: params.agentId,
+        manifestPlugins,
         sessionFiles: [params.sessionFile],
       });
       if (result === "refreshed") {
@@ -1853,6 +1900,7 @@ export async function loadSessionCostSummaryFromCache(params: {
         requestCostUsageCacheRefresh({
           config: params.config,
           agentId: params.agentId,
+          manifestPlugins,
           sessionFiles: [params.sessionFile],
         });
         refreshRequested = true;
@@ -1861,6 +1909,7 @@ export async function loadSessionCostSummaryFromCache(params: {
       requestCostUsageCacheRefresh({
         config: params.config,
         agentId: params.agentId,
+        manifestPlugins,
         sessionFiles: [params.sessionFile],
       });
       refreshRequested = true;
@@ -1926,6 +1975,7 @@ export async function loadSessionCostSummaryFromCache(params: {
 export function requestCostUsageCacheRefresh(params?: {
   config?: OpenClawConfig;
   agentId?: string;
+  manifestPlugins?: UsageCostManifestPlugins;
   sessionFiles?: string[];
 }): void {
   const agentId = params?.agentId ?? "main";
@@ -1952,12 +2002,15 @@ function mergeUsageCostRefreshRequest(
   params?: {
     config?: OpenClawConfig;
     agentId?: string;
+    manifestPlugins?: UsageCostManifestPlugins;
     sessionFiles?: string[];
   },
 ): void {
   if (params?.config) {
     state.config = params.config;
   }
+  state.manifestPlugins =
+    params?.manifestPlugins ?? resolveUsageCostManifestPlugins(params?.config ?? state.config);
   if (params?.agentId) {
     state.agentId = params.agentId;
   }
@@ -2006,6 +2059,7 @@ async function runQueuedUsageCostRefresh(
       const result = await refresh({
         config: state.config,
         agentId: state.agentId,
+        manifestPlugins: state.manifestPlugins,
         sessionFiles: fullRefreshRequested ? undefined : sessionFiles,
         maxFiles: USAGE_COST_BACKGROUND_REFRESH_MAX_FILES,
       });

@@ -360,7 +360,7 @@ describe("usage-format", () => {
     });
   });
 
-  it("can skip manifest-backed model normalization for worker-safe cost lookup", () => {
+  it("can skip plugin-backed normalization while preserving manifest-backed cost lookup", () => {
     setCurrentPluginMetadataSnapshot(
       createModelNormalizationSnapshot({
         manifestHash: "alpha",
@@ -385,7 +385,10 @@ describe("usage-format", () => {
     } as unknown as OpenClawConfig;
 
     const defaultFingerprint = resolveModelCostConfigFingerprint(config);
-    const workerSafeFingerprint = resolveModelCostConfigFingerprint(config, {
+    const manifestOnlyFingerprint = resolveModelCostConfigFingerprint(config, {
+      allowPluginNormalization: false,
+    });
+    const rawFingerprint = resolveModelCostConfigFingerprint(config, {
       allowManifestNormalization: false,
       allowPluginNormalization: false,
     });
@@ -402,10 +405,15 @@ describe("usage-format", () => {
     expect(resolveModelCostConfigFingerprint(config)).not.toBe(defaultFingerprint);
     expect(
       resolveModelCostConfigFingerprint(config, {
+        allowPluginNormalization: false,
+      }),
+    ).not.toBe(manifestOnlyFingerprint);
+    expect(
+      resolveModelCostConfigFingerprint(config, {
         allowManifestNormalization: false,
         allowPluginNormalization: false,
       }),
-    ).toBe(workerSafeFingerprint);
+    ).toBe(rawFingerprint);
     expect(
       resolveModelCostConfig({
         provider: "anthropic",
@@ -428,7 +436,38 @@ describe("usage-format", () => {
         pricing: { input: 2, output: 3, cacheRead: 0.2, cacheWrite: 0.3 },
       },
     ]);
+    expect(
+      resolveModelCostConfigFingerprint(undefined, {
+        allowPluginNormalization: false,
+        manifestPlugins: createModelNormalizationSnapshot({
+          manifestHash: "gateway-alpha",
+          aliasFrom: "sonnet-4.6",
+          aliasTo: "claude-sonnet-4-6",
+        }).plugins,
+      }),
+    ).not.toBe(
+      resolveModelCostConfigFingerprint(undefined, {
+        allowPluginNormalization: false,
+        manifestPlugins: createModelNormalizationSnapshot({
+          manifestHash: "gateway-bravo",
+          aliasFrom: "sonnet-4.6",
+          aliasTo: "claude-sonnet-4-7",
+        }).plugins,
+      }),
+    );
     expect(resolveModelCostConfig({ provider: "anthropic", model: "sonnet-4.6" })).toEqual({
+      input: 2,
+      output: 3,
+      cacheRead: 0.2,
+      cacheWrite: 0.3,
+    });
+    expect(
+      resolveModelCostConfig({
+        provider: "anthropic",
+        model: "sonnet-4.6",
+        allowPluginNormalization: false,
+      }),
+    ).toEqual({
       input: 2,
       output: 3,
       cacheRead: 0.2,
