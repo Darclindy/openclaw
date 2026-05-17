@@ -42,12 +42,12 @@ import {
   formatValidationErrors,
   validateSessionsUsageParams,
 } from "../protocol/index.js";
+import { resolveStoredSessionRowKeyForAgent } from "../session-row-key.js";
 import {
   listAgentsForGateway,
   loadCombinedSessionEntriesForGateway,
   loadSessionEntry,
 } from "../session-utils.js";
-import { resolveStoredSessionRowKeyForAgent } from "../session-row-key.js";
 import type { GatewayRequestHandlers, RespondFn } from "./types.js";
 
 const COST_USAGE_CACHE_TTL_MS = 30_000;
@@ -902,7 +902,7 @@ export const usageHandlers: GatewayRequestHandlers = {
       const resolvedStoreKey = storeMatch?.key ?? storeByIdMatch?.key ?? scopedSpecificKey;
       const storeEntry = storeMatch?.entry ?? storeByIdMatch?.entry;
       const storeAgentId = parseAgentSessionKey(resolvedStoreKey)?.agentId;
-      const agentId = agentIdFromKey ?? storeAgentId;
+      const agentId = storeAgentId ?? agentIdFromKey;
       const sessionId = storeEntry?.sessionId ?? keyRest;
 
       try {
