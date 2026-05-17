@@ -47,6 +47,7 @@ import { resolveStateDir } from "../config/paths.js";
 import {
   buildGroupDisplayName,
   getSessionEntry,
+  listSessionEntries,
   resolveAgentSessionDatabaseTargetsSync,
   resolveAgentMainSessionKey,
   resolveFreshSessionTotalTokens,
@@ -80,7 +81,11 @@ import { resolveOpenClawAgentSqlitePath } from "../state/openclaw-agent-db.js";
 import { normalizeSessionDeliveryFields } from "../utils/delivery-context.shared.js";
 import type { ModelCostConfig } from "../utils/usage-format.js";
 import { estimateUsageCost, resolveModelCostConfig } from "../utils/usage-format.js";
-import { resolveSessionRowAgentId, resolveSessionRowKey } from "./session-row-key.js";
+import {
+  resolveSessionRowAgentId,
+  resolveSessionRowKey,
+  resolveStoredSessionRowKeyForAgent,
+} from "./session-row-key.js";
 import {
   readRecentSessionUsageFromTranscript,
   readSessionTitleFieldsFromTranscriptAsync,
@@ -765,12 +770,18 @@ export function loadSessionEntry(sessionKey: string, opts?: { agentId?: string }
     key,
     ...(opts?.agentId ? { agentId: opts.agentId } : {}),
   });
-  const store: Record<string, SessionEntry> = {};
-  const entry = getSessionEntry({
+  const store = loadCanonicalSessionStoreForTarget({
+    cfg,
     agentId: target.agentId,
-    path: target.databasePath,
-    sessionKey: target.canonicalKey,
+    databasePath: target.databasePath,
   });
+  const entry =
+    store[target.canonicalKey] ??
+    getSessionEntry({
+      agentId: target.agentId,
+      path: target.databasePath,
+      sessionKey: target.canonicalKey,
+    });
   if (entry) {
     store[target.canonicalKey] = entry;
   }
@@ -782,6 +793,37 @@ export function loadSessionEntry(sessionKey: string, opts?: { agentId?: string }
     entry,
     canonicalKey: target.canonicalKey,
   };
+}
+
+function loadCanonicalSessionStoreForTarget(params: {
+  cfg: OpenClawConfig;
+  agentId: string;
+  databasePath: string;
+}): Record<string, SessionEntry> {
+  const store: Record<string, SessionEntry> = {};
+  for (const { sessionKey, entry } of listSessionEntries({
+    agentId: params.agentId,
+    path: params.databasePath,
+  })) {
+    const canonicalKey = resolveStoredSessionRowKeyForAgent({
+      cfg: params.cfg,
+      agentId: params.agentId,
+      sessionKey,
+    });
+    const existing = store[canonicalKey];
+    const existingUpdatedAt =
+      typeof existing?.updatedAt === "number" && Number.isFinite(existing.updatedAt)
+        ? existing.updatedAt
+        : Number.NEGATIVE_INFINITY;
+    const entryUpdatedAt =
+      typeof entry.updatedAt === "number" && Number.isFinite(entry.updatedAt)
+        ? entry.updatedAt
+        : Number.NEGATIVE_INFINITY;
+    if (!existing || entryUpdatedAt >= existingUpdatedAt) {
+      store[canonicalKey] = entry;
+    }
+  }
+  return store;
 }
 
 export function classifySessionKey(key: string, entry?: SessionEntry): GatewaySessionRow["kind"] {

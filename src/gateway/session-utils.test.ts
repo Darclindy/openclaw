@@ -811,6 +811,54 @@ describe("gateway session utils", () => {
     }
   });
 
+  test("loadSessionEntry preserves same-database parent and child session context", async () => {
+    await withStateDirEnv("session-utils-load-context-", async () => {
+      const cfg = {
+        session: { mainKey: "main" },
+        agents: { list: [{ id: "main", default: true }] },
+      } as OpenClawConfig;
+      setRuntimeConfigSnapshot(cfg);
+
+      const parentKey = "agent:main:parent";
+      const childKey = "agent:main:child";
+      upsertSessionEntry({
+        agentId: "main",
+        sessionKey: parentKey,
+        entry: {
+          sessionId: "parent-session",
+          updatedAt: 100,
+          providerOverride: "anthropic",
+          modelOverride: "claude-sonnet-4.6",
+        },
+      });
+      upsertSessionEntry({
+        agentId: "main",
+        sessionKey: childKey,
+        entry: {
+          sessionId: "child-session",
+          updatedAt: 200,
+          parentSessionKey: parentKey,
+        },
+      });
+      upsertSessionEntry({
+        agentId: "main",
+        sessionKey: "agent:main:grandchild",
+        entry: {
+          sessionId: "grandchild-session",
+          updatedAt: 300,
+          parentSessionKey: childKey,
+        },
+      });
+
+      const loaded = loadSessionEntry(childKey);
+
+      expect(loaded.entry?.sessionId).toBe("child-session");
+      expect(loaded.store[parentKey]?.modelOverride).toBe("claude-sonnet-4.6");
+      expect(loaded.store[childKey]?.parentSessionKey).toBe(parentKey);
+      expect(loaded.store["agent:main:grandchild"]?.parentSessionKey).toBe(childKey);
+    });
+  });
+
   test("loadSessionEntry resolves legacy relative SQLite rows through canonical keys", async () => {
     await withStateDirEnv("session-utils-relative-row-", async () => {
       const cfg = {
