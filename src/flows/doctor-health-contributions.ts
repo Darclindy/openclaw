@@ -392,15 +392,6 @@ async function runSessionTranscriptsHealth(ctx: DoctorHealthFlowContext): Promis
   await noteSessionTranscriptHealth({ shouldRepair: ctx.prompter.shouldRepair });
 }
 
-async function runSessionLocksHealth(ctx: DoctorHealthFlowContext): Promise<void> {
-  const { noteSessionLockHealth } = await import("../commands/doctor-session-locks.js");
-  await noteSessionLockHealth({
-    shouldRepair: ctx.prompter.shouldRepair,
-    env: ctx.env ?? process.env,
-    cfg: ctx.cfg,
-  });
-}
-
 async function runSessionSnapshotsHealth(ctx: DoctorHealthFlowContext): Promise<void> {
   const { noteSessionSnapshotHealth } = await import("../commands/doctor-session-snapshots.js");
   await noteSessionSnapshotHealth({ cfg: ctx.cfg, env: ctx.env ?? process.env });
@@ -805,11 +796,6 @@ export function resolveDoctorHealthContributions(): DoctorHealthContribution[] {
       id: "doctor:codex-session-routes",
       label: "Codex session routes",
       run: runCodexSessionRouteHealth,
-    }),
-    createDoctorHealthContribution({
-      id: "doctor:session-locks",
-      label: "Session locks",
-      run: runSessionLocksHealth,
     }),
     createDoctorHealthContribution({
       id: "doctor:session-snapshots",
