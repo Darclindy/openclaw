@@ -1417,7 +1417,9 @@ describe("CodexAppServerEventProjector", () => {
   it("uses streamed command output when final command snapshots omit aggregated output", async () => {
     const onAgentEvent = vi.fn();
     const trajectoryRecorder = {
+      enabled: true as const,
       filePath: "trajectory.jsonl",
+      runtimeScope: "sqlite:test:trajectory:session-1",
       recordEvent: vi.fn(),
       flush: vi.fn(async () => undefined),
     };
