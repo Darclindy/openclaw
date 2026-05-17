@@ -85,6 +85,46 @@ async function createBackupArchive(params: {
   await tar.c({ cwd: archiveBuildDir, file: params.archivePath, gzip: true }, [archiveRoot]);
 }
 
+async function createWorkspaceBackupArchive(params: {
+  archivePath: string;
+  sourceWorkspaceDir: string;
+  restoredWorkspaceDir: string;
+}): Promise<void> {
+  const archiveRoot = "2026-03-09T00-00-00-000Z-openclaw-backup";
+  const assetArchivePath = `${archiveRoot}/payload/posix${params.sourceWorkspaceDir}`;
+  const archiveBuildDir = path.join(tempDir, "workspace-archive-build");
+  const payloadPath = path.join(archiveBuildDir, ...assetArchivePath.split("/"));
+  await fs.cp(params.restoredWorkspaceDir, payloadPath, { recursive: true });
+  await fs.writeFile(
+    path.join(archiveBuildDir, archiveRoot, "manifest.json"),
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        createdAt: "2026-03-09T00:00:00.000Z",
+        archiveRoot,
+        runtimeVersion: "test",
+        platform: process.platform,
+        nodeVersion: process.version,
+        options: { includeWorkspace: true },
+        paths: { workspaceDirs: [params.sourceWorkspaceDir] },
+        assets: [
+          {
+            kind: "workspace",
+            sourcePath: params.sourceWorkspaceDir,
+            archivePath: assetArchivePath,
+          },
+        ],
+        databaseSnapshots: [],
+        skipped: [],
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+  await tar.c({ cwd: archiveBuildDir, file: params.archivePath, gzip: true }, [archiveRoot]);
+}
+
 describe("backupRestoreCommand", () => {
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-backup-restore-test-"));
@@ -193,6 +233,38 @@ describe("backupRestoreCommand", () => {
     );
     expect(await fs.readFile(path.join(archivedSourceStateDir, "state.txt"), "utf8")).toBe(
       "archived-machine\n",
+    );
+  });
+
+  it("restores workspace assets even when the current config is unreadable", async () => {
+    const currentWorkspaceDir = path.join(tempDir, "workspace");
+    const restoredWorkspaceDir = path.join(tempDir, "snapshot-workspace");
+    const archivePath = path.join(tempDir, "workspace-backup.tar.gz");
+    const configPath = path.join(tempDir, "openclaw.json");
+    await fs.mkdir(currentWorkspaceDir, { recursive: true });
+    await fs.writeFile(path.join(currentWorkspaceDir, "project.txt"), "current\n");
+    await fs.mkdir(restoredWorkspaceDir, { recursive: true });
+    await fs.writeFile(path.join(restoredWorkspaceDir, "project.txt"), "restored\n");
+    await fs.writeFile(configPath, "{", "utf8");
+    await createWorkspaceBackupArchive({
+      archivePath,
+      sourceWorkspaceDir: currentWorkspaceDir,
+      restoredWorkspaceDir,
+    });
+    vi.stubEnv("OPENCLAW_CONFIG_PATH", configPath);
+
+    const runtime = createRuntime();
+    const result = await backupRestoreCommand(runtime, { archive: archivePath, yes: true });
+
+    expect(result?.restoredAssets).toEqual([
+      expect.objectContaining({
+        kind: "workspace",
+        sourcePath: currentWorkspaceDir,
+        status: "restored",
+      }),
+    ]);
+    expect(await fs.readFile(path.join(currentWorkspaceDir, "project.txt"), "utf8")).toBe(
+      "restored\n",
     );
   });
 });

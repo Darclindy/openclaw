@@ -307,7 +307,64 @@ describe("SQLite session transcript store", () => {
       { id: "first", parentId: null },
       { id: "second", parentId: "first" },
     ]);
-    expect(countSqliteSessionTranscriptDisplayMessages(scope)).toBe(2);
+    expect(countSqliteSessionTranscriptDisplayMessages(scope)).toBe(0);
+  });
+
+  it("counts only displayable entries on parent-linked transcript branches", () => {
+    const stateDir = createTempDir();
+    const scope = {
+      env: { OPENCLAW_STATE_DIR: stateDir },
+      agentId: "main",
+      sessionId: "session-1",
+    };
+    replaceSqliteSessionTranscriptEvents({
+      ...scope,
+      events: [
+        { type: "session", id: "session-1" },
+        {
+          type: "message",
+          id: "m1",
+          parentId: null,
+          message: { role: "user", content: "one" },
+        },
+        {
+          type: "thinking_level_change",
+          id: "thinking",
+          parentId: "m1",
+          thinkingLevel: "high",
+        },
+        {
+          type: "model_change",
+          id: "model",
+          parentId: "thinking",
+          provider: "openai",
+          modelId: "gpt-5.5",
+        },
+        {
+          type: "compaction",
+          id: "compact",
+          parentId: "model",
+          summary: "summary",
+          firstKeptEntryId: "m1",
+          tokensBefore: 123,
+        },
+        {
+          type: "session_info",
+          id: "name",
+          parentId: "compact",
+          name: "Session",
+        },
+        {
+          type: "message",
+          id: "m2",
+          parentId: "name",
+          message: { role: "assistant", content: "two" },
+        },
+      ],
+      now: () => 100,
+    });
+
+    expect(countSqliteSessionTranscriptDisplayMessages(scope)).toBe(3);
   });
 
   it("keeps transcript events isolated by agent id", () => {

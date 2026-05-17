@@ -856,7 +856,15 @@ export function countSqliteSessionTranscriptDisplayMessages(
       )
       SELECT
         (SELECT COUNT(*) FROM transcript_event_identities WHERE session_id = ${sessionId} AND has_parent = 1) AS parent_link_count,
-        (SELECT COUNT(*) FROM active_chain WHERE event_type IS NULL OR event_type != 'session') AS active_count,
+        (
+          SELECT COUNT(*)
+          FROM active_chain
+          JOIN transcript_events ON transcript_events.session_id = ${sessionId}
+            AND transcript_events.seq = active_chain.seq
+          WHERE active_chain.event_type IN ('message', 'compaction')
+            OR instr(transcript_events.event_json, '"message":') > 0
+            OR instr(transcript_events.event_json, '"type":"compaction"') > 0
+        ) AS active_count,
         (
           SELECT COUNT(*)
           FROM transcript_events

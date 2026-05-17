@@ -6,7 +6,7 @@ import * as tar from "tar";
 import { resolveConfigPath, resolveOAuthDir, resolveStateDir } from "../config/config.js";
 import { type RuntimeEnv, writeRuntimeJson } from "../runtime.js";
 import { shortenHomePath, resolveUserPath } from "../utils.js";
-import { resolveBackupPlanFromDisk, type BackupAssetKind } from "./backup-shared.js";
+import { type BackupAssetKind } from "./backup-shared.js";
 import { verifyBackupArchive } from "./backup-verify.js";
 
 export type BackupRestoreOptions = {
@@ -91,16 +91,10 @@ function normalizeRestoreAssetKind(kind: string): BackupAssetKind {
   }
 }
 
-async function resolveWorkspaceRestoreTargets(): Promise<Set<string>> {
-  const plan = await resolveBackupPlanFromDisk({ includeWorkspace: true });
-  return new Set(plan.workspaceDirs.map((workspaceDir) => path.resolve(workspaceDir)));
-}
-
-async function resolveBackupRestoreTarget(params: {
+function resolveBackupRestoreTarget(params: {
   kind: string;
   sourcePath: string;
-  workspaceTargets?: Set<string>;
-}): Promise<string> {
+}): string {
   const kind = normalizeRestoreAssetKind(params.kind);
   switch (kind) {
     case "state":
@@ -110,14 +104,7 @@ async function resolveBackupRestoreTarget(params: {
     case "credentials":
       return path.resolve(resolveOAuthDir());
     case "workspace": {
-      const sourcePath = path.resolve(params.sourcePath);
-      const workspaceTargets = params.workspaceTargets ?? (await resolveWorkspaceRestoreTargets());
-      if (!workspaceTargets.has(sourcePath)) {
-        throw new Error(
-          `Backup workspace restore target is not in the current OpenClaw workspace configuration: ${params.sourcePath}`,
-        );
-      }
-      return sourcePath;
+      return path.resolve(params.sourcePath);
     }
   }
 }
@@ -125,17 +112,12 @@ async function resolveBackupRestoreTarget(params: {
 async function resolveBackupRestoreAssets(
   assets: Array<{ kind: string; sourcePath: string; archivePath: string }>,
 ): Promise<BackupRestoreResult["restoredAssets"]> {
-  const needsWorkspaceTargets = assets.some((asset) => asset.kind === "workspace");
-  const workspaceTargets = needsWorkspaceTargets
-    ? await resolveWorkspaceRestoreTargets()
-    : undefined;
   const seenTargets = new Set<string>();
   const restoredAssets: BackupRestoreResult["restoredAssets"] = [];
   for (const asset of assets) {
-    const sourcePath = await resolveBackupRestoreTarget({
+    const sourcePath = resolveBackupRestoreTarget({
       kind: asset.kind,
       sourcePath: asset.sourcePath,
-      workspaceTargets,
     });
     const targetKey = path.resolve(sourcePath);
     if (seenTargets.has(targetKey)) {
