@@ -794,6 +794,40 @@ describe("gateway session utils", () => {
     }
   });
 
+  test("loadSessionEntry resolves legacy relative SQLite rows through canonical keys", async () => {
+    await withStateDirEnv("session-utils-relative-row-", async () => {
+      const cfg = {
+        session: { mainKey: "main" },
+        agents: { list: [{ id: "main", default: true }] },
+      } as OpenClawConfig;
+      setRuntimeConfigSnapshot(cfg);
+
+      upsertSessionEntry({
+        agentId: "main",
+        sessionKey: "main",
+        entry: {
+          sessionId: "legacy-main-session",
+          updatedAt: 100,
+        },
+      });
+      upsertSessionEntry({
+        agentId: "main",
+        sessionKey: "discord:u1",
+        entry: {
+          sessionId: "legacy-discord-session",
+          updatedAt: 200,
+        },
+      });
+
+      expect(loadSessionEntry("main").canonicalKey).toBe("agent:main:main");
+      expect(loadSessionEntry("main").entry?.sessionId).toBe("legacy-main-session");
+      expect(loadSessionEntry("agent:main:main").entry?.sessionId).toBe("legacy-main-session");
+      expect(loadSessionEntry("agent:main:discord:u1").entry?.sessionId).toBe(
+        "legacy-discord-session",
+      );
+    });
+  });
+
   test("listAgentsForGateway rejects avatar symlink escapes outside workspace", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "session-utils-avatar-outside-"));
     const workspace = path.join(root, "workspace");

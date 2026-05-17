@@ -2,6 +2,7 @@ import type { MsgContext } from "../../auto-reply/templating.js";
 import {
   DEFAULT_AGENT_ID,
   normalizeAgentId,
+  parseAgentSessionKey,
   resolveAgentIdFromSessionKey,
 } from "../../routing/session-key.js";
 import {
@@ -61,20 +62,60 @@ function resolveSessionRowOptionsFromSessionKey(params: {
   };
 }
 
+function uniqueSessionKeys(keys: Array<string | undefined>): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const key of keys) {
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push(key);
+  }
+  return result;
+}
+
+function resolveLegacyRelativeSessionKey(params: {
+  agentId: string;
+  sessionKey: string;
+}): string | undefined {
+  const parsed = parseAgentSessionKey(params.sessionKey);
+  if (!parsed || normalizeAgentId(parsed.agentId) !== normalizeAgentId(params.agentId)) {
+    return undefined;
+  }
+  return normalizeSessionRowKey(parsed.rest);
+}
+
+function resolveSessionReadCandidateKeys(options: SessionEntryRowOptions & { sessionKey: string }) {
+  const trimmedKey = options.sessionKey.trim();
+  const normalizedKey = normalizeSessionRowKey(trimmedKey);
+  return uniqueSessionKeys([
+    trimmedKey,
+    normalizedKey,
+    resolveLegacyRelativeSessionKey({
+      agentId: options.agentId,
+      sessionKey: normalizedKey,
+    }),
+  ]);
+}
+
+function readSessionEntryCandidate(options: SessionEntryRowOptions & { sessionKey: string }): {
+  entry?: SessionEntry;
+  entryKey?: string;
+} {
+  for (const sessionKey of resolveSessionReadCandidateKeys(options)) {
+    const entry = readSqliteSessionEntry({ ...options, sessionKey });
+    if (entry) {
+      return { entry, entryKey: sessionKey };
+    }
+  }
+  return {};
+}
+
 export function getSessionEntry(
   options: SessionEntryRowOptions & { sessionKey: string },
 ): SessionEntry | undefined {
-  const direct = readSqliteSessionEntry(options);
-  if (direct) {
-    return direct;
-  }
-  const normalizedKey = normalizeSessionRowKey(options.sessionKey);
-  return normalizedKey === options.sessionKey
-    ? undefined
-    : readSqliteSessionEntry({
-        ...options,
-        sessionKey: normalizedKey,
-      });
+  return readSessionEntryCandidate(options).entry;
 }
 
 export function listSessionEntries(
@@ -96,7 +137,12 @@ export function upsertSessionEntry(
 export function deleteSessionEntry(
   options: SessionEntryRowOptions & { sessionKey: string },
 ): boolean {
-  return deleteSqliteSessionEntry(options);
+  for (const sessionKey of resolveSessionReadCandidateKeys(options)) {
+    if (deleteSqliteSessionEntry({ ...options, sessionKey })) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function moveSessionEntryKey(
@@ -116,15 +162,13 @@ function resolvePatchSessionEntry(options: SessionEntryRowOptions & { sessionKey
 } {
   const trimmedKey = options.sessionKey.trim();
   const normalizedKey = normalizeSessionRowKey(trimmedKey);
-  const canonical = readSqliteSessionEntry({ ...options, sessionKey: normalizedKey });
-  if (canonical) {
-    return { entry: canonical, entryKey: normalizedKey, normalizedKey };
+  for (const sessionKey of resolveSessionReadCandidateKeys(options)) {
+    const entry = readSqliteSessionEntry({ ...options, sessionKey });
+    if (entry) {
+      return { entry, entryKey: sessionKey, normalizedKey };
+    }
   }
-  const direct =
-    trimmedKey === normalizedKey
-      ? undefined
-      : readSqliteSessionEntry({ ...options, sessionKey: trimmedKey });
-  return { entry: direct, entryKey: direct ? trimmedKey : normalizedKey, normalizedKey };
+  return { entryKey: normalizedKey, normalizedKey };
 }
 
 export async function patchSessionEntry(
@@ -187,19 +231,10 @@ export function readSessionUpdatedAt(params: {
 }): number | undefined {
   try {
     const options = resolveSessionRowOptionsFromSessionKey(params);
-    const normalizedKey = normalizeSessionRowKey(params.sessionKey);
-    const entry =
-      readSqliteSessionEntry({
-        ...options,
-        sessionKey: normalizedKey,
-      }) ??
-      (normalizedKey === params.sessionKey
-        ? undefined
-        : readSqliteSessionEntry({
-            ...options,
-            sessionKey: params.sessionKey,
-          }));
-    return entry?.updatedAt;
+    return readSessionEntryCandidate({
+      ...options,
+      sessionKey: params.sessionKey,
+    }).entry?.updatedAt;
   } catch {
     return undefined;
   }
