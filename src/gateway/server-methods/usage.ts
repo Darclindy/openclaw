@@ -67,10 +67,12 @@ type CostUsageCacheEntry = {
 
 function readSessionTranscriptUpdatedAt(params: {
   agentId?: string;
+  databasePath?: string;
   sessionId: string;
 }): number | undefined {
   const scope = resolveSqliteSessionTranscriptScope({
     agentId: params.agentId,
+    ...(params.databasePath ? { path: params.databasePath } : {}),
     sessionId: params.sessionId,
   });
   if (!scope) {
@@ -114,9 +116,10 @@ function resolveSessionUsageFileOrRespond(
   config: OpenClawConfig;
   entry: SessionEntry | undefined;
   agentId: string | undefined;
+  databasePath?: string;
   sessionId: string;
 } | null {
-  const { entry, agentId: loadedAgentId } = loadSessionEntry(key);
+  const { entry, agentId: loadedAgentId, databasePath } = loadSessionEntry(key);
 
   // For discovered sessions (not in store), try using key as sessionId directly
   const parsed = parseAgentSessionKey(key);
@@ -134,7 +137,7 @@ function resolveSessionUsageFileOrRespond(
     return null;
   }
 
-  return { config, entry, agentId, sessionId };
+  return { config, entry, agentId, ...(databasePath ? { databasePath } : {}), sessionId };
 }
 
 const parseDateParts = (
@@ -324,6 +327,7 @@ type UsageGroupingMode = "instance" | "family";
 type MergedEntry = {
   key: string;
   agentId?: string;
+  databasePath?: string;
   sessionId: string;
   label?: string;
   updatedAt: number;
@@ -337,7 +341,8 @@ type MergedEntry = {
 
 function buildStoreBySessionId(
   store: Record<string, SessionEntry>,
-): Map<string, { key: string; entry: SessionEntry }> {
+  sourceDatabasePathBySessionKey?: Record<string, string>,
+): Map<string, { key: string; entry: SessionEntry; databasePath?: string }> {
   const matchesBySessionId = new Map<string, Array<[string, SessionEntry]>>();
   for (const [key, entry] of Object.entries(store)) {
     if (!entry?.sessionId) {
@@ -348,7 +353,10 @@ function buildStoreBySessionId(
     matchesBySessionId.set(entry.sessionId, matches);
   }
 
-  const storeBySessionId = new Map<string, { key: string; entry: SessionEntry }>();
+  const storeBySessionId = new Map<
+    string,
+    { key: string; entry: SessionEntry; databasePath?: string }
+  >();
   for (const [sessionId, matches] of matchesBySessionId) {
     const preferredKey = resolvePreferredSessionKeyForSessionIdMatches(matches, sessionId);
     if (!preferredKey) {
@@ -356,7 +364,13 @@ function buildStoreBySessionId(
     }
     const preferredEntry = store[preferredKey];
     if (preferredEntry) {
-      storeBySessionId.set(sessionId, { key: preferredKey, entry: preferredEntry });
+      storeBySessionId.set(sessionId, {
+        key: preferredKey,
+        entry: preferredEntry,
+        ...(sourceDatabasePathBySessionKey?.[preferredKey]
+          ? { databasePath: sourceDatabasePathBySessionKey[preferredKey] }
+          : {}),
+      });
     }
   }
   return storeBySessionId;
@@ -867,7 +881,7 @@ export const usageHandlers: GatewayRequestHandlers = {
       p.groupBy === "family" || p.includeHistorical === true ? "family" : "instance";
 
     // Load SQLite session rows for named sessions.
-    const { entries: store } = loadCombinedSessionEntriesForGateway(
+    const { entries: store, sourceDatabasePathBySessionKey } = loadCombinedSessionEntriesForGateway(
       config,
       scopedAgentId ? { agentId: scopedAgentId } : {},
     );
@@ -888,12 +902,24 @@ export const usageHandlers: GatewayRequestHandlers = {
 
       // Prefer the store entry when available, even if the caller provides a discovered key
       // (`agent:<id>:<sessionId>`) for a session that now has a canonical store key.
-      const storeBySessionId = buildStoreBySessionId(store);
+      const storeBySessionId = buildStoreBySessionId(store, sourceDatabasePathBySessionKey);
 
       const storeMatch = store[scopedSpecificKey]
-        ? { key: scopedSpecificKey, entry: store[scopedSpecificKey] }
+        ? {
+            key: scopedSpecificKey,
+            entry: store[scopedSpecificKey],
+            ...(sourceDatabasePathBySessionKey?.[scopedSpecificKey]
+              ? { databasePath: sourceDatabasePathBySessionKey[scopedSpecificKey] }
+              : {}),
+          }
         : store[specificKey]
-          ? { key: specificKey, entry: store[specificKey] }
+          ? {
+              key: specificKey,
+              entry: store[specificKey],
+              ...(sourceDatabasePathBySessionKey?.[specificKey]
+                ? { databasePath: sourceDatabasePathBySessionKey[specificKey] }
+                : {}),
+            }
           : null;
       const storeByIdMatch =
         storeBySessionId.get(keyRest) ??
@@ -904,6 +930,10 @@ export const usageHandlers: GatewayRequestHandlers = {
       const storeAgentId = parseAgentSessionKey(resolvedStoreKey)?.agentId;
       const agentId = storeAgentId ?? agentIdFromKey;
       const sessionId = storeEntry?.sessionId ?? keyRest;
+      const databasePath =
+        storeMatch?.databasePath ??
+        storeByIdMatch?.databasePath ??
+        sourceDatabasePathBySessionKey?.[resolvedStoreKey];
 
       try {
         validateSessionId(sessionId);
@@ -918,6 +948,7 @@ export const usageHandlers: GatewayRequestHandlers = {
 
       const transcriptUpdatedAt = readSessionTranscriptUpdatedAt({
         agentId,
+        ...(databasePath ? { databasePath } : {}),
         sessionId,
       });
       if (transcriptUpdatedAt !== undefined) {
@@ -927,6 +958,7 @@ export const usageHandlers: GatewayRequestHandlers = {
           base: {
             key: resolvedStoreKey,
             agentId,
+            ...(databasePath ? { databasePath } : {}),
             sessionId,
             label: storeEntry?.label,
             updatedAt: storeEntry?.updatedAt ?? transcriptUpdatedAt,
@@ -944,7 +976,7 @@ export const usageHandlers: GatewayRequestHandlers = {
       });
 
       // Build a map of sessionId -> store entry for quick lookup
-      const storeBySessionId = buildStoreBySessionId(store);
+      const storeBySessionId = buildStoreBySessionId(store, sourceDatabasePathBySessionKey);
       const storeFamilySessionIds = new Set<string>();
       if (groupingMode === "family") {
         for (const entry of Object.values(store)) {
@@ -964,6 +996,9 @@ export const usageHandlers: GatewayRequestHandlers = {
             base: {
               key: storeMatch.key,
               agentId: discovered.agentId,
+              ...(storeMatch.databasePath ?? discovered.databasePath
+                ? { databasePath: storeMatch.databasePath ?? discovered.databasePath }
+                : {}),
               sessionId: discovered.sessionId,
               label: storeMatch.entry.label,
               updatedAt: storeMatch.entry.updatedAt ?? discovered.mtime,
@@ -979,6 +1014,7 @@ export const usageHandlers: GatewayRequestHandlers = {
             // Keep agentId in the key so the dashboard can attribute sessions and later fetch logs.
             key: `agent:${discovered.agentId}:${discovered.sessionId}`,
             agentId: discovered.agentId,
+            ...(discovered.databasePath ? { databasePath: discovered.databasePath } : {}),
             sessionId: discovered.sessionId,
             label: undefined, // No label for unnamed sessions
             updatedAt: discovered.mtime,
@@ -1088,6 +1124,7 @@ export const usageHandlers: GatewayRequestHandlers = {
           sessionEntry: isCurrentSession ? merged.storeEntry : undefined,
           config,
           agentId,
+          ...(merged.databasePath ? { databasePath: merged.databasePath } : {}),
           startMs,
           endMs,
           refreshMode: "sync-when-empty",
@@ -1331,13 +1368,14 @@ export const usageHandlers: GatewayRequestHandlers = {
     if (!resolved) {
       return;
     }
-    const { config, entry, agentId, sessionId } = resolved;
+    const { config, entry, agentId, databasePath, sessionId } = resolved;
 
     const timeseries = await loadSessionUsageTimeSeries({
       sessionId,
       sessionEntry: entry,
       config,
       agentId,
+      ...(databasePath ? { databasePath } : {}),
       maxPoints: 200,
     });
 
@@ -1368,13 +1406,14 @@ export const usageHandlers: GatewayRequestHandlers = {
     if (!resolved) {
       return;
     }
-    const { config, entry, agentId, sessionId } = resolved;
+    const { config, entry, agentId, databasePath, sessionId } = resolved;
 
     const logs = await loadSessionLogs({
       sessionId,
       sessionEntry: entry,
       config,
       agentId,
+      ...(databasePath ? { databasePath } : {}),
       limit,
     });
 

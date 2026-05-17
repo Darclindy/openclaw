@@ -1,3 +1,4 @@
+import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { replaceSqliteSessionTranscriptEvents } from "../config/sessions/transcript-store.sqlite.js";
 import { closeOpenClawAgentDatabasesForTest } from "../state/openclaw-agent-db.js";
@@ -36,7 +37,12 @@ describe("session cost usage", () => {
 
   const makeRoot = async (prefix: string): Promise<string> => await suiteRootTracker.make(prefix);
 
-  const writeTranscript = (params: { agentId?: string; sessionId: string; events: unknown[] }) => {
+  const writeTranscript = (params: {
+    agentId?: string;
+    databasePath?: string;
+    sessionId: string;
+    events: unknown[];
+  }) => {
     const eventTimestamp = params.events
       .map((event) =>
         event &&
@@ -48,6 +54,7 @@ describe("session cost usage", () => {
       .find((value) => Number.isFinite(value));
     replaceSqliteSessionTranscriptEvents({
       agentId: params.agentId ?? "main",
+      ...(params.databasePath ? { path: params.databasePath } : {}),
       sessionId: params.sessionId,
       events: [{ type: "session", version: 1, id: params.sessionId }, ...params.events],
       ...(eventTimestamp !== undefined ? { now: () => eventTimestamp } : {}),
@@ -265,6 +272,79 @@ describe("session cost usage", () => {
       expect(logs?.map((entry) => entry.role)).toEqual(["user", "assistant"]);
       expect(logs?.[0]?.content).toContain("hello");
       expect(logs?.[1]?.content).toContain("[Tool: shell]");
+    });
+  });
+
+  it("loads per-session usage from a selected relocated SQLite database", async () => {
+    const root = await makeRoot("session-relocated");
+    await withStateDir(root, async () => {
+      const databasePath = path.join(root, "relocated", "worker.sqlite");
+      writeTranscript({
+        agentId: "worker",
+        databasePath,
+        sessionId: "sess-relocated",
+        events: [
+          {
+            type: "message",
+            timestamp: "2026-02-05T12:00:00.000Z",
+            message: { role: "user", content: "hello from relocated" },
+          },
+          {
+            ...assistantUsage({
+              timestamp: "2026-02-05T12:00:02.000Z",
+              input: 4,
+              output: 6,
+              cost: 0.01,
+            }),
+            message: {
+              role: "assistant",
+              content: "hello back",
+              usage: { input: 4, output: 6, totalTokens: 10, cost: { total: 0.01 } },
+            },
+          },
+        ],
+      });
+
+      expect(await loadSessionCostSummary({ agentId: "worker", sessionId: "sess-relocated" }))
+        .toBeNull();
+
+      const summary = await loadSessionCostSummary({
+        agentId: "worker",
+        databasePath,
+        sessionId: "sess-relocated",
+      });
+      expect(summary).toMatchObject({
+        agentId: "worker",
+        sessionId: "sess-relocated",
+        totalTokens: 10,
+        totalCost: 0.01,
+      });
+
+      await expect(
+        loadSessionUsageTimeSeries({
+          agentId: "worker",
+          databasePath,
+          sessionId: "sess-relocated",
+        }),
+      ).resolves.toMatchObject({
+        sessionId: "sess-relocated",
+        points: [{ totalTokens: 10 }],
+      });
+
+      const logs = await loadSessionLogs({
+        agentId: "worker",
+        databasePath,
+        sessionId: "sess-relocated",
+      });
+      expect(logs?.map((entry) => entry.role)).toEqual(["user", "assistant"]);
+
+      await expect(discoverAllSessions({ agentId: "worker", databasePath })).resolves.toEqual([
+        expect.objectContaining({
+          agentId: "worker",
+          databasePath,
+          sessionId: "sess-relocated",
+        }),
+      ]);
     });
   });
 

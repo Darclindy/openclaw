@@ -276,6 +276,49 @@ describe("sessions.usage", () => {
     }
   });
 
+  it("passes the matched store database path into specific session usage", async () => {
+    const storeKey = "agent:opus:slack:dm:u123";
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-usage-test-"));
+    const databasePath = path.join(stateDir, "relocated", "opus.sqlite");
+
+    try {
+      await withEnvAsync({ OPENCLAW_STATE_DIR: stateDir }, async () => {
+        replaceSqliteSessionTranscriptEvents({
+          agentId: "opus",
+          path: databasePath,
+          sessionId: "s-opus",
+          events: [{ type: "session", id: "s-opus" }],
+        });
+        vi.mocked(loadCombinedSessionEntriesForGateway).mockReturnValue({
+          databasePath: "(multiple)",
+          entries: {
+            [storeKey]: {
+              sessionId: "s-opus",
+              label: "Named session",
+              updatedAt: 999,
+            },
+          },
+          sourceDatabasePathBySessionKey: {
+            [storeKey]: databasePath,
+          },
+        });
+
+        const respond = await runSessionsUsage({ ...BASE_USAGE_RANGE, key: "agent:opus:s-opus" });
+
+        const sessions = expectSuccessfulSessionsUsage(respond);
+        expect(sessions).toHaveLength(1);
+        expect(sessions[0]?.key).toBe(storeKey);
+        expect(
+          vi
+            .mocked(loadSessionCostSummaryFromCache)
+            .mock.calls.some((call) => call[0]?.databasePath === databasePath),
+        ).toBe(true);
+      });
+    } finally {
+      fs.rmSync(stateDir, { recursive: true, force: true });
+    }
+  });
+
   it("rolls up known session family ids when historical usage is requested", async () => {
     const storeKey = "agent:opus:main";
     const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-usage-test-"));

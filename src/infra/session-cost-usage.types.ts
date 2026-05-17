@@ -177,6 +177,7 @@ export type SessionCostSummary = CostUsageTotals & {
 
 export type DiscoveredSession = {
   agentId?: string;
+  databasePath?: string;
   sessionId: string;
   mtime: number;
   firstUserMessage?: string;
