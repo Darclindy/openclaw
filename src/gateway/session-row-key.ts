@@ -10,20 +10,22 @@ import {
   normalizeMainKey,
   parseAgentSessionKey,
 } from "../routing/session-key.js";
+import { normalizeSessionKeyPreservingOpaquePeerIds } from "../sessions/session-key-utils.js";
 import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalString,
 } from "../shared/string-coerce.js";
 
 export function canonicalizeSessionKeyForAgent(agentId: string, key: string): string {
-  const lowered = normalizeLowercaseStringOrEmpty(key);
+  const normalized = normalizeSessionKeyPreservingOpaquePeerIds(key);
+  const lowered = normalizeLowercaseStringOrEmpty(normalized);
   if (lowered === "global" || lowered === "unknown") {
     return lowered;
   }
-  if (lowered.startsWith("agent:")) {
-    return lowered;
+  if (normalized.startsWith("agent:")) {
+    return normalized;
   }
-  return `agent:${normalizeAgentId(agentId)}:${lowered}`;
+  return `agent:${normalizeAgentId(agentId)}:${normalized}`;
 }
 
 function resolveDefaultSessionAgentId(cfg: OpenClawConfig): string {
@@ -48,7 +50,7 @@ export function resolveSessionRowKey(params: {
   if (parsed) {
     const resolved = {
       agentId: normalizeAgentId(parsed.agentId),
-      sessionKey: normalizeLowercaseStringOrEmpty(raw),
+      sessionKey: normalizeSessionKeyPreservingOpaquePeerIds(raw),
     };
     const canonical = canonicalizeMainSessionAlias({
       cfg: params.cfg,
@@ -67,7 +69,7 @@ export function resolveSessionRowKey(params: {
     return resolveMainSessionKey(params.cfg);
   }
   const agentId = resolveDefaultSessionAgentId(params.cfg);
-  return canonicalizeSessionKeyForAgent(agentId, lowered);
+  return canonicalizeSessionKeyForAgent(agentId, raw);
 }
 
 export function resolveSessionRowAgentId(cfg: OpenClawConfig, canonicalKey: string): string {
@@ -151,15 +153,16 @@ export function canonicalizeSpawnedByForAgent(
   if (!raw) {
     return undefined;
   }
-  const lower = normalizeLowercaseStringOrEmpty(raw);
+  const normalized = normalizeSessionKeyPreservingOpaquePeerIds(raw);
+  const lower = normalizeLowercaseStringOrEmpty(normalized);
   if (lower === "global" || lower === "unknown") {
     return lower;
   }
   let result: string;
-  if (lower.startsWith("agent:")) {
-    result = lower;
+  if (normalized.startsWith("agent:")) {
+    result = normalized;
   } else {
-    result = `agent:${normalizeAgentId(agentId)}:${lower}`;
+    result = `agent:${normalizeAgentId(agentId)}:${normalized}`;
   }
   // Resolve main-alias references (e.g. agent:ops:main -> configured main key).
   const parsed = parseAgentSessionKey(result);

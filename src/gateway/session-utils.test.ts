@@ -14,6 +14,7 @@ import { withStateDirEnv } from "../test-helpers/state-dir-env.js";
 import {
   buildGatewaySessionRow,
   capArrayByJsonBytes,
+  canonicalizeSpawnedByForAgent,
   classifySessionKey,
   deriveSessionTitle,
   getSessionDefaults,
@@ -728,6 +729,22 @@ describe("gateway session utils", () => {
     expect(resolveSessionRowKey({ cfg, sessionKey: "agent:ops:CoP" })).toBe("agent:ops:cop");
     expect(resolveSessionRowKey({ cfg, sessionKey: "agent:alpha:MySession" })).toBe(
       "agent:alpha:mysession",
+    );
+  });
+
+  test("resolveSessionRowKey preserves opaque Signal group peer ids", () => {
+    const cfg = {
+      session: { mainKey: "main" },
+      agents: { list: [{ id: "ops", default: true }] },
+    } as OpenClawConfig;
+    expect(resolveSessionRowKey({ cfg, sessionKey: "signal:group:AbC123" })).toBe(
+      "agent:ops:signal:group:AbC123",
+    );
+    expect(resolveSessionRowKey({ cfg, sessionKey: "agent:ops:signal:group:AbC123" })).toBe(
+      "agent:ops:signal:group:AbC123",
+    );
+    expect(canonicalizeSpawnedByForAgent(cfg, "ops", "signal:group:AbC123")).toBe(
+      "agent:ops:signal:group:AbC123",
     );
   });
 
