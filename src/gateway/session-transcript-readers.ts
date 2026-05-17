@@ -52,6 +52,8 @@ type ReadRecentSessionMessagesResult = {
   totalMessages: number;
 };
 
+const RECENT_USAGE_MAX_EVENTS = 5_000;
+
 function normalizeTailEntryString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
@@ -776,6 +778,21 @@ function loadUsageEvents(params: {
   return loadScopedTranscriptEvents(params);
 }
 
+function loadRecentUsageEvents(params: {
+  sessionId: string;
+  agentId?: string;
+  path?: string;
+  maxBytes: number;
+}): unknown[] | undefined {
+  return loadScopedTranscriptTailEvents({
+    agentId: params.agentId,
+    path: params.path,
+    sessionId: params.sessionId,
+    maxBytes: params.maxBytes,
+    maxEvents: RECENT_USAGE_MAX_EVENTS,
+  });
+}
+
 export function readLatestSessionUsageFromTranscript(
   scope: SessionTranscriptReadScope,
 ): SessionTranscriptUsageSnapshot | null {
@@ -793,8 +810,7 @@ export async function readRecentSessionUsageFromTranscriptAsync(
   scope: SessionTranscriptReadScope,
   maxBytes: number,
 ): Promise<SessionTranscriptUsageSnapshot | null> {
-  void maxBytes;
-  const events = loadUsageEvents(scope);
+  const events = loadRecentUsageEvents({ ...scope, maxBytes });
   return events ? extractLatestUsageFromTranscriptEvents(events) : null;
 }
 
@@ -809,8 +825,7 @@ export function readRecentSessionUsageFromTranscript(
   scope: SessionTranscriptReadScope,
   maxBytes: number,
 ): SessionTranscriptUsageSnapshot | null {
-  void maxBytes;
-  const events = loadUsageEvents(scope);
+  const events = loadRecentUsageEvents({ ...scope, maxBytes });
   return events ? extractAggregateUsageFromTranscriptEvents(events) : null;
 }
 

@@ -356,6 +356,33 @@ describe("SQLite transcript readers", () => {
     });
   });
 
+  test("bounds recent usage reads by transcript bytes", () => {
+    setupState();
+    const sessionId = "usage-byte-cap-session";
+    const scope = { agentId: "main", sessionId };
+    seedTranscript({
+      sessionId,
+      events: [
+        header(sessionId),
+        message("assistant", "x".repeat(4096), {
+          provider: "openai",
+          model: "gpt-5.4",
+          usage: { input: 100, output: 20 },
+        }),
+        message("assistant", "tail", {
+          provider: "openai",
+          model: "gpt-5.4",
+          usage: { input: 3, output: 1 },
+        }),
+      ],
+    });
+
+    expect(readRecentSessionUsageFromTranscript(scope, 1024)).toMatchObject({
+      inputTokens: 3,
+      outputTokens: 1,
+    });
+  });
+
   test("builds preview items from SQLite transcripts", () => {
     setupState();
     const sessionId = "preview-items";

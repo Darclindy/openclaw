@@ -66,6 +66,28 @@ const nostrProfileStateStore = createPluginStateKeyedStore<NostrProfileState>(NO
   maxEntries: 1_000,
 });
 
+function openNostrBusStateStore(env?: NodeJS.ProcessEnv) {
+  if (!env) {
+    return nostrBusStateStore;
+  }
+  return createPluginStateKeyedStore<NostrBusState>(NOSTR_PLUGIN_ID, {
+    namespace: NOSTR_BUS_STATE_NAMESPACE,
+    maxEntries: 1_000,
+    env,
+  });
+}
+
+function openNostrProfileStateStore(env?: NodeJS.ProcessEnv) {
+  if (!env) {
+    return nostrProfileStateStore;
+  }
+  return createPluginStateKeyedStore<NostrProfileState>(NOSTR_PLUGIN_ID, {
+    namespace: NOSTR_PROFILE_STATE_NAMESPACE,
+    maxEntries: 1_000,
+    env,
+  });
+}
+
 export function normalizeNostrStateAccountId(accountId?: string): string {
   const trimmed = accountId?.trim();
   if (!trimmed) {
@@ -116,8 +138,9 @@ export async function readNostrBusState(params: {
   env?: NodeJS.ProcessEnv;
 }): Promise<NostrBusState | null> {
   try {
+    const store = openNostrBusStateStore(params.env);
     return normalizeNostrBusStateValue(
-      await nostrBusStateStore.lookup(normalizeNostrStateAccountId(params.accountId)),
+      await store.lookup(normalizeNostrStateAccountId(params.accountId)),
     );
   } catch {
     return null;
@@ -137,7 +160,10 @@ export async function writeNostrBusState(params: {
     gatewayStartedAt: params.gatewayStartedAt,
     recentEventIds: (params.recentEventIds ?? []).filter((x): x is string => typeof x === "string"),
   };
-  await nostrBusStateStore.register(normalizeNostrStateAccountId(params.accountId), payload);
+  await openNostrBusStateStore(params.env).register(
+    normalizeNostrStateAccountId(params.accountId),
+    payload,
+  );
 }
 
 /**
@@ -182,8 +208,9 @@ export async function readNostrProfileState(params: {
   env?: NodeJS.ProcessEnv;
 }): Promise<NostrProfileState | null> {
   try {
+    const store = openNostrProfileStateStore(params.env);
     return normalizeNostrProfileStateValue(
-      await nostrProfileStateStore.lookup(normalizeNostrStateAccountId(params.accountId)),
+      await store.lookup(normalizeNostrStateAccountId(params.accountId)),
     );
   } catch {
     return null;
@@ -203,5 +230,8 @@ export async function writeNostrProfileState(params: {
     lastPublishedEventId: params.lastPublishedEventId,
     lastPublishResults: params.lastPublishResults,
   };
-  await nostrProfileStateStore.register(normalizeNostrStateAccountId(params.accountId), payload);
+  await openNostrProfileStateStore(params.env).register(
+    normalizeNostrStateAccountId(params.accountId),
+    payload,
+  );
 }

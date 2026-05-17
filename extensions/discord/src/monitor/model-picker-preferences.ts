@@ -15,6 +15,17 @@ const preferenceStore = createPluginStateKeyedStore<ModelPickerPreferencesEntry>
   maxEntries: 10_000,
 });
 
+function openPreferenceStore(env?: NodeJS.ProcessEnv) {
+  if (!env) {
+    return preferenceStore;
+  }
+  return createPluginStateKeyedStore<ModelPickerPreferencesEntry>("discord", {
+    namespace: "model-picker-preferences",
+    maxEntries: 10_000,
+    env,
+  });
+}
+
 export type DiscordModelPickerPreferenceScope = {
   accountId?: string;
   guildId?: string;
@@ -100,8 +111,8 @@ export async function readDiscordModelPickerRecentModels(params: {
     return [];
   }
   const limit = Math.max(1, Math.min(params.limit ?? DEFAULT_RECENT_LIMIT, 10));
-  void params.env;
-  const entry = sanitizePreferenceEntry(await preferenceStore.lookup(key));
+  const store = openPreferenceStore(params.env);
+  const entry = sanitizePreferenceEntry(await store.lookup(key));
   const recent = sanitizeRecentModels(entry?.recent, limit);
   if (!params.allowedModelRefs || params.allowedModelRefs.size === 0) {
     return recent;
@@ -122,15 +133,15 @@ export async function recordDiscordModelPickerRecentModel(params: {
   }
 
   const limit = Math.max(1, Math.min(params.limit ?? DEFAULT_RECENT_LIMIT, 10));
-  void params.env;
-  const existingEntry = sanitizePreferenceEntry(await preferenceStore.lookup(key));
+  const store = openPreferenceStore(params.env);
+  const existingEntry = sanitizePreferenceEntry(await store.lookup(key));
   const existing = sanitizeRecentModels(existingEntry?.recent, limit);
   const next = [
     normalizedModelRef,
     ...existing.filter((entry) => entry !== normalizedModelRef),
   ].slice(0, limit);
 
-  await preferenceStore.register(key, {
+  await store.register(key, {
     recent: next,
     updatedAt: new Date().toISOString(),
   });

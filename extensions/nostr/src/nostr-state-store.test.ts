@@ -45,6 +45,17 @@ async function withTempStateDir<T>(fn: (dir: string) => Promise<T>) {
   }
 }
 
+async function withDetachedStateEnv<T>(fn: (env: NodeJS.ProcessEnv) => Promise<T>) {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-nostr-detached-"));
+  resetPluginStateStoreForTests();
+  try {
+    return await fn({ ...process.env, OPENCLAW_STATE_DIR: dir });
+  } finally {
+    resetPluginStateStoreForTests();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+}
+
 describe("nostr bus state store", () => {
   it("persists and reloads state across restarts", async () => {
     await withTempStateDir(async () => {
@@ -105,6 +116,23 @@ describe("nostr bus state store", () => {
         gatewayStartedAt: 1700000100,
         recentEventIds: [],
       });
+    });
+  });
+
+  it("uses the supplied state env without mutating process env", async () => {
+    await withDetachedStateEnv(async (env) => {
+      await writeNostrBusState({
+        env,
+        accountId: "detached-bot",
+        lastProcessedAt: 3000,
+        gatewayStartedAt: 4000,
+      });
+
+      expect(await readNostrBusState({ env, accountId: "detached-bot" })).toMatchObject({
+        lastProcessedAt: 3000,
+        gatewayStartedAt: 4000,
+      });
+      expect(await readNostrBusState({ accountId: "detached-bot" })).toBeNull();
     });
   });
 
@@ -171,6 +199,24 @@ describe("nostr profile state store", () => {
         lastPublishedEventId: "evt-1",
         lastPublishResults: null,
       });
+    });
+  });
+
+  it("uses the supplied state env for profile state", async () => {
+    await withDetachedStateEnv(async (env) => {
+      await writeNostrProfileState({
+        env,
+        accountId: "detached-bot",
+        lastPublishedAt: 5000,
+        lastPublishedEventId: "evt-detached",
+        lastPublishResults: { "wss://relay.example": "ok" },
+      });
+
+      expect(await readNostrProfileState({ env, accountId: "detached-bot" })).toMatchObject({
+        lastPublishedAt: 5000,
+        lastPublishedEventId: "evt-detached",
+      });
+      expect(await readNostrProfileState({ accountId: "detached-bot" })).toBeNull();
     });
   });
 });
