@@ -1,6 +1,7 @@
-import { rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { requireNodeSqlite } from "../infra/node-sqlite.js";
 import { openOpenClawStateDatabase } from "../state/openclaw-state-db.js";
 import { resolveOpenClawStateSqlitePath } from "../state/openclaw-state-db.paths.js";
 import {
@@ -46,6 +47,54 @@ async function withPluginStateTestState<T>(fn: () => Promise<T>): Promise<T> {
   return await fn();
 }
 
+function createLegacyPluginStateSqlite(
+  stateDir: string,
+  rows: Array<{
+    pluginId: string;
+    namespace: string;
+    key: string;
+    valueJson: string;
+    createdAt: number;
+    expiresAt?: number | null;
+  }>,
+): string {
+  const sqlitePath = path.join(stateDir, "plugin-state", "state.sqlite");
+  mkdirSync(path.dirname(sqlitePath), { recursive: true });
+  const sqlite = requireNodeSqlite();
+  const db = new sqlite.DatabaseSync(sqlitePath);
+  try {
+    db.exec(`
+      CREATE TABLE plugin_state_entries (
+        plugin_id TEXT NOT NULL,
+        namespace TEXT NOT NULL,
+        entry_key TEXT NOT NULL,
+        value_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER,
+        PRIMARY KEY (plugin_id, namespace, entry_key)
+      );
+    `);
+    const insert = db.prepare(`
+      INSERT INTO plugin_state_entries (
+        plugin_id, namespace, entry_key, value_json, created_at, expires_at
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    for (const row of rows) {
+      insert.run(
+        row.pluginId,
+        row.namespace,
+        row.key,
+        row.valueJson,
+        row.createdAt,
+        row.expiresAt ?? null,
+      );
+    }
+  } finally {
+    db.close();
+  }
+  return sqlitePath;
+}
+
 async function expectPluginStateStoreError(
   promise: Promise<unknown>,
   expected: { code: string; operation?: string },
@@ -78,6 +127,47 @@ describe("plugin state keyed store", () => {
       });
       await expect(reopened.lookup("interaction:1")).resolves.toEqual({ count: 1 });
     });
+  });
+
+  it("imports legacy sidecar SQLite rows before reading shared plugin state", async () => {
+    await withOpenClawTestState(
+      { label: "plugin-state-legacy-import", applyEnv: false },
+      async (state) => {
+        const legacyPath = createLegacyPluginStateSqlite(state.stateDir, [
+          {
+            pluginId: "discord",
+            namespace: "components",
+            key: "interaction:1",
+            valueJson: '{"ok":true}',
+            createdAt: 1000,
+          },
+          {
+            pluginId: "github-copilot",
+            namespace: "token-cache",
+            key: "default",
+            valueJson: '{"token":"redacted"}',
+            createdAt: 2000,
+            expiresAt: 4_102_444_800_000,
+          },
+        ]);
+
+        const store = createPluginStateKeyedStore<{ ok: boolean }>("discord", {
+          namespace: "components",
+          maxEntries: 10,
+          env: state.env,
+        });
+
+        await expect(store.lookup("interaction:1")).resolves.toEqual({ ok: true });
+        expect(existsSync(legacyPath)).toBe(false);
+
+        const tokenStore = createPluginStateKeyedStore<{ token: string }>("github-copilot", {
+          namespace: "token-cache",
+          maxEntries: 10,
+          env: state.env,
+        });
+        await expect(tokenStore.lookup("default")).resolves.toEqual({ token: "redacted" });
+      },
+    );
   });
 
   it("honors explicit store env without mutating process state", async () => {
