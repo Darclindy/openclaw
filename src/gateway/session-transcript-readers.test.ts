@@ -3,6 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { replaceSqliteSessionTranscriptEvents } from "../config/sessions/transcript-store.sqlite.js";
+import { executeSqliteQuerySync, getNodeSqliteKysely } from "../infra/kysely-sync.js";
+import { openOpenClawAgentDatabase } from "../state/openclaw-agent-db.js";
+import type { DB as OpenClawAgentKyselyDatabase } from "../state/openclaw-agent-db.generated.js";
 import { closeOpenClawStateDatabaseForTest } from "../state/openclaw-state-db.js";
 import { createToolSummaryPreviewTranscriptLines } from "./session-preview.test-helpers.js";
 import {
@@ -27,6 +30,7 @@ import {
 } from "./session-transcript-readers.js";
 
 type TranscriptEvent = Record<string, unknown>;
+type TranscriptEventsTestDatabase = Pick<OpenClawAgentKyselyDatabase, "transcript_events">;
 
 let previousStateDir: string | undefined;
 let stateDir = "";
@@ -69,6 +73,25 @@ function seedTranscript(params: {
     now: () => 1_778_100_000_000,
   });
   return { agentId, sessionId: params.sessionId };
+}
+
+function replaceStoredTranscriptEventJson(params: {
+  agentId?: string;
+  sessionId: string;
+  seq: number;
+  eventJson: string;
+}) {
+  const database = openOpenClawAgentDatabase({
+    agentId: params.agentId ?? "main",
+  });
+  executeSqliteQuerySync(
+    database.db,
+    getNodeSqliteKysely<TranscriptEventsTestDatabase>(database.db)
+      .updateTable("transcript_events")
+      .set({ event_json: params.eventJson })
+      .where("session_id", "=", params.sessionId)
+      .where("seq", "=", params.seq),
+  );
 }
 
 function buildBasicSessionTranscript(
@@ -215,6 +238,38 @@ describe("SQLite transcript readers", () => {
         maxMessages: 1,
       }),
     ).resolves.toEqual([expect.objectContaining({ content: "tail" })]);
+  });
+
+  test("counts messages asynchronously without loading full transcript JSON", async () => {
+    setupState();
+    const sessionId = "count-fast-path";
+    const scope = { agentId: "main", sessionId };
+    seedTranscript({
+      sessionId,
+      events: [
+        {
+          type: "message",
+          id: "root",
+          parentId: null,
+          message: { role: "user", content: "root" },
+        },
+        {
+          type: "message",
+          id: "tail",
+          parentId: "root",
+          message: { role: "assistant", content: "tail" },
+        },
+      ],
+    });
+
+    replaceStoredTranscriptEventJson({
+      sessionId,
+      seq: 1,
+      eventJson: "{",
+    });
+
+    expect(readSessionMessageCount(scope)).toBe(2);
+    await expect(readSessionMessageCountAsync(scope)).resolves.toBe(2);
   });
 
   test("adds sequence metadata to recent message windows", async () => {

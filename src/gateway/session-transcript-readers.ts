@@ -391,7 +391,7 @@ export async function visitSessionMessagesAsync(
 export async function readSessionMessageCountAsync(
   scope: SessionTranscriptReadScope,
 ): Promise<number> {
-  return loadScopedSessionMessages(scope)?.length ?? 0;
+  return readSessionMessageCount(scope);
 }
 
 export function readRecentSessionMessagesWithStats(
