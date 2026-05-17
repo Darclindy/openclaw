@@ -190,7 +190,7 @@ export const cronHandlers: GatewayRequestHandlers = {
     const result = context.cron.wake({
       mode: p.mode,
       text: p.text,
-      ...(p.sessionKey ? { sessionKey: p.sessionKey } : {}),
+      ...(sessionKey ? { sessionKey } : {}),
     });
     respond(true, result, undefined);
   },

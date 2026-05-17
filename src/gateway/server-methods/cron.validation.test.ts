@@ -711,6 +711,20 @@ describe("cron method validation", () => {
       expect(respond).toHaveBeenCalledWith(true, { ok: true }, undefined);
     });
 
+    it("forwards the normalized sessionKey to context.cron.wake", async () => {
+      const { context, respond } = await invokeWake({
+        mode: "now",
+        text: "ping",
+        sessionKey: "  agent:main:telegram:dm:42  ",
+      });
+      expect(context.cron.wake).toHaveBeenCalledWith({
+        mode: "now",
+        text: "ping",
+        sessionKey: "agent:main:telegram:dm:42",
+      });
+      expect(respond).toHaveBeenCalledWith(true, { ok: true }, undefined);
+    });
+
     it("omits sessionKey when not provided", async () => {
       const { context, respond } = await invokeWake({
         mode: "next-heartbeat",
