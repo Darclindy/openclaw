@@ -44,6 +44,7 @@ import { requireNodeSqlite } from "../../infra/node-sqlite.js";
 import { normalizeConversationRef } from "../../infra/outbound/session-binding-normalization.js";
 import type { SessionBindingRecord } from "../../infra/outbound/session-binding.types.js";
 import { isWithinDir } from "../../infra/path-safety.js";
+import { resolveRequiredHomeDir } from "../../infra/home-dir.js";
 import {
   buildAgentMainSessionKey,
   DEFAULT_AGENT_ID,
@@ -2427,9 +2428,10 @@ export async function autoMigrateLegacyStateDir(params: {
     return { migrated: false, skipped: true, changes: [], warnings: [] };
   }
 
-  const homedir = params.homedir ?? os.homedir;
-  const targetDir = resolveNewStateDir(homedir);
-  const legacyDirs = resolveLegacyStateDirs(homedir);
+  const rawHomedir = params.homedir ?? os.homedir;
+  const effectiveHomedir = () => resolveRequiredHomeDir(env, rawHomedir);
+  const targetDir = resolveNewStateDir(effectiveHomedir);
+  const legacyDirs = resolveLegacyStateDirs(effectiveHomedir);
   let legacyDir = legacyDirs.find((dir) => {
     try {
       return fs.existsSync(dir);

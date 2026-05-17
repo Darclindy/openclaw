@@ -65,6 +65,32 @@ describe("legacy state dir auto-migration", () => {
     });
   });
 
+  it("uses OPENCLAW_HOME instead of the OS home when auto-migrating", async () => {
+    await withStateDirFixture(async (root) => {
+      const realHome = path.join(root, "real-home");
+      const openClawHome = path.join(root, "openclaw-home");
+      const realLegacyDir = path.join(realHome, ".clawdbot");
+      const isolatedLegacyDir = path.join(openClawHome, ".clawdbot");
+      const isolatedTargetDir = path.join(openClawHome, ".openclaw");
+
+      fs.mkdirSync(realLegacyDir, { recursive: true });
+      fs.writeFileSync(path.join(realLegacyDir, "real-marker.txt"), "real", "utf-8");
+      fs.mkdirSync(isolatedLegacyDir, { recursive: true });
+      fs.writeFileSync(path.join(isolatedLegacyDir, "isolated-marker.txt"), "isolated", "utf-8");
+
+      const result = await autoMigrateLegacyStateDir({
+        env: { OPENCLAW_HOME: openClawHome } as NodeJS.ProcessEnv,
+        homedir: () => realHome,
+      });
+
+      expect(result.migrated).toBe(true);
+      expect(fs.readFileSync(path.join(realLegacyDir, "real-marker.txt"), "utf-8")).toBe("real");
+      expect(fs.readFileSync(path.join(isolatedTargetDir, "isolated-marker.txt"), "utf-8")).toBe(
+        "isolated",
+      );
+    });
+  });
+
   it("only runs once per process until reset", async () => {
     await withStateDirFixture(async (root) => {
       const legacyDir = path.join(root, ".clawdbot");
