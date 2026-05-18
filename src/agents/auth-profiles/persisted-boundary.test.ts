@@ -6,7 +6,12 @@ import { resolveOAuthDir } from "../../config/paths.js";
 import { AUTH_STORE_VERSION } from "./constants.js";
 import { legacyOAuthSidecarTestUtils } from "./legacy-oauth-sidecar.js";
 import { resolveAuthStorePath } from "./paths.js";
-import { coercePersistedAuthProfileStore, loadLegacyAuthProfileStoreEntry } from "./persisted.js";
+import {
+  coercePersistedAuthProfileStore,
+  loadLegacyAuthProfileStoreEntry,
+  loadPersistedAuthProfileStore,
+  loadPersistedAuthProfileStoreEntry,
+} from "./persisted.js";
 
 function withEnvValue(key: string, value: string | undefined): () => void {
   const previous = process.env[key];
@@ -207,6 +212,42 @@ describe("persisted auth profile boundary", () => {
       restoreSecretKey();
       restoreOAuthDir();
       restoreStateDir();
+      fs.rmSync(stateDir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps direct persisted auth-profile readers compatible with legacy files", () => {
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-auth-legacy-read-"));
+    const agentDir = path.join(stateDir, "agents", "main", "agent");
+    const env = { ...process.env, OPENCLAW_STATE_DIR: stateDir };
+    try {
+      fs.mkdirSync(agentDir, { recursive: true });
+      fs.writeFileSync(
+        resolveAuthStorePath(agentDir),
+        `${JSON.stringify(
+          {
+            version: AUTH_STORE_VERSION,
+            profiles: {
+              "openai:default": {
+                type: "api_key",
+                provider: "openai",
+                key: "legacy-key",
+              },
+            },
+          },
+          null,
+          2,
+        )}\n`,
+      );
+
+      expect(loadPersistedAuthProfileStore(agentDir, { env })?.profiles).toHaveProperty(
+        "openai:default",
+      );
+      expect(loadPersistedAuthProfileStoreEntry(agentDir, { env })?.store.profiles).toHaveProperty(
+        "openai:default",
+      );
+      expect(loadPersistedAuthProfileStoreEntry(agentDir, { env, legacyFallback: false })).toBeNull();
+    } finally {
       fs.rmSync(stateDir, { recursive: true, force: true });
     }
   });

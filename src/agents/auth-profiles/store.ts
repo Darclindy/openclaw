@@ -398,8 +398,14 @@ function loadAuthProfileStoreForAgent(
   const readOnly = options?.readOnly === true;
   const storeKey = resolveAuthProfileStoreKey(agentDir, options?.env);
   let persisted = readOnly
-    ? loadPersistedAuthProfileStoreEntryReadOnly(agentDir, { env: options?.env })
-    : loadPersistedAuthProfileStoreEntry(agentDir, { env: options?.env });
+    ? loadPersistedAuthProfileStoreEntryReadOnly(agentDir, {
+        env: options?.env,
+        legacyFallback: false,
+      })
+    : loadPersistedAuthProfileStoreEntry(agentDir, {
+        env: options?.env,
+        legacyFallback: false,
+      });
   let authMtimeMs = persisted?.updatedAt ?? null;
   if (!persisted) {
     const legacy = loadLegacyAuthProfileStoreEntry(agentDir, { env: options?.env });

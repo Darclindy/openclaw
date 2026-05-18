@@ -52,6 +52,10 @@ export type PersistedAuthProfileStoreEntry = {
   updatedAt: number;
 };
 
+type AuthProfileStoreEntryLoadOptions = OpenClawStateDatabaseOptions & {
+  legacyFallback?: boolean;
+};
+
 type CredentialRejectReason = "non_object" | "invalid_type" | "missing_provider";
 type RejectedCredentialEntry = { key: string; reason: CredentialRejectReason };
 
@@ -850,19 +854,23 @@ export function loadPersistedAuthProfileStoreEntryFromDatabase(
 
 export function loadPersistedAuthProfileStoreEntry(
   agentDir?: string,
-  options: OpenClawStateDatabaseOptions = {},
+  options: AuthProfileStoreEntryLoadOptions = {},
 ): PersistedAuthProfileStoreEntry | null {
   const result = readAuthProfileStorePayloadResult(
     authProfileStoreKey(agentDir, options.env),
     options,
   );
   if (!result.exists || result.value === undefined) {
-    return null;
+    return options.legacyFallback === false
+      ? null
+      : loadLegacyAuthProfileStoreEntry(agentDir, options);
   }
   const raw = result.value;
   const store = coercePersistedAuthProfileStore(raw);
   if (!store) {
-    return null;
+    return options.legacyFallback === false
+      ? null
+      : loadLegacyAuthProfileStoreEntry(agentDir, options);
   }
   const merged = {
     ...store,
@@ -879,19 +887,23 @@ export function loadPersistedAuthProfileStoreEntry(
 
 export function loadPersistedAuthProfileStoreEntryReadOnly(
   agentDir?: string,
-  options: OpenClawStateDatabaseOptions = {},
+  options: AuthProfileStoreEntryLoadOptions = {},
 ): PersistedAuthProfileStoreEntry | null {
   const result = readAuthProfileStorePayloadResultReadOnly(
     authProfileStoreKey(agentDir, options.env),
     options,
   );
   if (!result.exists || result.value === undefined) {
-    return null;
+    return options.legacyFallback === false
+      ? null
+      : loadLegacyAuthProfileStoreEntry(agentDir, options);
   }
   const raw = result.value;
   const store = coercePersistedAuthProfileStore(raw);
   if (!store) {
-    return null;
+    return options.legacyFallback === false
+      ? null
+      : loadLegacyAuthProfileStoreEntry(agentDir, options);
   }
   const merged = {
     ...store,
