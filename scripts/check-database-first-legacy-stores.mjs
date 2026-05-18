@@ -368,6 +368,10 @@ const legacyBridgeViolationAllowlist = new Set([
   "src/agents/cli-runner/session-history.ts\0session transcript file runtime contract",
   "src/agents/cli-runner/types.ts\0session transcript file runtime contract",
   "src/config/sessions/session-file-rotation.ts\0session transcript file runtime contract",
+  "src/config/sessions/types.ts\0session transcript file runtime contract",
+  "src/gateway/protocol/schema/sessions.ts\0session transcript file runtime contract",
+  "src/gateway/server-methods/sessions.ts\0session transcript file runtime contract",
+  "src/gateway/session-compaction-checkpoints.ts\0session transcript file runtime contract",
   "src/gateway/sessions-patch.ts\0session transcript file runtime contract",
 ]);
 
