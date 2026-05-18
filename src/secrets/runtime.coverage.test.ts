@@ -785,7 +785,7 @@ const OPENCLAW_PLUGIN_COVERAGE_BATCHES = buildCoverageBatches(
   collectOpenClawCoverageEntries({ includePluginEntries: true }),
 );
 const AUTH_PROFILE_COVERAGE_BATCHES = buildCoverageBatches(
-  COVERAGE_REGISTRY_ENTRIES.filter((entry) => entry.configFile === "auth-profiles.json"),
+  COVERAGE_REGISTRY_ENTRIES.filter((entry) => entry.store === "auth-profile-store"),
 );
 
 function toCoverageBatchCase(batch: SecretRegistryEntry[]) {

@@ -6,7 +6,7 @@ import { resolveOAuthDir } from "../../config/paths.js";
 import { AUTH_STORE_VERSION } from "./constants.js";
 import { legacyOAuthSidecarTestUtils } from "./legacy-oauth-sidecar.js";
 import { resolveAuthStorePath } from "./paths.js";
-import { coercePersistedAuthProfileStore, loadPersistedAuthProfileStore } from "./persisted.js";
+import { coercePersistedAuthProfileStore, loadLegacyAuthProfileStoreEntry } from "./persisted.js";
 
 function withEnvValue(key: string, value: string | undefined): () => void {
   const previous = process.env[key];
@@ -125,7 +125,7 @@ describe("persisted auth profile boundary", () => {
     expect(store?.profiles["codex:default"]).not.toHaveProperty("oauthRef");
   });
 
-  it("rehydrates legacy oauthRef sidecars read-only for upgraded Codex OAuth users", () => {
+  it("keeps legacy oauthRef sidecars out of runtime credentials", () => {
     const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-auth-oauthref-runtime-"));
     const agentDir = path.join(stateDir, "agents", "main", "agent");
     const restoreStateDir = withEnvValue("OPENCLAW_STATE_DIR", stateDir);
@@ -186,24 +186,22 @@ describe("persisted auth profile boundary", () => {
         )}\n`,
       );
 
-      const unresolved = loadPersistedAuthProfileStore(agentDir)?.profiles[profileId];
+      const unresolved = loadLegacyAuthProfileStoreEntry(agentDir)?.store.profiles[profileId];
       expect(unresolved).not.toHaveProperty("access");
       expect(unresolved).not.toHaveProperty("refresh");
       expect(unresolved).not.toHaveProperty("idToken");
 
-      const credential = loadPersistedAuthProfileStore(agentDir, {
-        resolveLegacyOAuthSidecars: true,
-      })?.profiles[profileId];
+      const credential = loadLegacyAuthProfileStoreEntry(agentDir)?.store.profiles[profileId];
       expect(credential).toMatchObject({
         type: "oauth",
         provider: "openai-codex",
-        access: "legacy-access-token",
-        refresh: "legacy-refresh-token",
-        idToken: "legacy-id-token",
         expires: 123456,
         accountId: "acct-legacy",
         chatgptPlanType: "plus",
       });
+      expect(credential).not.toHaveProperty("access");
+      expect(credential).not.toHaveProperty("refresh");
+      expect(credential).not.toHaveProperty("idToken");
       expect(credential).not.toHaveProperty("oauthRef");
     } finally {
       restoreSecretKey();

@@ -222,10 +222,7 @@ function createRedactedOAuthRefreshCause(cause: unknown, secrets: string[]): Err
 }
 
 function loadStoredOAuthRefreshStore(agentDir?: string): AuthProfileStore {
-  return loadAuthProfileStoreWithoutExternalProfiles(agentDir, {
-    allowKeychainPrompt: true,
-    resolveLegacyOAuthSidecars: true,
-  });
+  return loadAuthProfileStoreWithoutExternalProfiles(agentDir);
 }
 
 async function loadFreshStoredOAuthCredential(params: {

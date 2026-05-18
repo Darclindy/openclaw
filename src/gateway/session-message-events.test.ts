@@ -420,15 +420,14 @@ describe("session.message websocket events", () => {
   });
 
   test("does not broadcast hidden runtime-context custom messages as live chat messages", async () => {
-    const storePath = await createSessionStoreFile();
-    await writeSessionStore({
+    await setupTranscriptFixtureState();
+    await seedGatewaySessionEntries({
       entries: {
         "hidden-runtime": {
           sessionId: "sess-hidden-runtime",
           updatedAt: Date.now(),
         },
       },
-      storePath,
     });
 
     await withOperatorSessionSubscriber(async (ws) => {
@@ -449,7 +448,8 @@ describe("session.message websocket events", () => {
           ),
         action: () => {
           emitSessionTranscriptUpdate({
-            sessionFile: path.join(path.dirname(storePath), "sess-hidden-runtime.jsonl"),
+            agentId: "main",
+            sessionId: "sess-hidden-runtime",
             sessionKey: "agent:main:hidden-runtime",
             messageId: "runtime-context-1",
             messageSeq: 1,
