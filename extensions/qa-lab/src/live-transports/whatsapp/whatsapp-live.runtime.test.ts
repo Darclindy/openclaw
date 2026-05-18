@@ -136,7 +136,19 @@ describe("WhatsApp QA live runtime", () => {
     expect(scenarioRun.input).not.toContain("visible reply tool check");
 
     const cfg = testing.buildWhatsAppQaConfig(
-      {},
+      {
+        agents: {
+          defaults: {
+            models: {
+              "openai/gpt-5.5": {
+                params: {
+                  thinking: "high",
+                },
+              },
+            },
+          },
+        },
+      },
       {
         allowFrom: ["+15550000001"],
         authDir: "/tmp/openclaw-whatsapp-qa-auth",
@@ -147,12 +159,13 @@ describe("WhatsApp QA live runtime", () => {
     );
     expect(cfg.agents?.defaults?.skipBootstrap).toBe(true);
     expect(cfg.agents?.defaults?.thinkingDefault).toBe("off");
+    expect(cfg.agents?.defaults?.models?.["openai/gpt-5.5"]?.params?.thinking).toBe("off");
     expect(cfg.messages?.groupChat?.visibleReplies).toBe("automatic");
     expect(cfg.messages?.groupChat?.mentionPatterns).toContain("\\bopenclawqa\\b");
   });
 
   it("renders WhatsApp live phase timings in the QA report", () => {
-    const report = __testing.renderWhatsAppQaMarkdown({
+    const report = testing.renderWhatsAppQaMarkdown({
       cleanupIssues: [],
       credentialSource: "convex",
       finishedAt: "2026-05-18T10:00:05.000Z",
@@ -182,7 +195,7 @@ describe("WhatsApp QA live runtime", () => {
 
   it("arms WhatsApp gateway diagnostics only when requested", () => {
     expect(
-      __testing.buildWhatsAppGatewayRuntimeEnvPatch({
+      testing.buildWhatsAppGatewayRuntimeEnvPatch({
         env: {
           OPENCLAW_QA_GATEWAY_HEAP_CHECKPOINTS: "0",
           OPENCLAW_QA_WHATSAPP_TRACE: "0",
@@ -191,7 +204,7 @@ describe("WhatsApp QA live runtime", () => {
       }),
     ).toBeUndefined();
     expect(
-      __testing.buildWhatsAppGatewayRuntimeEnvPatch({
+      testing.buildWhatsAppGatewayRuntimeEnvPatch({
         env: {
           OPENCLAW_QA_GATEWAY_HEAP_CHECKPOINTS: "1",
           OPENCLAW_QA_WHATSAPP_TRACE: "1",
@@ -215,10 +228,10 @@ describe("WhatsApp QA live runtime", () => {
       await fs.writeFile(partialPath, '{"snapshot":{},"nodes":[],"edges":[],"strings":[', "utf8");
 
       await expect(
-        __testing.heapSnapshotLooksComplete(completePath, (await fs.stat(completePath)).size),
+        testing.heapSnapshotLooksComplete(completePath, (await fs.stat(completePath)).size),
       ).resolves.toBe(true);
       await expect(
-        __testing.heapSnapshotLooksComplete(partialPath, (await fs.stat(partialPath)).size),
+        testing.heapSnapshotLooksComplete(partialPath, (await fs.stat(partialPath)).size),
       ).resolves.toBe(false);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });

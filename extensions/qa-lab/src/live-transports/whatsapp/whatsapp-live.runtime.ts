@@ -375,12 +375,28 @@ function buildWhatsAppQaConfig(
   },
 ): OpenClawConfig {
   const pluginAllow = [...new Set([...(baseCfg.plugins?.allow ?? []), "whatsapp"])];
+  const defaultModels = baseCfg.agents?.defaults?.models;
+  const models = defaultModels
+    ? Object.fromEntries(
+        Object.entries(defaultModels).map(([modelRef, modelCfg]) => [
+          modelRef,
+          {
+            ...modelCfg,
+            params: {
+              ...modelCfg.params,
+              thinking: "off",
+            },
+          },
+        ]),
+      )
+    : undefined;
   return {
     ...baseCfg,
     agents: {
       ...baseCfg.agents,
       defaults: {
         ...baseCfg.agents?.defaults,
+        ...(models ? { models } : {}),
         skipBootstrap: true,
         thinkingDefault: "off",
       },
