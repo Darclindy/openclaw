@@ -164,6 +164,7 @@ describe("WhatsApp QA live runtime", () => {
       },
     );
     expect(cfg.agents?.defaults?.skipBootstrap).toBe(true);
+    expect(cfg.agents?.defaults?.heartbeat?.every).toBe("0m");
     expect(cfg.agents?.defaults?.thinkingDefault).toBe("off");
     expect(cfg.agents?.defaults?.models?.["openai/gpt-5.5"]?.agentRuntime).toEqual({ id: "pi" });
     expect(cfg.agents?.defaults?.models?.["openai/gpt-5.5"]?.params?.thinking).toBe("off");
@@ -172,6 +173,7 @@ describe("WhatsApp QA live runtime", () => {
     expect(cfg.tools?.web?.fetch?.enabled).toBe(true);
     expect(cfg.tools?.web?.search?.enabled).toBe(false);
     expect(cfg.tools?.web?.search?.maxResults).toBe(4);
+    expect(cfg.agents?.list?.[0]?.heartbeat?.every).toBe("0m");
     expect(cfg.agents?.list?.[0]?.tools?.profile).toBe("messaging");
     expect(cfg.agents?.list?.[0]?.tools?.deny).toEqual([
       "session_status",

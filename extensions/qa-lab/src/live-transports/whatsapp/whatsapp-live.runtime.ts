@@ -430,11 +430,19 @@ function buildWhatsAppQaConfig(
       defaults: {
         ...baseCfg.agents?.defaults,
         ...(models ? { models } : {}),
+        heartbeat: {
+          ...baseCfg.agents?.defaults?.heartbeat,
+          every: "0m",
+        },
         skipBootstrap: true,
         thinkingDefault: "off",
       },
       list: baseCfg.agents?.list?.map((agent) => ({
         ...agent,
+        heartbeat: {
+          ...agent.heartbeat,
+          every: "0m",
+        },
         tools: {
           ...agent.tools,
           profile: "messaging",
