@@ -45,11 +45,12 @@ function parseLineLimit(raw: string | number | undefined): number | null {
   if (raw === undefined) {
     return DEFAULT_LIMIT;
   }
-  const value = typeof raw === "string" ? Number(raw.trim()) : raw;
-  if (!Number.isFinite(value) || value <= 0) {
+  const value = typeof raw === "string" ? raw.trim() : String(raw);
+  if (!/^\d+$/.test(value)) {
     return null;
   }
-  return Math.floor(value);
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 function matchesChannel(line: NonNullable<LogLine>, channel: string) {
@@ -115,7 +116,7 @@ export async function channelsLogsCommand(
   }
   const limit = parseLineLimit(opts.lines);
   if (limit === null) {
-    runtime.error("Invalid --lines. Use a positive number, for example --lines 200.");
+    runtime.error("Invalid --lines. Use a positive integer, for example --lines 200.");
     runtime.exit(1);
     return;
   }

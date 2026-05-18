@@ -114,7 +114,22 @@ describe("channelsLogsCommand", () => {
     await channelsLogsCommand({ channel: "slack", lines: "wat", json: true }, runtime);
 
     expect(runtime.error).toHaveBeenCalledWith(
-      "Invalid --lines. Use a positive number, for example --lines 200.",
+      "Invalid --lines. Use a positive integer, for example --lines 200.",
+    );
+    expect(runtime.exit).toHaveBeenCalledWith(1);
+    expect(runtime.log).not.toHaveBeenCalled();
+  });
+
+  it("rejects fractional line limits instead of truncating", async () => {
+    await fs.writeFile(
+      logPath,
+      logLine({ module: "gateway/channels/slack/send", message: "slack sent" }),
+    );
+
+    await channelsLogsCommand({ channel: "slack", lines: "2.5", json: true }, runtime);
+
+    expect(runtime.error).toHaveBeenCalledWith(
+      "Invalid --lines. Use a positive integer, for example --lines 200.",
     );
     expect(runtime.exit).toHaveBeenCalledWith(1);
     expect(runtime.log).not.toHaveBeenCalled();
