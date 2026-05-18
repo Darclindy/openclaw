@@ -206,13 +206,13 @@ describe("cli session history", () => {
   it("rejects path-like Claude CLI session ids", async () => {
     await withClaudeProjectsDir(async ({ homeDir }) => {
       expect(
-        resolveClaudeCliSessionFilePath({ cliSessionId: "../outside", homeDir }),
+        resolveClaudeCliHistoryJsonlPath({ cliSessionId: "../outside", homeDir }),
       ).toBeUndefined();
       expect(
-        resolveClaudeCliSessionFilePath({ cliSessionId: "nested/session", homeDir }),
+        resolveClaudeCliHistoryJsonlPath({ cliSessionId: "nested/session", homeDir }),
       ).toBeUndefined();
       expect(
-        resolveClaudeCliSessionFilePath({ cliSessionId: "nested\\session", homeDir }),
+        resolveClaudeCliHistoryJsonlPath({ cliSessionId: "nested\\session", homeDir }),
       ).toBeUndefined();
     });
   });
