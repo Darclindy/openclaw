@@ -440,6 +440,7 @@ function buildWhatsAppQaConfig(
           every: "0m",
         },
         skipBootstrap: true,
+        skills: [],
         thinkingDefault: "off",
       },
       list: baseCfg.agents?.list?.map((agent) => ({
@@ -448,6 +449,7 @@ function buildWhatsAppQaConfig(
           ...agent.heartbeat,
           every: "0m",
         },
+        skills: [],
         tools: {
           ...agent.tools,
           profile: "messaging",

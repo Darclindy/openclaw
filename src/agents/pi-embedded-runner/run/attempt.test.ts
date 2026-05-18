@@ -15,6 +15,7 @@ import {
   buildAutoAddedToolSearchControlNamesForAllowlistCheck,
   buildCallableToolNamesForEmptyAllowlistCheck,
   resolveAttemptConstructionToolsAllow,
+  shouldUseMinimalPromptForAttemptTools,
   buildToolSearchRunPlan,
   buildAfterTurnRuntimeContext,
   buildAfterTurnRuntimeContextFromUsage,
@@ -198,6 +199,57 @@ describe("resolveAttemptConstructionToolsAllow", () => {
         trigger: "heartbeat",
       }),
     ).toEqual(expect.arrayContaining(["heartbeat_respond"]));
+  });
+});
+
+describe("shouldUseMinimalPromptForAttemptTools", () => {
+  it("preserves the explicit runtime toolsAllow prompt-slimming behavior", () => {
+    expect(
+      shouldUseMinimalPromptForAttemptTools({
+        promptMode: "none",
+        runtimeToolsAllow: ["read"],
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps explicit empty runtime allowlists out of minimal prompt mode", () => {
+    expect(
+      shouldUseMinimalPromptForAttemptTools({
+        promptMode: "full",
+        runtimeToolsAllow: [],
+        constructionToolsAllow: ["message"],
+      }),
+    ).toBe(false);
+  });
+
+  it("uses minimal prompt mode for resolved delivery-only tool surfaces", () => {
+    expect(
+      shouldUseMinimalPromptForAttemptTools({
+        promptMode: "full",
+        constructionToolsAllow: ["message", "heartbeat_respond"],
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps raw model runs and broader tool surfaces on their requested prompt mode", () => {
+    expect(
+      shouldUseMinimalPromptForAttemptTools({
+        promptMode: "none",
+        constructionToolsAllow: ["message"],
+      }),
+    ).toBe(false);
+    expect(
+      shouldUseMinimalPromptForAttemptTools({
+        promptMode: "full",
+        constructionToolsAllow: ["message", "sessions_list"],
+      }),
+    ).toBe(false);
+    expect(
+      shouldUseMinimalPromptForAttemptTools({
+        promptMode: "full",
+        constructionToolsAllow: ["*"],
+      }),
+    ).toBe(false);
   });
 });
 
