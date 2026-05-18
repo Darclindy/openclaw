@@ -220,7 +220,7 @@ describe("sessionsCommand", () => {
   });
 
   it("exports runtime policy aliases for collapsed external direct sessions", async () => {
-    const store = writeStore(
+    seedSessionRows(
       {
         "agent:main:main": {
           sessionId: "telegram-main",
@@ -241,7 +241,7 @@ describe("sessionsCommand", () => {
         key: string;
         runtimePolicySessionKey?: string;
       }>;
-    }>(sessionsCommand, store, { active: "10" });
+    }>(sessionsCommand, { active: "10" });
 
     const main = payload.sessions?.find((row) => row.key === "agent:main:main");
     expect(main?.runtimePolicySessionKey).toBe("agent:main:telegram:default:direct:42");
