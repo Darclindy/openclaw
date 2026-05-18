@@ -99,7 +99,11 @@ function matchesProviderPluginRef(provider: ProviderPlugin, providerId: string):
   );
 }
 
-function resolveProviderHookRefs(provider: string, providerConfig?: ModelProviderConfig, modelApi?: string): string[] {
+function resolveProviderHookRefs(
+  provider: string,
+  providerConfig?: ModelProviderConfig,
+  modelApi?: string,
+): string[] {
   const refs = [provider];
   const apiRef = normalizeOptionalString(modelApi ?? providerConfig?.api);
   if (apiRef && normalizeProviderId(apiRef) !== normalizeProviderId(provider)) {
@@ -853,7 +857,20 @@ export function resolveProviderSyntheticAuthWithPlugin(params: {
   context: ProviderResolveSyntheticAuthContext;
   modelApi?: string;
 }) {
-  const providerRefs = resolveProviderHookRefs(params.provider, params.context.providerConfig, params.modelApi);
+  const providerRefs = resolveProviderHookRefs(
+    params.provider,
+    params.context.providerConfig,
+    params.modelApi,
+  );
+  for (const providerRef of providerRefs) {
+    const loadedResolved = resolveLoadedProviderRuntimePlugin({
+      ...params,
+      provider: providerRef,
+    })?.resolveSyntheticAuth?.(params.context);
+    if (loadedResolved) {
+      return loadedResolved;
+    }
+  }
   const discoveryPluginIds = [
     ...new Set(
       providerRefs.flatMap(
@@ -988,7 +1005,11 @@ export function shouldDeferProviderSyntheticProfileAuthWithPlugin(params: {
   context: ProviderDeferSyntheticProfileAuthContext;
   modelApi?: string;
 }) {
-  const providerRefs = resolveProviderHookRefs(params.provider, params.context.providerConfig, params.modelApi);
+  const providerRefs = resolveProviderHookRefs(
+    params.provider,
+    params.context.providerConfig,
+    params.modelApi,
+  );
   for (const providerRef of providerRefs) {
     const resolved = resolveProviderRuntimePlugin({
       ...params,
