@@ -43,6 +43,8 @@ export type SessionsListResultBase<TDefaults, TRow> = {
 
 export type SessionsPatchResultBase<TEntry> = {
   ok: true;
+  /** Deprecated compatibility alias for clients that still read the JSON store path field. */
+  path?: string;
   databasePath: string;
   key: string;
   entry: TEntry;

@@ -461,14 +461,18 @@ export async function sessionsCommand(
   if (opts.json) {
     const multi = targets.length > 1;
     const aggregate = aggregateAgents || multi;
+    const singleDatabasePath = aggregate ? null : (targets[0]?.databasePath ?? null);
+    const databaseSummaries = aggregate
+      ? targets.map((target) => ({
+          agentId: target.agentId,
+          path: target.databasePath,
+        }))
+      : undefined;
     writeRuntimeJson(runtime, {
-      databasePath: aggregate ? null : (targets[0]?.databasePath ?? null),
-      databases: aggregate
-        ? targets.map((target) => ({
-            agentId: target.agentId,
-            path: target.databasePath,
-          }))
-        : undefined,
+      path: singleDatabasePath,
+      databasePath: singleDatabasePath,
+      stores: databaseSummaries,
+      databases: databaseSummaries,
       allAgents: aggregateAgents ? true : undefined,
       count: rows.length,
       totalCount,

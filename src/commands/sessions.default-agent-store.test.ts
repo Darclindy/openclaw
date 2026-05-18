@@ -88,10 +88,17 @@ describe("sessionsCommand default store agent selection", () => {
     await sessionsCommand({ allAgents: true, json: true }, runtime);
 
     const payload = JSON.parse(logs[0] ?? "{}") as {
+      path?: string | null;
+      databasePath?: string | null;
       allAgents?: boolean;
+      stores?: Array<{ agentId: string; path: string }>;
+      databases?: Array<{ agentId: string; path: string }>;
       sessions?: Array<{ key: string; agentId?: string }>;
     };
+    expect(payload.path).toBeNull();
+    expect(payload.databasePath).toBeNull();
     expect(payload.allAgents).toBe(true);
+    expect(payload.stores).toEqual(payload.databases);
     expect(payload.sessions?.map((session) => session.agentId)).toContain("main");
     expect(payload.sessions?.map((session) => session.agentId)).toContain("voice");
   });

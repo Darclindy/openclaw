@@ -1912,6 +1912,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     });
     const result: SessionsPatchResult = {
       ok: true,
+      path: target.databasePath,
       databasePath: target.databasePath,
       key: target.canonicalKey,
       entry: applied.entry,

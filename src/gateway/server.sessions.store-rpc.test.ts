@@ -225,13 +225,20 @@ test("lists and patches session entries via sessions.* RPC", async () => {
   expect(limited.payload?.sessions).toHaveLength(1);
   expect(limited.payload?.sessions[0]?.key).toBe("global");
 
-  const patched = await directSessionReq<{ ok: true; key: string }>("sessions.patch", {
+  const patched = await directSessionReq<{
+    ok: true;
+    path?: string;
+    databasePath: string;
+    key: string;
+  }>("sessions.patch", {
     key: "agent:main:main",
     thinkingLevel: "medium",
     verboseLevel: "off",
   });
   expect(patched.ok).toBe(true);
   expect(patched.payload?.ok).toBe(true);
+  expect(patched.payload?.databasePath).toMatch(/openclaw-agent\.sqlite$/);
+  expect(patched.payload?.path).toBe(patched.payload?.databasePath);
   expect(patched.payload?.key).toBe("agent:main:main");
 
   const sendPolicyPatched = await directSessionReq<{
