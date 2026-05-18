@@ -328,9 +328,9 @@ describe("createAcpxRuntimeService", () => {
 
     expect(trace.measured).toEqual([
       "config.resolve",
+      "gateway-instance-id",
       "config.prepare-codex-auth",
       "filesystem.prepare",
-      "gateway-instance-id",
       "process-leases.reap",
       "runtime.create",
       "backend.register",
