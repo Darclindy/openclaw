@@ -22,6 +22,7 @@ import {
 import { resolveResetPreservedSelection } from "../config/sessions/reset-preserved-selection.js";
 import {
   appendSqliteSessionTranscriptEvent,
+  deleteSqliteSessionTranscript,
   hasSqliteSessionTranscriptEvents,
   loadSqliteSessionTranscriptEvents,
 } from "../config/sessions/transcript-store.sqlite.js";
@@ -786,6 +787,13 @@ export async function performGatewaySessionReset(params: {
     entry: resetSourceEntry,
     reason: params.reason,
   });
+  if (oldSessionId) {
+    deleteSqliteSessionTranscript({
+      agentId: target.agentId,
+      path: target.databasePath,
+      sessionId: oldSessionId,
+    });
+  }
 
   if (
     !hasSqliteSessionTranscriptEvents({

@@ -130,8 +130,8 @@ function filterSessionStoreToConfiguredAgents(
     if (!normalizedKey) {
       return false;
     }
-    const canonicalKey = resolveSessionStoreKey({ cfg, sessionKey: normalizedKey });
-    const agentId = resolveSessionStoreAgentId(cfg, canonicalKey);
+    const canonicalKey = resolveSessionRowKey({ cfg, sessionKey: normalizedKey });
+    const agentId = resolveSessionRowAgentId(cfg, canonicalKey);
     return configuredAgentIds.has(normalizeAgentId(agentId));
   };
   return Object.fromEntries(
