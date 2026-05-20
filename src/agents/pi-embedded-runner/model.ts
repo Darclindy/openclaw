@@ -470,6 +470,21 @@ function findConfiguredProviderModel(
   );
 }
 
+function hasConfiguredFallbackSurface(params: {
+  providerConfig: InlineProviderConfig | undefined;
+  configuredModel: ReturnType<typeof findConfiguredProviderModel>;
+  modelId: string;
+}): boolean {
+  if (params.modelId.startsWith("mock-")) {
+    return true;
+  }
+  if (params.configuredModel) {
+    return true;
+  }
+  const baseUrl = params.providerConfig?.baseUrl?.trim();
+  return Boolean(baseUrl);
+}
+
 function readModelParams(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
@@ -568,11 +583,22 @@ function applyConfiguredProviderOverrides(params: {
       readModelParams(discoveredModel.params),
       defaultModelParams,
     );
+    const discoveredHeaders = sanitizeModelHeaders(discoveredModel.headers, {
+      stripSecretRefMarkers: true,
+    });
+    const requestConfig = resolveProviderRequestConfig({
+      provider: params.provider,
+      api: discoveredModel.api,
+      baseUrl: discoveredModel.baseUrl,
+      discoveredHeaders,
+      capability: "llm",
+      transport: "stream",
+    });
     return {
       ...discoveredModel,
       ...(resolvedParams ? { params: resolvedParams } : {}),
       // Discovered models originate from the model catalog and may contain persistence markers.
-      headers: sanitizeModelHeaders(discoveredModel.headers, { stripSecretRefMarkers: true }),
+      headers: requestConfig.headers,
     };
   }
   const configuredModel =
@@ -595,6 +621,18 @@ function applyConfiguredProviderOverrides(params: {
     stripSecretRefMarkers: true,
   });
   const providerParams = readModelParams(providerConfig.params);
+  const passthroughRequestConfig = resolveProviderRequestConfig({
+    provider: params.provider,
+    api: discoveredModel.api,
+    baseUrl: discoveredModel.baseUrl,
+    discoveredHeaders,
+    providerHeaders,
+    modelHeaders: configuredHeaders,
+    authHeader: providerConfig.authHeader,
+    request: providerRequest,
+    capability: "llm",
+    transport: "stream",
+  });
   if (
     !configuredModel &&
     !providerConfig.baseUrl &&
@@ -616,7 +654,7 @@ function applyConfiguredProviderOverrides(params: {
       ...discoveredModel,
       ...(resolvedParams ? { params: resolvedParams } : {}),
       ...(requestTimeoutMs !== undefined ? { requestTimeoutMs } : {}),
-      headers: discoveredHeaders,
+      headers: passthroughRequestConfig.headers,
     };
   }
   const resolvedParams = mergeModelParams(
@@ -897,7 +935,7 @@ function resolveConfiguredFallbackModel(params: {
     providerParams: providerConfig?.params,
     configuredParams: configuredModel?.params,
   });
-  if (!providerConfig && !modelId.startsWith("mock-")) {
+  if (!hasConfiguredFallbackSurface({ providerConfig, configuredModel, modelId })) {
     return undefined;
   }
   const fallbackTransport = resolveProviderTransport({
