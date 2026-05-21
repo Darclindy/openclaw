@@ -358,6 +358,8 @@ export type OpenClawCodingToolConstructionPlan = {
   includePluginTools: boolean;
 };
 
+type EffectiveToolPolicy = ReturnType<typeof resolveEffectiveToolPolicy>;
+
 export function createOpenClawCodingTools(options?: {
   agentId?: string;
   exec?: ExecToolDefaults & ProcessToolDefaults;
@@ -450,6 +452,8 @@ export function createOpenClawCodingTools(options?: {
   runtimeToolAllowlist?: string[];
   /** Runtime-scoped allowlist used to avoid materializing discarded core tool factories. */
   coreToolAllowlist?: string[];
+  /** Effective tool policy already resolved by the caller for this run. */
+  effectiveToolPolicy?: EffectiveToolPolicy;
   /** If true, the model has native vision capability */
   modelHasVision?: boolean;
   /** Require explicit message targets (no implicit last-route sends). */
@@ -496,7 +500,20 @@ export function createOpenClawCodingTools(options?: {
   }
   const memoryFlushWritePath = isMemoryFlushRun ? options.memoryFlushWritePath : undefined;
   const cronSelfRemoveOnlyJobId =
-    options?.trigger === "cron" && options.jobId?.trim() ? options.jobId.trim() : undefined;
+    options?.trigger === "cron" &&
+    options.jobId?.trim() &&
+    options.ownerOnlyToolAllowlist?.some((toolName) => normalizeToolName(toolName) === "cron")
+      ? options.jobId.trim()
+      : undefined;
+  const effectiveToolPolicy =
+    options?.effectiveToolPolicy ??
+    resolveEffectiveToolPolicy({
+      config: options?.config,
+      sessionKey: options?.sessionKey,
+      agentId: options?.agentId,
+      modelProvider: options?.modelProvider,
+      modelId: options?.modelId,
+    });
   const {
     agentId,
     globalPolicy,
@@ -507,13 +524,7 @@ export function createOpenClawCodingTools(options?: {
     providerProfile,
     profileAlsoAllow,
     providerProfileAlsoAllow,
-  } = resolveEffectiveToolPolicy({
-    config: options?.config,
-    sessionKey: options?.sessionKey,
-    agentId: options?.agentId,
-    modelProvider: options?.modelProvider,
-    modelId: options?.modelId,
-  });
+  } = effectiveToolPolicy;
   options?.recordToolPrepStage?.("tool-policy:effective");
   // Prefer the already-resolved sandbox context policy. Recomputing from
   // sessionKey/config can lose the real sandbox agent when callers pass a
