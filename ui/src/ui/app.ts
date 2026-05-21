@@ -845,7 +845,17 @@ export class OpenClawApp extends LitElement {
     }
     void this.updateComplete.then(() => {
       requestAnimationFrame(() => {
-        this.querySelector<HTMLTextAreaElement>(".agent-chat__composer-combobox textarea")?.focus();
+        const composer = this.querySelector<HTMLTextAreaElement>(
+          ".agent-chat__composer-combobox textarea",
+        );
+        if (!composer) {
+          return;
+        }
+        try {
+          composer.focus({ preventScroll: true });
+        } catch {
+          composer.focus();
+        }
       });
     });
   }
