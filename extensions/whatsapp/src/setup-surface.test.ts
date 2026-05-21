@@ -86,6 +86,13 @@ vi.mock("./auth-store.js", async () => {
   });
 });
 
+vi.mock("./creds-files.js", async () => {
+  const actual = await vi.importActual<typeof import("./creds-files.js")>("./creds-files.js");
+  return Object.assign({}, actual, {
+    hasWebCredsSync: hoisted.hasWebCredsSync,
+  });
+});
+
 const createRuntime = (): RuntimeEnv =>
   ({
     error: vi.fn(),
