@@ -154,7 +154,7 @@ export function resolveProviderAuthAliasMap(
     });
   const preferredAliases = new Map<string, ProviderAuthAliasCandidate>();
   const aliases: Record<string, string> = Object.create(null) as Record<string, string>;
-  for (const plugin of snapshot.plugins) {
+  for (const plugin of snapshot?.plugins ?? []) {
     if (!shouldUsePluginAuthAliases(plugin, params)) {
       continue;
     }

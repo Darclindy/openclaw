@@ -77,6 +77,12 @@ describe("provider auth aliases", () => {
     expect(resolveProviderIdForAuth("openai-codex")).toBe("openai-codex");
   });
 
+  it("keeps unknown providers when plugin metadata is unavailable", () => {
+    pluginRegistryMocks.loadPluginMetadataSnapshot.mockImplementationOnce(() => undefined as never);
+
+    expect(resolveProviderIdForAuth("fixture-provider")).toBe("fixture-provider");
+  });
+
   it("does not reuse aliases across env-resolved plugin roots", () => {
     const env = {
       HOME: "/home/one",
