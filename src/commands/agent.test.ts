@@ -436,23 +436,26 @@ describe("agentCommand", () => {
     });
   });
 
-  it("enforces ingress trust flags", async () => {
+  it("enforces ingress model override authorization and defaults owner state to false", async () => {
     await expect(
       // Runtime guard for non-TS callers; TS callsites are statically typed.
       agentCommandFromIngress({ message: "hi", to: "+1555" } as never, runtime),
-    ).rejects.toThrow("senderIsOwner must be explicitly set for ingress agent runs.");
+    ).rejects.toThrow("allowModelOverride must be explicitly set for ingress agent runs.");
 
-    await expect(
-      // Runtime guard for non-TS callers; TS callsites are statically typed.
-      agentCommandFromIngress(
+    await withTempHome(async (home) => {
+      mockConfig(home);
+      await agentCommandFromIngress(
         {
           message: "hi",
+          agentId: "main",
           to: "+1555",
-          senderIsOwner: false,
-        } as never,
+          allowModelOverride: false,
+        },
         runtime,
-      ),
-    ).rejects.toThrow("allowModelOverride must be explicitly set for ingress agent runs.");
+      );
+
+      expect(getLastEmbeddedCall()?.senderIsOwner).toBe(false);
+    });
   });
 
   it("installs a local gateway request scope for embedded agent dispatch", async () => {
@@ -1135,7 +1138,6 @@ describe("agentCommand", () => {
       let callArgs = getLastEmbeddedCall();
       expect(callArgs?.agentId).toBe("ops");
       expect(callArgs?.sessionKey).toBe("agent:ops:incident-42");
-      expect(callArgs?.sessionFile).toContain(`${path.sep}agents${path.sep}ops${path.sep}sessions`);
 
       await agentCommand({ message: "hi", agentId: "ops", sessionKey: "incident-42" }, runtime);
 
@@ -1167,14 +1169,12 @@ describe("agentCommand", () => {
       callArgs = getLastEmbeddedCall();
       expect(callArgs?.agentId).toBe("ops");
       expect(callArgs?.sessionKey).toBe("global");
-      expect(callArgs?.sessionFile).toContain(`${path.sep}agents${path.sep}ops${path.sep}sessions`);
 
       await agentCommand({ message: "hi", sessionKey: "unknown" }, runtime);
 
       callArgs = getLastEmbeddedCall();
       expect(callArgs?.agentId).toBe("ops");
       expect(callArgs?.sessionKey).toBe("unknown");
-      expect(callArgs?.sessionFile).toContain(`${path.sep}agents${path.sep}ops${path.sep}sessions`);
     });
   });
 });

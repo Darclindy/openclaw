@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import {
   listAgentIds,
   resolveDefaultAgentId,
@@ -44,6 +46,7 @@ import {
   upsertSessionEntry,
 } from "../../config/sessions.js";
 import { readSqliteSessionRoutingInfo } from "../../config/sessions/session-entries.sqlite.js";
+import { hasSqliteSessionTranscriptEvents } from "../../config/sessions/transcript-store.sqlite.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { registerAgentRunContext } from "../../infra/agent-events.js";
 import { formatUncaughtError } from "../../infra/errors.js";
@@ -599,6 +602,83 @@ function yieldAfterAgentAcceptedAck(): Promise<void> {
   });
 }
 
+function legacySessionTranscriptExists(params: {
+  entry: SessionEntry;
+  sessionsDir?: string;
+}): boolean {
+  const sessionId = params.entry.sessionId?.trim();
+  if (!sessionId) {
+    return false;
+  }
+  const sessionFile = normalizeOptionalString(params.entry.sessionFile);
+  const candidates = [
+    sessionFile && path.isAbsolute(sessionFile) ? sessionFile : undefined,
+    sessionFile && params.sessionsDir && !path.isAbsolute(sessionFile)
+      ? path.resolve(params.sessionsDir, sessionFile)
+      : undefined,
+    params.sessionsDir ? path.join(params.sessionsDir, `${sessionId}.jsonl`) : undefined,
+  ].filter((candidate): candidate is string => Boolean(candidate));
+  return candidates.some((candidate) => {
+    try {
+      return fs.statSync(candidate).isFile();
+    } catch {
+      return false;
+    }
+  });
+}
+
+function resolveLegacySessionsDirFromDatabasePath(databasePath?: string): string | undefined {
+  const sqlitePath = normalizeOptionalString(databasePath);
+  if (!sqlitePath) {
+    return undefined;
+  }
+  const agentDir = path.dirname(path.dirname(sqlitePath));
+  if (!agentDir || path.basename(path.dirname(sqlitePath)) !== "agent") {
+    return undefined;
+  }
+  return path.join(agentDir, "sessions");
+}
+
+function failedSessionTranscriptExists(params: {
+  entry: SessionEntry;
+  agentId: string;
+  databasePath?: string;
+}): boolean {
+  const sessionId = params.entry.sessionId?.trim();
+  if (!sessionId) {
+    return false;
+  }
+  if (
+    hasSqliteSessionTranscriptEvents({
+      agentId: params.agentId,
+      path: params.databasePath,
+      sessionId,
+    })
+  ) {
+    return true;
+  }
+  return legacySessionTranscriptExists({
+    entry: params.entry,
+    sessionsDir: resolveLegacySessionsDirFromDatabasePath(params.databasePath),
+  });
+}
+
+function resetSessionRunStateForFreshSession(
+  entry: SessionEntry | undefined,
+): SessionEntry | undefined {
+  if (!entry) {
+    return undefined;
+  }
+  const next = { ...entry };
+  delete next.status;
+  delete next.startedAt;
+  delete next.endedAt;
+  delete next.runtimeMs;
+  delete next.abortedLastRun;
+  delete next.sessionFile;
+  return next;
+}
+
 export const agentHandlers: GatewayRequestHandlers = {
   agent: async ({ params, respond, context, client, isWebchatConnect }) => {
     const p = params;
@@ -1070,13 +1150,8 @@ export const agentHandlers: GatewayRequestHandlers = {
       }
 
       if (requestedSessionKey) {
-        const {
-          cfg,
-          entry,
-          canonicalKey,
-          agentId: sessionAgentId,
-          databasePath,
-        } = loadSessionEntry(requestedSessionKey);
+        const loadedSession = loadSessionEntry(requestedSessionKey);
+        const { cfg, entry, canonicalKey, agentId: sessionAgentId, databasePath } = loadedSession;
         cfgForAgent = cfg;
         const now = Date.now();
         const routingInfo = readSqliteSessionRoutingInfo({
@@ -1107,7 +1182,17 @@ export const agentHandlers: GatewayRequestHandlers = {
               policy: resetPolicy,
             })
           : undefined;
-        const canReuseSession = Boolean(entry?.sessionId) && (freshness?.fresh ?? false);
+        const failedSessionMissingTranscript =
+          entry?.status === "failed" &&
+          !failedSessionTranscriptExists({
+            entry,
+            agentId: sessionAgentId,
+            databasePath,
+          });
+        const canReuseSession =
+          Boolean(entry?.sessionId) &&
+          (freshness?.fresh ?? false) &&
+          !failedSessionMissingTranscript;
         const usableRequestedSessionId =
           requestedSessionId && (!entry?.sessionId || canReuseSession)
             ? requestedSessionId
@@ -1192,14 +1277,18 @@ export const agentHandlers: GatewayRequestHandlers = {
         // Without this, subagent sessions end up with a channel-only deliveryContext
         // and no `to`/`threadId`, which causes announce delivery to either target the
         // wrong inherited route or fail entirely.
-        const requestDeliveryHint = normalizeDeliveryContext({
-          channel: request.channel?.trim(),
-          to: request.to?.trim(),
-          accountId: request.accountId?.trim(),
-          // Pass threadId directly — normalizeDeliveryContext handles both
-          // string and numeric threadIds (e.g., Matrix uses integers).
-          threadId: request.threadId,
-        });
+        const requestHasDeliveryTarget =
+          Boolean(request.to?.trim()) || request.threadId !== undefined;
+        const requestDeliveryHint = requestHasDeliveryTarget
+          ? normalizeDeliveryContext({
+              channel: request.channel?.trim(),
+              to: request.to?.trim(),
+              accountId: request.accountId?.trim(),
+              // Pass threadId directly: normalizeDeliveryContext handles both
+              // string and numeric threadIds (e.g., Matrix uses integers).
+              threadId: request.threadId,
+            })
+          : undefined;
         const effectiveDelivery = mergeDeliveryContext(
           deliveryFields.deliveryContext,
           requestDeliveryHint,
@@ -1234,17 +1323,15 @@ export const agentHandlers: GatewayRequestHandlers = {
           spawnedBy: spawnedByValue,
           spawnedWorkspaceDir: entry?.spawnedWorkspaceDir,
           spawnDepth: entry?.spawnDepth,
-          channel:
-            effectiveDeliveryFields.deliveryContext?.channel ??
-            entry?.channel ??
-            request.channel?.trim(),
+          channel: effectiveDeliveryFields.deliveryContext?.channel ?? entry?.channel,
           groupId: resolvedGroupId,
           groupChannel: resolvedGroupChannel,
           space: resolvedGroupSpace,
           ...(pluginOwnerId ? { pluginOwnerId } : {}),
           cliSessionBindings: entry?.cliSessionBindings,
         };
-        sessionEntry = mergeSessionEntry(entry, nextEntryPatch);
+        const mergeBase = isNewSession ? resetSessionRunStateForFreshSession(entry) : entry;
+        sessionEntry = mergeSessionEntry(mergeBase, nextEntryPatch);
         if (request.deliver === true) {
           const sendPolicy = resolveSendPolicy({
             cfg,
@@ -1267,7 +1354,7 @@ export const agentHandlers: GatewayRequestHandlers = {
         resolvedSessionKey = canonicalSessionKey;
         const agentId = resolveAgentIdFromSessionKey(canonicalSessionKey);
         const mainSessionKey = resolveAgentMainSessionKey({ cfg, agentId });
-        const persisted = mergeSessionEntry(entry, nextEntryPatch);
+        const persisted = mergeSessionEntry(mergeBase, nextEntryPatch);
         upsertSessionEntry({
           agentId: sessionAgentId,
           sessionKey: canonicalSessionKey,

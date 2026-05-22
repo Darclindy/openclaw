@@ -155,10 +155,7 @@ const registerApnsRegistrationVi = runtimeMocks.registerApnsRegistration;
 const normalizeChannelIdVi = runtimeMocks.normalizeChannelId;
 
 const execEventHeartbeatOptions = (sessionKey?: string) => ({
-  source: "exec-event",
-  intent: "event",
   reason: "exec-event",
-  coalesceMs: 0,
   ...(sessionKey ? { sessionKey } : {}),
 });
 

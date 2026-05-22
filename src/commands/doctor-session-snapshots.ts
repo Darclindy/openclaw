@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { listAgentIds } from "../agents/agent-scope.js";
 import { resolveBundledSkillsDir } from "../agents/skills/bundled-dir.js";
 import { resolveStateDir } from "../config/paths.js";
 import type { SessionEntry } from "../config/sessions/types.js";
@@ -252,8 +253,18 @@ function resolveSessionStorePaths(params: {
   cfg?: OpenClawConfig;
   env?: NodeJS.ProcessEnv;
 }): string[] | undefined {
-  void params;
-  return undefined;
+  const configured = params.cfg?.session?.store;
+  if (typeof configured !== "string" || !configured.trim()) {
+    return undefined;
+  }
+  const storePath = expandHomePrefix(configured.trim(), { env: params.env });
+  if (!storePath.includes("{agentId}")) {
+    return [storePath];
+  }
+  return listAgentIds(params.cfg ?? {})
+    .map((agentId) => storePath.replaceAll("{agentId}", agentId))
+    .filter((candidate) => fs.existsSync(candidate))
+    .toSorted((a, b) => a.localeCompare(b));
 }
 
 function loadSessionStoreForSnapshotScan(storePath: string): Record<string, SessionEntry> {

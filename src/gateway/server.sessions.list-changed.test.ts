@@ -486,6 +486,7 @@ test("sessions.changed mutation events include live session setting metadata", a
       channel: "telegram",
       to: "-100123",
       accountId: "acct-1",
+      chatType: "direct",
       threadId: "42",
     },
   });

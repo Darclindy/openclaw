@@ -2,6 +2,9 @@ import { createCipheriv } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { resolveAuthProfileStoreKey } from "../agents/auth-profiles/paths.js";
+import { loadPersistedAuthProfileStore } from "../agents/auth-profiles/persisted.js";
+import { readAuthProfileStorePayloadResultReadOnly } from "../agents/auth-profiles/sqlite-storage.js";
 import { clearRuntimeAuthProfileStoreSnapshots } from "../agents/auth-profiles/store.js";
 import {
   createOpenClawTestState,
@@ -42,6 +45,21 @@ async function makeTestState(seed = "legacy-oauth-seed"): Promise<OpenClawTestSt
   });
   states.push(state);
   return state;
+}
+
+function readStoredAuthProfiles(state: OpenClawTestState, agentId = "main") {
+  const store = loadPersistedAuthProfileStore(state.agentDir(agentId), { env: state.env });
+  expect(store).not.toBeNull();
+  return store;
+}
+
+function readRawAuthProfiles(state: OpenClawTestState, agentId = "main") {
+  const entry = readAuthProfileStorePayloadResultReadOnly(
+    resolveAuthProfileStoreKey(state.agentDir(agentId), state.env),
+    { env: state.env },
+  );
+  expect(entry.exists).toBe(true);
+  return entry.value;
 }
 
 function encryptLegacySidecarMaterial(params: {
@@ -110,6 +128,7 @@ describe("maybeRepairLegacyOAuthSidecarProfiles", () => {
       },
     };
     const authPath = await state.writeAuthProfiles(auth);
+    const storedAuth = readRawAuthProfiles(state);
     const sidecarPath = await state.writeJson(
       path.join("credentials", "auth-profiles", `${ref.id}.json`),
       {
@@ -142,28 +161,20 @@ describe("maybeRepairLegacyOAuthSidecarProfiles", () => {
       `Migrated 1 sidecar-backed Codex OAuth profile in ${authPath} to inline credentials (backup: ${authPath}.oauth-ref.123.bak).`,
     ]);
     expect(fs.existsSync(sidecarPath)).toBe(false);
-    expect(JSON.parse(fs.readFileSync(`${authPath}.oauth-ref.123.bak`, "utf8"))).toEqual(auth);
-    expect(JSON.parse(fs.readFileSync(authPath, "utf8"))).toEqual({
-      version: 1,
-      profiles: {
-        [profileId]: {
-          type: "oauth",
-          provider: "openai-codex",
-          expires: 1777777777000,
-          email: "codex@example.com",
-          accountId: "acct_123",
-          chatgptPlanType: "pro",
-          access: "access-token",
-          refresh: "refresh-token",
-          idToken: "id-token",
-        },
-      },
-      order: {
-        "openai-codex": [profileId],
-      },
-      lastGood: {
-        "openai-codex": profileId,
-      },
+    expect(JSON.parse(fs.readFileSync(`${authPath}.oauth-ref.123.bak`, "utf8"))).toEqual(
+      storedAuth,
+    );
+    const migrated = readStoredAuthProfiles(state);
+    expect(migrated.profiles[profileId]).toEqual({
+      type: "oauth",
+      provider: "openai-codex",
+      expires: 1777777777000,
+      email: "codex@example.com",
+      accountId: "acct_123",
+      chatgptPlanType: "pro",
+      access: "access-token",
+      refresh: "refresh-token",
+      idToken: "id-token",
     });
   });
 
@@ -193,7 +204,69 @@ describe("maybeRepairLegacyOAuthSidecarProfiles", () => {
     expect(result.detected).toEqual([authPath]);
     expect(result.changes).toStrictEqual([]);
     expect(result.warnings).toStrictEqual([]);
-    expect(JSON.parse(fs.readFileSync(authPath, "utf8"))).toEqual(auth);
+    expect(readRawAuthProfiles(state)).toEqual(auth);
+  });
+
+  it("repairs SQLite stores before stale legacy auth files", async () => {
+    const seed = "sqlite-before-legacy-file-seed";
+    const state = await makeTestState(seed);
+    const profileId = "openai-codex:default";
+    const ref = {
+      source: "openclaw-credentials" as const,
+      provider: "openai-codex" as const,
+      id: "11111111111111111111111111111111",
+    };
+    const auth = {
+      version: 1,
+      profiles: {
+        [profileId]: {
+          type: "oauth",
+          provider: "openai-codex",
+          oauthRef: ref,
+        },
+      },
+    };
+    const authPath = await state.writeAuthProfiles(auth);
+    const legacyAuthPath = path.join(state.agentDir(), "auth-profiles.json");
+    fs.mkdirSync(path.dirname(legacyAuthPath), { recursive: true });
+    fs.writeFileSync(
+      legacyAuthPath,
+      `${JSON.stringify({ version: 1, profiles: {} }, null, 2)}\n`,
+      "utf8",
+    );
+    const sidecarPath = await state.writeJson(
+      path.join("credentials", "auth-profiles", `${ref.id}.json`),
+      {
+        version: 1,
+        profileId,
+        provider: "openai-codex",
+        encrypted: encryptLegacySidecarMaterial({
+          ref,
+          profileId,
+          provider: "openai-codex",
+          seed,
+          material: {
+            access: "sqlite-access-token",
+          },
+        }),
+      },
+    );
+
+    const result = await maybeRepairLegacyOAuthSidecarProfiles({
+      cfg: {},
+      prompter: makePrompter(true),
+      now: () => 321,
+    });
+
+    expect(result.detected).toEqual([authPath]);
+    expect(result.warnings).toStrictEqual([]);
+    expect(result.changes).toStrictEqual([
+      `Migrated 1 sidecar-backed Codex OAuth profile in ${authPath} to inline credentials (backup: ${authPath}.oauth-ref.321.bak).`,
+    ]);
+    expect(readStoredAuthProfiles(state).profiles[profileId]).toMatchObject({
+      access: "sqlite-access-token",
+    });
+    expect(fs.existsSync(sidecarPath)).toBe(false);
   });
 
   it("leaves undecryptable legacy sidecars in place and reports re-authentication", async () => {
@@ -245,7 +318,7 @@ describe("maybeRepairLegacyOAuthSidecarProfiles", () => {
       `Could not decrypt legacy OAuth sidecar for ${profileId} in ${authPath}; re-authenticate this profile.`,
     ]);
     expect(fs.existsSync(sidecarPath)).toBe(true);
-    expect(JSON.parse(fs.readFileSync(authPath, "utf8"))).toEqual(auth);
+    expect(readRawAuthProfiles(state)).toEqual(auth);
   });
 
   it("leaves unreferenced legacy sidecar files in place because external agent dirs may still reference them", async () => {
@@ -465,8 +538,8 @@ describe("maybeRepairLegacyOAuthSidecarProfiles", () => {
       `Migrated 1 sidecar-backed Codex OAuth profile in ${mainAuthPath} to inline credentials (backup: ${mainAuthPath}.oauth-ref.456.bak).`,
       `Migrated 1 sidecar-backed Codex OAuth profile in ${workerAuthPath} to inline credentials (backup: ${workerAuthPath}.oauth-ref.456.bak).`,
     ]);
-    for (const authPath of [mainAuthPath, workerAuthPath]) {
-      expect(JSON.parse(fs.readFileSync(authPath, "utf8"))).toEqual({
+    for (const agentId of ["main", "worker"]) {
+      expect(readStoredAuthProfiles(state, agentId)).toEqual({
         version: 1,
         profiles: {
           [profileId]: {

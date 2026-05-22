@@ -636,25 +636,13 @@ test("sessions.reset drops cli session bindings so the next turn does not --resu
     },
   });
 
-  const [{ getRuntimeConfig }, { resolveGatewaySessionStoreTarget }, { loadSessionStore }] =
-    await Promise.all([
-      import("../config/config.js"),
-      import("./session-utils.js"),
-      import("../config/sessions.js"),
-    ]);
-  const gatewayStorePath = resolveGatewaySessionStoreTarget({
-    cfg: getRuntimeConfig(),
-    key: "main",
-  }).storePath;
-
   const reset = await directSessionReq<{ ok: true; key: string }>("sessions.reset", {
     key: "main",
     reason: "new",
   });
   expect(reset.ok).toBe(true);
 
-  const store = loadSessionStore(gatewayStorePath, { skipCache: true });
-  const nextEntry = store["agent:main:main"];
+  const nextEntry = getSessionEntry({ agentId: "main", sessionKey: "agent:main:main" });
   expect(nextEntry).toBeDefined();
   expect(nextEntry?.sessionId).not.toBe("sess-with-binding");
   expect(nextEntry?.claudeCliSessionId).toBeUndefined();
@@ -693,25 +681,16 @@ test("sessions.reset clears cli session bindings for parent-linked non-subagent 
     },
   });
 
-  const [{ getRuntimeConfig }, { resolveGatewaySessionStoreTarget }, { loadSessionStore }] =
-    await Promise.all([
-      import("../config/config.js"),
-      import("./session-utils.js"),
-      import("../config/sessions.js"),
-    ]);
-  const gatewayStorePath = resolveGatewaySessionStoreTarget({
-    cfg: getRuntimeConfig(),
-    key: "dashboard:child:42",
-  }).storePath;
-
   const reset = await directSessionReq<{ ok: true; key: string }>("sessions.reset", {
     key: "dashboard:child:42",
     reason: "new",
   });
   expect(reset.ok).toBe(true);
 
-  const store = loadSessionStore(gatewayStorePath, { skipCache: true });
-  const nextEntry = store["agent:main:dashboard:child:42"];
+  const nextEntry = getSessionEntry({
+    agentId: "main",
+    sessionKey: "agent:main:dashboard:child:42",
+  });
   expect(nextEntry).toBeDefined();
   expect(nextEntry?.sessionId).not.toBe("sess-dashboard-child");
   expect(nextEntry?.claudeCliSessionId).toBeUndefined();
@@ -748,25 +727,16 @@ test("sessions.reset preserves cli session bindings for spawned subagents (Tak H
     },
   });
 
-  const [{ getRuntimeConfig }, { resolveGatewaySessionStoreTarget }, { loadSessionStore }] =
-    await Promise.all([
-      import("../config/config.js"),
-      import("./session-utils.js"),
-      import("../config/sessions.js"),
-    ]);
-  const gatewayStorePath = resolveGatewaySessionStoreTarget({
-    cfg: getRuntimeConfig(),
-    key: "subagent:child",
-  }).storePath;
-
   const reset = await directSessionReq<{ ok: true; key: string }>("sessions.reset", {
     key: "subagent:child",
     reason: "new",
   });
   expect(reset.ok).toBe(true);
 
-  const store = loadSessionStore(gatewayStorePath, { skipCache: true });
-  const nextEntry = store["agent:main:subagent:child"];
+  const nextEntry = getSessionEntry({
+    agentId: "main",
+    sessionKey: "agent:main:subagent:child",
+  });
   expect(nextEntry).toBeDefined();
   expect(nextEntry?.sessionId).not.toBe("sess-spawned-child");
   expect(nextEntry?.claudeCliSessionId).toBe("claude-cli-child-session");

@@ -45,7 +45,10 @@ const {
   ),
 }));
 
-vi.mock("../plugins/plugin-registry-contributions.js", () => ({
+vi.mock("../plugins/plugin-registry-contributions.js", async () => ({
+  ...(await vi.importActual<typeof import("../plugins/plugin-registry-contributions.js")>(
+    "../plugins/plugin-registry-contributions.js",
+  )),
   resolveManifestContractOwnerPluginId: resolveManifestContractOwnerPluginIdMock,
 }));
 

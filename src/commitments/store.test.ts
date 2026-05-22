@@ -205,27 +205,17 @@ describe("commitment store delivery selection", () => {
   });
 
   it("strips malformed optional scope metadata from persisted commitments", async () => {
-    const tmpDir = await useTempStateDir();
-    const storePath = path.join(tmpDir, "commitments", "commitments.json");
-    await fs.mkdir(path.dirname(storePath), { recursive: true });
-    await fs.writeFile(
-      storePath,
-      JSON.stringify(
-        {
-          version: 1,
-          commitments: [
-            commitment({
-              accountId: { nested: "bad" } as never,
-              threadId: ["bad"] as never,
-              sourceMessageId: { id: "bad" } as never,
-            }),
-          ],
-        },
-        null,
-        2,
-      ),
-      "utf8",
-    );
+    await useTempStateDir();
+    await saveCommitmentStore({
+      version: 1,
+      commitments: [
+        commitment({
+          accountId: { nested: "bad" } as never,
+          threadId: ["bad"] as never,
+          sourceMessageId: { id: "bad" } as never,
+        }),
+      ],
+    });
 
     const store = await loadCommitmentStore();
     expect(store.commitments).toHaveLength(1);

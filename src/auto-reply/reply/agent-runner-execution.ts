@@ -454,11 +454,11 @@ function isPureTransientRateLimitSummary(err: unknown): boolean {
   );
 }
 
-function isPureBillingSummary(err: unknown): boolean {
+function hasBillingSummaryAttempt(err: unknown): boolean {
   return (
     isFallbackSummaryError(err) &&
     err.attempts.length > 0 &&
-    err.attempts.every((attempt) => attempt.reason === "billing")
+    err.attempts.some((attempt) => attempt.reason === "billing")
   );
 }
 
@@ -541,6 +541,19 @@ function buildCliBackendTimeoutFailureText(message: string): string | null {
   );
 }
 
+function buildCodexAppServerBridgeFailureText(message: string): string | null {
+  const normalizedMessage = collapseRepeatedFailureDetail(message);
+  if (/codex app-server client closed before turn completed/iu.test(normalizedMessage)) {
+    return "⚠️ Codex app-server connection closed before the turn completed. The gateway did not replay the turn automatically; please try again.";
+  }
+  if (
+    /codex app-server turn idle timed out waiting for turn\/completed/iu.test(normalizedMessage)
+  ) {
+    return "⚠️ Codex app-server turn did not complete before the idle timeout. The gateway did not replay the turn automatically; please try again.";
+  }
+  return null;
+}
+
 function buildMissingApiKeyFailureText(message: string): string | null {
   const normalizedMessage = collapseRepeatedFailureDetail(message);
   const providerMatch = normalizedMessage.match(/No API key found for provider "([^"]+)"/u);
@@ -610,6 +623,10 @@ function buildExternalRunFailureReply(
   if (cliBackendTimeoutFailure) {
     return { text: cliBackendTimeoutFailure, isGenericRunnerFailure: false };
   }
+  const codexAppServerBridgeFailure = buildCodexAppServerBridgeFailureText(normalizedMessage);
+  if (codexAppServerBridgeFailure) {
+    return { text: codexAppServerBridgeFailure, isGenericRunnerFailure: false };
+  }
   return {
     text: options?.includeDetails
       ? formatForwardedExternalRunFailureText(normalizedMessage)
@@ -631,7 +648,7 @@ export function buildKnownAgentRunFailureReplyPayload(params: {
   const message = formatErrorMessage(params.err);
   const isFallbackSummary = isFallbackSummaryError(params.err);
   const isBilling = isFallbackSummary
-    ? isPureBillingSummary(params.err)
+    ? hasBillingSummaryAttempt(params.err)
     : isBillingErrorMessage(message);
   if (isBilling) {
     return markAgentRunFailureReplyPayload({
@@ -811,12 +828,23 @@ function resolveHeartbeatBleedHint(params: {
     ref: runtimeRef,
     activeSessionEntry: params.activeSessionEntry,
   });
-  const primaryWindow = resolveContextTokensForModel({
+  const primaryWindowRaw = resolveContextTokensForModel({
     cfg: params.cfg,
     provider: primaryRef.provider,
     model: primaryRef.model,
     allowAsyncLoad: false,
   });
+  const agentContextTokensRaw = params.cfg.agents?.defaults?.contextTokens;
+  const agentContextTokens =
+    typeof agentContextTokensRaw === "number" &&
+    Number.isFinite(agentContextTokensRaw) &&
+    agentContextTokensRaw > 0
+      ? Math.floor(agentContextTokensRaw)
+      : undefined;
+  const primaryWindow =
+    typeof primaryWindowRaw === "number" && typeof agentContextTokens === "number"
+      ? Math.min(primaryWindowRaw, agentContextTokens)
+      : (agentContextTokens ?? primaryWindowRaw);
   if (
     typeof runtimeWindow === "number" &&
     typeof primaryWindow === "number" &&
@@ -2379,7 +2407,7 @@ export async function runAgentTurnWithFallback(params: {
       }
       const message = formatErrorMessage(err);
       const isBilling = isFallbackSummaryError(err)
-        ? isPureBillingSummary(err)
+        ? hasBillingSummaryAttempt(err)
         : isBillingErrorMessage(message);
       const isContextOverflow = !isBilling && isLikelyContextOverflowError(message);
       const isCompactionFailure = !isBilling && isCompactionFailureError(message);

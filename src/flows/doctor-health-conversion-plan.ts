@@ -82,6 +82,12 @@ export const doctorHealthConversionRules = [
     rule: "Detect stale plugin registry state and let repair return the next config.",
   },
   {
+    contributionId: "doctor:session-transcripts",
+    conversion: "repair-backed-detect",
+    target: ["core/doctor/session-transcripts"],
+    rule: "Detect transcript integrity issues; repair applies scoped transcript cleanup.",
+  },
+  {
     contributionId: "doctor:state-integrity",
     conversion: "repair-backed-detect",
     target: ["core/doctor/state-integrity"],
@@ -92,18 +98,6 @@ export const doctorHealthConversionRules = [
     conversion: "repair-backed-detect",
     target: ["core/doctor/codex-session-routes"],
     rule: "Detect stale Codex route pins; repair updates affected session/config route records.",
-  },
-  {
-    contributionId: "doctor:session-locks",
-    conversion: "repair-backed-detect",
-    target: ["core/doctor/session-locks"],
-    rule: "Detect stale session locks; repair removes only the locks represented by findings.",
-  },
-  {
-    contributionId: "doctor:session-transcripts",
-    conversion: "repair-backed-detect",
-    target: ["core/doctor/session-transcripts"],
-    rule: "Detect transcript integrity issues; repair applies scoped transcript cleanup.",
   },
   {
     contributionId: "doctor:session-snapshots",
@@ -124,6 +118,12 @@ export const doctorHealthConversionRules = [
     rule: "Split crontab warning from cron store migration; repair only mutates cron store findings.",
   },
   {
+    contributionId: "doctor:sqlite-state",
+    conversion: "repair-backed-detect",
+    target: ["core/doctor/sqlite-state"],
+    rule: "Detect SQLite state migration drift; repair runs the scoped migration helper.",
+  },
+  {
     contributionId: "doctor:sandbox",
     conversion: "split-detect-repair",
     target: [
@@ -142,12 +142,6 @@ export const doctorHealthConversionRules = [
       "core/doctor/gateway-services/platform-notes",
     ],
     rule: "Model scans as findings; repair service config only when repair policy permits.",
-  },
-  {
-    contributionId: "doctor:startup-channel-maintenance",
-    conversion: "repair-backed-detect",
-    target: ["core/doctor/startup-channel-maintenance"],
-    rule: "Detect startup channel maintenance work and run repair through the existing maintenance helper.",
   },
   {
     contributionId: "doctor:security",

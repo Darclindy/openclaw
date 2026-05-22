@@ -18,7 +18,6 @@ import { getSessionEntry, type SessionEntry, upsertSessionEntry } from "../confi
 import { resolveResetPreservedSelection } from "../config/sessions/reset-preserved-selection.js";
 import {
   appendSqliteSessionTranscriptEvent,
-  deleteSqliteSessionTranscript,
   hasSqliteSessionTranscriptEvents,
   loadSqliteSessionTranscriptEvents,
 } from "../config/sessions/transcript-store.sqlite.js";
@@ -705,6 +704,7 @@ export async function performGatewaySessionReset(params: {
     oldSessionId = currentEntry?.sessionId;
     const now = Date.now();
     const nextSessionId = randomUUID();
+    const preserveCliSessionBindings = isSubagentSessionKey(primaryKey);
     const nextEntry: SessionEntry = {
       sessionId: nextSessionId,
       updatedAt: now,
@@ -753,7 +753,9 @@ export async function performGatewaySessionReset(params: {
       groupChannel: currentEntry?.groupChannel,
       space: currentEntry?.space,
       deliveryContext: currentEntry?.deliveryContext,
-      cliSessionBindings: currentEntry?.cliSessionBindings,
+      claudeCliSessionId: preserveCliSessionBindings ? currentEntry?.claudeCliSessionId : undefined,
+      cliSessionBindings: preserveCliSessionBindings ? currentEntry?.cliSessionBindings : undefined,
+      cliSessionIds: preserveCliSessionBindings ? currentEntry?.cliSessionIds : undefined,
       lastChannel: currentEntry?.lastChannel,
       lastTo: currentEntry?.lastTo,
       lastAccountId: currentEntry?.lastAccountId,
@@ -783,14 +785,6 @@ export async function performGatewaySessionReset(params: {
     entry: resetSourceEntry,
     reason: params.reason,
   });
-  if (oldSessionId) {
-    deleteSqliteSessionTranscript({
-      agentId: target.agentId,
-      path: target.databasePath,
-      sessionId: oldSessionId,
-    });
-  }
-
   if (
     !hasSqliteSessionTranscriptEvents({
       agentId: target.agentId,

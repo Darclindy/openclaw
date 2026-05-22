@@ -368,28 +368,51 @@ function resolveQuerySession(
     }
     return {
       sessionKey,
-      agentId:
-        asNonEmptyString(query.agentId) ?? resolveRequesterSessionAgentId(sessionKey, cfg),
+      agentId: asNonEmptyString(query.agentId) ?? resolveRequesterSessionAgentId(sessionKey, cfg),
     };
   }
   if (query.runId) {
-    const agentId = asNonEmptyString(query.agentId);
-    const sessionKey = resolveSessionKeyForRun(query.runId, { agentId });
+    const requestedAgentId = asNonEmptyString(query.agentId);
+    const sessionKey = resolveSessionKeyForRun(
+      query.runId,
+      requestedAgentId ? { agentId: requestedAgentId } : undefined,
+    );
+    const agentId = requestedAgentId ?? resolveRequesterSessionAgentId(sessionKey, cfg);
     const scopedSessionKey = resolveScopedArtifactSessionKey(sessionKey, agentId, cfg);
     return scopedSessionKey ? { sessionKey: scopedSessionKey, agentId } : undefined;
   }
   if (query.taskId) {
     const task = getTaskSessionLookupByIdForStatus(query.taskId);
     const requesterSessionKey = asNonEmptyString(task?.requesterSessionKey);
-    const taskAgentId =
-      asNonEmptyString(query.agentId) ??
-      resolveRequesterSessionAgentId(requesterSessionKey, cfg) ??
-      (cfg ? normalizeAgentId(resolveDefaultAgentId(cfg)) : undefined);
+    const requestedAgentId = asNonEmptyString(query.agentId);
+    const taskRecordAgentId = asNonEmptyString(task?.agentId);
     if (requesterSessionKey) {
-      const scopedSessionKey = resolveScopedArtifactSessionKey(requesterSessionKey, taskAgentId, cfg);
+      const requesterSessionAgentId = resolveRequesterSessionAgentId(requesterSessionKey, cfg);
+      const requesterAgentId =
+        (requesterSessionKey === "global" ? taskRecordAgentId : requesterSessionAgentId) ??
+        requesterSessionAgentId ??
+        taskRecordAgentId ??
+        (cfg ? normalizeAgentId(resolveDefaultAgentId(cfg)) : "main");
+      if (
+        requestedAgentId &&
+        requesterAgentId &&
+        normalizeAgentId(requestedAgentId) !== normalizeAgentId(requesterAgentId)
+      ) {
+        return undefined;
+      }
+      const taskAgentId = requestedAgentId ?? requesterAgentId;
+      const scopedSessionKey = resolveScopedArtifactSessionKey(
+        requesterSessionKey,
+        taskAgentId,
+        cfg,
+      );
       return scopedSessionKey ? { sessionKey: scopedSessionKey, agentId: taskAgentId } : undefined;
     }
     const runId = asNonEmptyString(task?.runId);
+    const taskAgentId =
+      requestedAgentId ??
+      taskRecordAgentId ??
+      (cfg ? normalizeAgentId(resolveDefaultAgentId(cfg)) : "main");
     const sessionKey = runId ? resolveSessionKeyForRun(runId, { agentId: taskAgentId }) : undefined;
     const scopedSessionKey = resolveScopedArtifactSessionKey(sessionKey, taskAgentId, cfg);
     return scopedSessionKey ? { sessionKey: scopedSessionKey, agentId: taskAgentId } : undefined;
@@ -483,7 +506,7 @@ export const artifactsHandlers: GatewayRequestHandlers = {
     if (!requireQueryable(params, respond)) {
       return;
     }
-    const { artifacts, sessionKey } = await loadArtifacts(params, context.getRuntimeConfig());
+    const { artifacts, sessionKey } = await loadArtifacts(params, context.getRuntimeConfig?.());
     if (!sessionKey && (params.runId || params.taskId)) {
       respond(
         false,
@@ -501,7 +524,7 @@ export const artifactsHandlers: GatewayRequestHandlers = {
     if (!requireQueryable(params, respond)) {
       return;
     }
-    const { artifact } = await findArtifact(params, context.getRuntimeConfig());
+    const { artifact } = await findArtifact(params, context.getRuntimeConfig?.());
     if (!artifact) {
       respond(
         false,
@@ -523,7 +546,7 @@ export const artifactsHandlers: GatewayRequestHandlers = {
     if (!requireQueryable(params, respond)) {
       return;
     }
-    const { artifact } = await findArtifact(params, context.getRuntimeConfig());
+    const { artifact } = await findArtifact(params, context.getRuntimeConfig?.());
     if (!artifact) {
       respond(
         false,

@@ -21,7 +21,13 @@ import { resolveSessionKey } from "../../config/sessions/session-key.js";
 import { listSessionEntries } from "../../config/sessions/store.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { DEFAULT_AGENT_ID, normalizeAgentId, normalizeMainKey } from "../../routing/session-key.js";
+import {
+  DEFAULT_AGENT_ID,
+  isUnscopedSessionKeySentinel,
+  normalizeAgentId,
+  normalizeMainKey,
+  toAgentStoreSessionKey,
+} from "../../routing/session-key.js";
 import { resolveSessionIdMatchSelection } from "../../sessions/session-id-resolution.js";
 import { listAgentIds, resolveDefaultAgentId } from "../agent-scope.js";
 import { clearBootstrapSnapshotOnSessionRollover } from "../bootstrap-cache.js";
@@ -151,17 +157,29 @@ export function resolveSessionKeyForRequest(opts: {
   const defaultAgentId = normalizeAgentId(resolveDefaultAgentId(opts.cfg));
   const requestedAgentId = opts.agentId?.trim() ? normalizeAgentId(opts.agentId) : undefined;
   const requestedSessionId = opts.sessionId?.trim() || undefined;
-  const explicitSessionKey =
-    opts.sessionKey?.trim() ||
-    (!requestedSessionId
+  const rawExplicitSessionKey = opts.sessionKey?.trim();
+  const explicitSessionKey = rawExplicitSessionKey
+    ? requestedAgentId || !isUnscopedSessionKeySentinel(rawExplicitSessionKey)
+      ? toAgentStoreSessionKey({
+          agentId: requestedAgentId ?? defaultAgentId,
+          requestKey: rawExplicitSessionKey,
+          mainKey,
+        })
+      : rawExplicitSessionKey
+    : !requestedSessionId
       ? resolveExplicitAgentSessionKey({
           cfg: opts.cfg,
           agentId: requestedAgentId,
         })
-      : undefined);
-  const storeAgentId = explicitSessionKey
-    ? resolveAgentIdFromSessionKey(explicitSessionKey)
-    : (requestedAgentId ?? defaultAgentId);
+      : undefined;
+  const storeAgentId =
+    rawExplicitSessionKey &&
+    !requestedAgentId &&
+    isUnscopedSessionKeySentinel(rawExplicitSessionKey)
+      ? defaultAgentId
+      : explicitSessionKey
+        ? resolveAgentIdFromSessionKey(explicitSessionKey)
+        : (requestedAgentId ?? defaultAgentId);
   const agentId = storeAgentId ?? defaultAgentId;
   const sessionStore = listSessionRows(agentId);
 
