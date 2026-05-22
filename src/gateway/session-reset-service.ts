@@ -14,11 +14,7 @@ import {
 } from "../auto-reply/reply/session-hooks.js";
 import { clearSessionResetRuntimeState } from "../auto-reply/reply/session-reset-cleanup.js";
 import { getRuntimeConfig } from "../config/io.js";
-import {
-  getSessionEntry,
-  type SessionEntry,
-  upsertSessionEntry,
-} from "../config/sessions.js";
+import { getSessionEntry, type SessionEntry, upsertSessionEntry } from "../config/sessions.js";
 import { resolveResetPreservedSelection } from "../config/sessions/reset-preserved-selection.js";
 import {
   appendSqliteSessionTranscriptEvent,
@@ -544,7 +540,7 @@ export async function cleanupSessionBeforeMutation(params: {
   });
   await closeChildAcpRuntimesForParent({
     cfg: params.cfg,
-    parentKey: params.target.canonicalKey ?? params.canonicalKey ?? params.key,
+    parentKey: params.target.canonicalKey ?? params.key,
     reason: params.reason,
   });
   return parentAcpError;

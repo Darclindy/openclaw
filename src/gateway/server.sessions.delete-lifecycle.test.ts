@@ -192,10 +192,9 @@ test("sessions.delete closes ACP runtime handles before removing ACP sessions", 
 });
 
 test("sessions.delete closes child ACP runtimes spawned from the deleted parent", async () => {
-  const { dir } = await createSessionStoreDir();
-  await writeSingleLineSession(dir, "sess-main", "hello");
-  await writeSingleLineSession(dir, "sess-parent", "parent");
-  await writeSingleLineSession(dir, "sess-child", "child");
+  await seedSqliteSessionTranscript("sess-main", "hello");
+  await seedSqliteSessionTranscript("sess-parent", "parent");
+  await seedSqliteSessionTranscript("sess-child", "child");
 
   const acpMeta = (recordId: string) => ({
     backend: "acpx",
@@ -206,7 +205,7 @@ test("sessions.delete closes child ACP runtimes spawned from the deleted parent"
     lastActivityAt: Date.now(),
   });
 
-  await writeSessionStore({
+  await seedGatewaySessionEntries({
     entries: {
       main: sessionStoreEntry("sess-main"),
       "acp-parent": sessionStoreEntry("sess-parent", { acp: acpMeta("agent:main:acp-parent") }),

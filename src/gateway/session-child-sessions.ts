@@ -1,4 +1,4 @@
-import { loadCombinedSessionStoreForGateway } from "../config/sessions/combined-store-gateway.js";
+import { loadCombinedSessionEntriesForGateway } from "../config/sessions/combined-session-entries-gateway.js";
 import type { SessionEntry } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { normalizeOptionalString } from "../shared/string-coerce.js";
@@ -27,8 +27,8 @@ export function findDirectChildSessionsForParent(params: {
   cfg: OpenClawConfig;
   parentKey: string;
 }): DirectChildSessionEntry[] {
-  const { store } = loadCombinedSessionStoreForGateway(params.cfg);
-  return Object.entries(store)
+  const { entries } = loadCombinedSessionEntriesForGateway(params.cfg);
+  return Object.entries(entries)
     .filter(([sessionKey, entry]) =>
       isDirectChildSessionEntry({
         sessionKey,
