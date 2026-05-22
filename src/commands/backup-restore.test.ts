@@ -125,6 +125,57 @@ async function createWorkspaceBackupArchive(params: {
   await tar.c({ cwd: archiveBuildDir, file: params.archivePath, gzip: true }, [archiveRoot]);
 }
 
+async function createBackupArchiveWithSeparateDatabaseSnapshot(params: {
+  archivePath: string;
+  sourceStateDir: string;
+  restoredStateDir: string;
+}): Promise<void> {
+  const archiveRoot = "2026-03-09T00-00-00-000Z-openclaw-backup";
+  const assetArchivePath = `${archiveRoot}/payload/posix${params.sourceStateDir}`;
+  const snapshotArchivePath = `${archiveRoot}/payload/database/state/openclaw.sqlite`;
+  const archiveBuildDir = path.join(tempDir, "archive-build-separate-db");
+  const payloadPath = path.join(archiveBuildDir, ...assetArchivePath.split("/"));
+  const snapshotPath = path.join(archiveBuildDir, ...snapshotArchivePath.split("/"));
+  await fs.mkdir(payloadPath, { recursive: true });
+  await fs.copyFile(
+    path.join(params.restoredStateDir, "state.txt"),
+    path.join(payloadPath, "state.txt"),
+  );
+  await createSqliteDb(snapshotPath, "restored");
+  await fs.writeFile(
+    path.join(archiveBuildDir, archiveRoot, "manifest.json"),
+    `${JSON.stringify(
+      {
+        schemaVersion: 1,
+        createdAt: "2026-03-09T00:00:00.000Z",
+        archiveRoot,
+        runtimeVersion: "test",
+        platform: process.platform,
+        nodeVersion: process.version,
+        assets: [
+          {
+            kind: "state",
+            sourcePath: params.sourceStateDir,
+            archivePath: assetArchivePath,
+          },
+        ],
+        databaseSnapshots: [
+          {
+            sourcePath: path.join(params.sourceStateDir, "state", "openclaw.sqlite"),
+            archivePath: snapshotArchivePath,
+            integrity: "ok",
+          },
+        ],
+        skipped: [],
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+  await tar.c({ cwd: archiveBuildDir, file: params.archivePath, gzip: true }, [archiveRoot]);
+}
+
 describe("backupRestoreCommand", () => {
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-backup-restore-test-"));
@@ -192,6 +243,30 @@ describe("backupRestoreCommand", () => {
     expect(result?.restoredAssets).toEqual([
       expect.objectContaining({ kind: "state", sourcePath: sourceStateDir, status: "restored" }),
     ]);
+    expect(await fs.readFile(path.join(sourceStateDir, "state.txt"), "utf8")).toBe("restored\n");
+    expect(readSqliteValue(path.join(sourceStateDir, "state", "openclaw.sqlite"))).toBe("restored");
+  });
+
+  it("restores SQLite snapshots stored outside the asset tree", async () => {
+    const sourceStateDir = path.join(tempDir, "state");
+    const restoredStateDir = path.join(tempDir, "snapshot-state");
+    const archivePath = path.join(tempDir, "backup-separate-db.tar.gz");
+    await fs.mkdir(sourceStateDir, { recursive: true });
+    await fs.writeFile(path.join(sourceStateDir, "state.txt"), "current\n");
+    await createSqliteDb(path.join(sourceStateDir, "state", "openclaw.sqlite"), "current");
+    await fs.mkdir(restoredStateDir, { recursive: true });
+    await fs.writeFile(path.join(restoredStateDir, "state.txt"), "restored\n");
+    await createBackupArchiveWithSeparateDatabaseSnapshot({
+      archivePath,
+      sourceStateDir,
+      restoredStateDir,
+    });
+    vi.stubEnv("OPENCLAW_STATE_DIR", sourceStateDir);
+
+    const runtime = createRuntime();
+    const result = await backupRestoreCommand(runtime, { archive: archivePath, yes: true });
+
+    expect(result?.databaseSnapshotCount).toBe(1);
     expect(await fs.readFile(path.join(sourceStateDir, "state.txt"), "utf8")).toBe("restored\n");
     expect(readSqliteValue(path.join(sourceStateDir, "state", "openclaw.sqlite"))).toBe("restored");
   });

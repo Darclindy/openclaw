@@ -95,6 +95,13 @@ function isSamePath(left: string, right: string): boolean {
   return path.resolve(left) === path.resolve(right);
 }
 
+function isPathWithin(child: string, parent: string): boolean {
+  const relative = path.relative(path.resolve(parent), path.resolve(child));
+  return (
+    relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative))
+  );
+}
+
 function resolveCurrentWorkingDirectory(): string {
   try {
     return process.cwd();
@@ -167,6 +174,41 @@ async function resolveBackupRestoreAssets(
   return restoredAssets;
 }
 
+function resolveDatabaseSnapshotRestoreTarget(
+  snapshot: { sourcePath: string },
+  restoredAssets: BackupRestoreResult["restoredAssets"],
+): string {
+  const sourcePath = path.resolve(snapshot.sourcePath);
+  const owner = restoredAssets.find((asset) => isPathWithin(sourcePath, asset.originalSourcePath));
+  if (!owner) {
+    throw new Error(`Backup database snapshot is outside restored assets: ${snapshot.sourcePath}`);
+  }
+  return path.join(
+    owner.sourcePath,
+    path.relative(path.resolve(owner.originalSourcePath), sourcePath),
+  );
+}
+
+async function restoreDatabaseSnapshots(params: {
+  tempDir: string;
+  snapshots: NonNullable<
+    Awaited<ReturnType<typeof verifyBackupArchive>>["manifest"]["databaseSnapshots"]
+  >;
+  restoredAssets: BackupRestoreResult["restoredAssets"];
+  dryRun: boolean;
+}): Promise<void> {
+  for (const snapshot of params.snapshots) {
+    const extractedPath = extractedArchivePath(params.tempDir, snapshot.archivePath);
+    await fs.access(extractedPath);
+    if (params.dryRun) {
+      continue;
+    }
+    const targetPath = resolveDatabaseSnapshotRestoreTarget(snapshot, params.restoredAssets);
+    await fs.mkdir(path.dirname(targetPath), { recursive: true });
+    await fs.copyFile(extractedPath, targetPath);
+  }
+}
+
 function formatBackupRestoreSummary(result: BackupRestoreResult): string[] {
   const lines = [
     `Backup archive: ${result.archivePath}`,
@@ -221,6 +263,12 @@ export async function backupRestoreCommand(
         asset.status = "restored";
       }
     }
+    await restoreDatabaseSnapshots({
+      tempDir,
+      snapshots: manifest.databaseSnapshots ?? [],
+      restoredAssets,
+      dryRun,
+    });
 
     const result: BackupRestoreResult = {
       archivePath,

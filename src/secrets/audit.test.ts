@@ -7,7 +7,10 @@ import {
   authProfileStoreKey,
   savePersistedAuthProfileSecretsStore,
 } from "../agents/auth-profiles/persisted.js";
-import { deleteAuthProfileStorePayload } from "../agents/auth-profiles/sqlite-storage.js";
+import {
+  deleteAuthProfileStorePayload,
+  writeAuthProfileStorePayload,
+} from "../agents/auth-profiles/sqlite-storage.js";
 import type { AuthProfileCredential } from "../agents/auth-profiles/types.js";
 import { writeStoredModelsConfigRaw } from "../agents/models-config-store.js";
 import { runSecretsAudit } from "./audit.js";
@@ -19,7 +22,6 @@ type AuditFixture = {
   agentDir: string;
   modelCatalogSource: string;
   authStoreLocation: string;
-  authStorePath: string;
   envPath: string;
   env: NodeJS.ProcessEnv;
 };
@@ -170,7 +172,6 @@ async function createAuditFixture(): Promise<AuditFixture> {
     agentDir,
     modelCatalogSource,
     authStoreLocation,
-    authStorePath: authStoreLocation,
     envPath,
     env: {
       OPENCLAW_STATE_DIR: stateDir,
@@ -627,14 +628,21 @@ describe("secrets audit", () => {
   });
 
   it("still flags auth profile plaintext when an explicit ref is also configured", async () => {
-    writeAuthProfileStore(fixture, {
-      "openai:default": {
-        type: "api_key",
-        provider: "openai",
-        key: "sk-leftover-plaintext", // pragma: allowlist secret
-        keyRef: { source: "env", provider: "default", id: "OPENAI_API_KEY" },
+    writeAuthProfileStorePayload(
+      authProfileStoreKey(fixture.agentDir, fixture.env),
+      {
+        version: 1,
+        profiles: {
+          "openai:default": {
+            type: "api_key",
+            provider: "openai",
+            key: "sk-leftover-plaintext", // pragma: allowlist secret
+            keyRef: { source: "env", provider: "default", id: "OPENAI_API_KEY" },
+          },
+        },
       },
-    });
+      { env: fixture.env },
+    );
 
     const report = await runSecretsAudit({ env: fixture.env });
     expect(
@@ -722,10 +730,7 @@ describe("secrets audit", () => {
         },
       },
     });
-    await writeJsonFile(fixture.authStorePath, {
-      version: 1,
-      profiles: {},
-    });
+    writeAuthProfileStore(fixture, {});
     await fs.writeFile(fixture.envPath, "", "utf8");
 
     const report = await runSecretsAudit({ env: fixture.env });

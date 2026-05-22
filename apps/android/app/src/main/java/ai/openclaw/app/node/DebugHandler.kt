@@ -164,10 +164,13 @@ private fun readBoundedText(
   stream.bufferedReader().use { reader ->
     val out = StringBuilder(minOf(maxChars, 8192))
     val buffer = CharArray(4096)
-    while (out.length < maxChars) {
-      val read = reader.read(buffer, 0, minOf(buffer.size, maxChars - out.length))
+    while (true) {
+      val read = reader.read(buffer)
       if (read < 0) break
-      out.append(buffer, 0, read)
+      val remaining = maxChars - out.length
+      if (remaining > 0) {
+        out.append(buffer, 0, minOf(read, remaining))
+      }
     }
     out.toString()
   }

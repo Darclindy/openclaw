@@ -6,23 +6,17 @@ const loadedAuthStoreCache = new Map<
   string,
   {
     authMtimeMs: number | null;
-    stateMtimeMs: number | null;
     syncedAtMs: number;
     store: AuthProfileStore;
   }
 >();
 
 export function readCachedAuthProfileStore(params: {
-  authPath: string;
+  storeKey: string;
   authMtimeMs: number | null;
-  stateMtimeMs: number | null;
 }): AuthProfileStore | null {
-  const cached = loadedAuthStoreCache.get(params.authPath);
-  if (
-    !cached ||
-    cached.authMtimeMs !== params.authMtimeMs ||
-    cached.stateMtimeMs !== params.stateMtimeMs
-  ) {
+  const cached = loadedAuthStoreCache.get(params.storeKey);
+  if (!cached || cached.authMtimeMs !== params.authMtimeMs) {
     return null;
   }
   if (Date.now() - cached.syncedAtMs >= EXTERNAL_CLI_SYNC_TTL_MS) {
@@ -32,14 +26,12 @@ export function readCachedAuthProfileStore(params: {
 }
 
 export function writeCachedAuthProfileStore(params: {
-  authPath: string;
+  storeKey: string;
   authMtimeMs: number | null;
-  stateMtimeMs: number | null;
   store: AuthProfileStore;
 }): void {
-  loadedAuthStoreCache.set(params.authPath, {
+  loadedAuthStoreCache.set(params.storeKey, {
     authMtimeMs: params.authMtimeMs,
-    stateMtimeMs: params.stateMtimeMs,
     syncedAtMs: Date.now(),
     store: cloneAuthProfileStore(params.store),
   });

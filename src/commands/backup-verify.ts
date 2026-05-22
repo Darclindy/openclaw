@@ -199,13 +199,27 @@ function parseManifest(raw: string): BackupManifest {
   };
 }
 
-async function listArchiveEntries(archivePath: string): Promise<string[]> {
-  const entries: string[] = [];
+type BackupArchiveEntry = {
+  path: string;
+  type: string;
+};
+
+function archiveEntryType(entry: unknown): string {
+  const type = (entry as { type?: unknown }).type;
+  return typeof type === "string" ? type : "";
+}
+
+function isUnsafeBackupArchiveEntryType(type: string): boolean {
+  return type === "SymbolicLink" || type === "Link";
+}
+
+async function listArchiveEntries(archivePath: string): Promise<BackupArchiveEntry[]> {
+  const entries: BackupArchiveEntry[] = [];
   await tar.t({
     file: archivePath,
     gzip: true,
     onentry: (entry) => {
-      entries.push(entry.path);
+      entries.push({ path: entry.path, type: archiveEntryType(entry) });
     },
   });
   return entries;
@@ -384,9 +398,16 @@ export async function verifyBackupArchive(opts: {
   }
 
   const entries = rawEntries.map((entry) => ({
-    raw: entry,
-    normalized: normalizeArchivePath(entry, "Archive entry"),
+    raw: entry.path,
+    normalized: normalizeArchivePath(entry.path, "Archive entry"),
+    type: entry.type,
   }));
+  const unsafeEntry = entries.find((entry) => isUnsafeBackupArchiveEntryType(entry.type));
+  if (unsafeEntry) {
+    throw new Error(
+      `Archive entry uses unsupported link type ${unsafeEntry.type}: ${unsafeEntry.normalized}`,
+    );
+  }
   const normalizedEntrySet = new Set(entries.map((entry) => entry.normalized));
 
   const manifestMatches = entries.filter((entry) => isRootManifestEntry(entry.normalized));

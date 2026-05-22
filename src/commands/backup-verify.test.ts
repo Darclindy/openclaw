@@ -348,6 +348,48 @@ describe("backupVerifyCommand", () => {
     }
   });
 
+  it("rejects symlink payload entries before restore", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-backup-symlink-payload-"));
+    const archivePath = path.join(tempDir, "backup.tar.gz");
+    const manifestPath = path.join(tempDir, "manifest.json");
+    const linkPath = path.join(tempDir, "payload-link");
+    const payloadArchivePath = `${TEST_ARCHIVE_ROOT}/payload/posix/tmp/.openclaw`;
+    const linkArchivePath = `${payloadArchivePath}/credentials`;
+    try {
+      await fs.symlink("/tmp/outside-openclaw-credentials", linkPath);
+      await fs.writeFile(
+        manifestPath,
+        `${JSON.stringify(createBackupManifest(payloadArchivePath), null, 2)}\n`,
+        "utf8",
+      );
+      await tar.c(
+        {
+          file: archivePath,
+          gzip: true,
+          portable: true,
+          preservePaths: true,
+          onWriteEntry: (entry) => {
+            if (entry.path === manifestPath) {
+              entry.path = `${TEST_ARCHIVE_ROOT}/manifest.json`;
+              return;
+            }
+            if (entry.path === linkPath) {
+              entry.path = linkArchivePath;
+            }
+          },
+        },
+        [manifestPath, linkPath],
+      );
+
+      const runtime = createBackupVerifyRuntime();
+      await expect(backupVerifyCommand(runtime, { archive: archivePath })).rejects.toThrow(
+        /unsupported link type symboliclink/i,
+      );
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("ignores payload manifest.json files when locating the backup manifest", async () => {
     const archiveDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-backup-verify-out-"));
     try {

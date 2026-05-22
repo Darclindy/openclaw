@@ -162,7 +162,7 @@ function resolveManifestProviderAuthEnvVarCandidates(
 ): Record<string, string[]> {
   const snapshot = resolveProviderMetadataSnapshot(params);
   const candidates: Record<string, string[]> = {};
-  for (const plugin of snapshot.plugins) {
+  for (const plugin of snapshot?.plugins ?? []) {
     if (!shouldUsePluginProviderEnvVars(plugin, params)) {
       continue;
     }
@@ -194,9 +194,9 @@ function resolveManifestProviderAuthEvidence(
 ): Record<string, ProviderAuthEvidence[]> {
   const snapshot = resolveProviderMetadataSnapshot(params);
   const evidenceByProvider: Record<string, ProviderAuthEvidence[]> = {};
-  for (const plugin of snapshot.plugins) {
+  for (const plugin of snapshot?.plugins ?? []) {
     if (
-      snapshot.index.plugins.length > 0 &&
+      (snapshot.index?.plugins?.length ?? 0) > 0 &&
       !isInstalledPluginEnabled(snapshot.index, plugin.id, params?.config)
     ) {
       continue;

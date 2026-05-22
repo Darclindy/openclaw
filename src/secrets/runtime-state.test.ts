@@ -2,8 +2,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveAuthStatePath, resolveAuthStorePath } from "../agents/auth-profiles/paths.js";
-import { writeCachedAuthProfileStore } from "../agents/auth-profiles/store-cache.js";
+import { resolveAuthProfileStoreKey } from "../agents/auth-profiles/paths.js";
+import {
+  readAuthProfileStorePayloadResult,
+  writeAuthProfileStorePayload,
+} from "../agents/auth-profiles/sqlite-storage.js";
+import { saveAuthProfileStore } from "../agents/auth-profiles/store.js";
 import { loadAuthProfileStoreForRuntime } from "../agents/auth-profiles/store.js";
 import type { AuthProfileStore } from "../agents/auth-profiles/types.js";
 import { clearSecretsRuntimeSnapshot } from "./runtime-state.js";
@@ -40,19 +44,22 @@ describe("secrets runtime state", () => {
 
     try {
       fs.mkdirSync(agentDir, { recursive: true });
-      const authPath = resolveAuthStorePath(agentDir);
-      const statePath = resolveAuthStatePath(agentDir);
-      fs.writeFileSync(authPath, `${JSON.stringify(authStore("sk-new"))}\n`);
-      const stat = fs.statSync(authPath);
-      writeCachedAuthProfileStore({
-        authPath,
-        authMtimeMs: stat.mtimeMs,
-        stateMtimeMs: fs.existsSync(statePath) ? fs.statSync(statePath).mtimeMs : null,
-        store: authStore("sk-old"),
+      const env = { OPENCLAW_STATE_DIR: root };
+      const storeKey = resolveAuthProfileStoreKey(agentDir, env);
+      saveAuthProfileStore(authStore("sk-old"), agentDir, { env });
+      const saved = readAuthProfileStorePayloadResult(storeKey, { env });
+      if (!saved.exists) {
+        throw new Error("expected seeded auth profile store");
+      }
+
+      loadAuthProfileStoreForRuntime(agentDir, { env, syncExternalCli: false });
+      writeAuthProfileStorePayload(storeKey, authStore("sk-new"), {
+        env,
+        now: () => saved.updatedAt,
       });
 
       expect(
-        loadAuthProfileStoreForRuntime(agentDir, { syncExternalCli: false }).profiles[
+        loadAuthProfileStoreForRuntime(agentDir, { env, syncExternalCli: false }).profiles[
           "openai:default"
         ],
       ).toMatchObject({ key: "sk-old" });
@@ -60,7 +67,7 @@ describe("secrets runtime state", () => {
       clearSecretsRuntimeSnapshot();
 
       expect(
-        loadAuthProfileStoreForRuntime(agentDir, { syncExternalCli: false }).profiles[
+        loadAuthProfileStoreForRuntime(agentDir, { env, syncExternalCli: false }).profiles[
           "openai:default"
         ],
       ).toMatchObject({ key: "sk-new" });
