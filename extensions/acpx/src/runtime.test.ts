@@ -2,9 +2,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { resetPluginBlobStoreForTests } from "openclaw/plugin-sdk/plugin-state-runtime";
+import {
+  resetPluginStateStoreForTests,
+  seedPluginStateEntriesForTests,
+} from "openclaw/plugin-sdk/plugin-test-runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resetPluginStateStoreForTests } from "../../../src/plugin-state/plugin-state-store.js";
-import { seedPluginStateEntriesForTests } from "../../../src/plugin-state/plugin-state-store.test-helpers.js";
 import {
   AcpRuntimeError,
   type AcpRuntime,

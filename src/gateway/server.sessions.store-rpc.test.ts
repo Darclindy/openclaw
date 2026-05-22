@@ -448,9 +448,9 @@ test("lists and patches session entries via sessions.* RPC", async () => {
   const storedAfterReset = getSessionEntry({ agentId: "main", sessionKey: "agent:main:main" });
   expect(storedAfterReset?.lastAccountId).toBe("work");
   expect(storedAfterReset?.lastThreadId).toBe("1737500000.123456");
-  expect(loadSqliteSessionTranscriptEvents({ agentId: "main", sessionId: "sess-main" })).toEqual(
-    [],
-  );
+  expect(
+    loadSqliteSessionTranscriptEvents({ agentId: "main", sessionId: "sess-main" }),
+  ).toHaveLength(3);
 
   const badThinking = await directSessionReq("sessions.patch", {
     key: "agent:main:main",

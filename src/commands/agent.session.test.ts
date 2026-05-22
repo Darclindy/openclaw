@@ -121,9 +121,10 @@ describe("agent session resolution", () => {
   it("uses typed lastChannel for channel-specific session reset overrides", async () => {
     await withTempHome(async (home) => {
       await writeSessionRows("main", {
-        main: {
+        "agent:main:main": {
           sessionId: "typed-channel-reset",
           updatedAt: Date.now() - 30 * 60_000,
+          channel: "quietchat",
           lastChannel: "quietchat",
           lastTo: "channel:quiet-room",
           chatType: "channel",

@@ -5,6 +5,7 @@ import {
   readConfigFileSnapshot,
   readSourceConfigBestEffort,
 } from "./config.js";
+import { readConfigHealthStateFromSqlite } from "./health-state.js";
 import { withTempHome, writeOpenClawConfig } from "./test-helpers.js";
 
 describe("readBestEffortConfig", () => {
@@ -18,10 +19,18 @@ describe("readBestEffortConfig", () => {
 
       const healthPath = `${home}/.openclaw/logs/config-health.json`;
       await expect(fs.stat(healthPath)).rejects.toMatchObject({ code: "ENOENT" });
+      const configPath = `${home}/.openclaw/openclaw.json`;
+      expect(
+        readConfigHealthStateFromSqlite(process.env, () => home).entries?.[configPath]
+          ?.lastKnownGood,
+      ).toBeUndefined();
 
       await readConfigFileSnapshot();
 
-      await expect(fs.stat(healthPath)).resolves.toMatchObject({ isFile: expect.any(Function) });
+      expect(
+        readConfigHealthStateFromSqlite(process.env, () => home).entries?.[configPath]
+          ?.lastKnownGood,
+      ).toMatchObject({ hash: expect.any(String) });
     });
   });
 

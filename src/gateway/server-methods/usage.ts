@@ -747,7 +747,7 @@ async function loadCostUsageSummaryCached(params: {
     endMs: params.endMs,
     config: params.config,
     requestRefresh: true,
-    refreshMode: "sync-when-empty",
+    refreshMode: "background",
   })
     .then((summary) => {
       setCostUsageCache(cacheKey, {
@@ -996,7 +996,7 @@ export const usageHandlers: GatewayRequestHandlers = {
             base: {
               key: storeMatch.key,
               agentId: discovered.agentId,
-              ...(storeMatch.databasePath ?? discovered.databasePath
+              ...((storeMatch.databasePath ?? discovered.databasePath)
                 ? { databasePath: storeMatch.databasePath ?? discovered.databasePath }
                 : {}),
               sessionId: discovered.sessionId,

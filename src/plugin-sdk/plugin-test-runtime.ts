@@ -1,5 +1,10 @@
 // Focused public test helpers for plugin runtime, registry, and setup fixtures.
 
+export { resetPluginStateStoreForTests } from "../plugin-state/plugin-state-store.js";
+export {
+  seedPluginStateEntriesForTests,
+  type PluginStateSeedEntry,
+} from "../plugin-state/plugin-state-store.test-helpers.js";
 export { setDefaultChannelPluginRegistryForTests } from "../commands/channel-test-registry.js";
 export {
   createEmptyPluginRegistry,

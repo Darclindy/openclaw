@@ -292,7 +292,7 @@ describe("agentCliCommand", () => {
         );
         const params = requireRecord(request.params, "gateway request params");
         expect(params.agentId).toBe("ops");
-        expect(params.sessionKey).toBe("agent:OPS:incident-42");
+        expect(params.sessionKey).toBe("agent:ops:incident-42");
       },
       { agents: { list: [{ id: "main" }, { id: "ops" }] } },
     );

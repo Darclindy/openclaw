@@ -189,7 +189,7 @@ describe("json file helpers", () => {
     expect(events).toEqual(expectedEvents);
   });
 
-  describe("retry behaviors on 'File changed during read'", () => {
+  describe("stable-read behavior on 'File changed during read'", () => {
     /**
      * Helper: spy on fsPromises.lstat for our target file path.
      * Returns a real Stats object with a modified ino to trigger
@@ -221,39 +221,34 @@ describe("json file helpers", () => {
       return () => callCount;
     }
 
-    it("retries on transient File changed during read and succeeds", async () => {
+    it("throws JsonFileReadError when the target changes during read", async () => {
       await withTempDir({ prefix: "openclaw-json-files-retry-" }, async (base) => {
         const filePath = path.join(base, "config.json");
         await fsPromises.writeFile(filePath, '{"ok":true}', "utf8");
 
-        // Only fail lstat once (first call) — retry should succeed on 2nd attempt
         const getCalls = setupLstatSpy(filePath, 1);
 
-        const result = await readJson<{ ok: boolean }>(filePath);
-        expect(result).toEqual({ ok: true });
-        // Should have at least 2 lstat calls: one failed, one successful
-        expect(getCalls()).toBeGreaterThanOrEqual(2);
+        await expect(readJson<{ ok: boolean }>(filePath)).rejects.toThrow(JsonFileReadError);
+        expect(getCalls()).toBeGreaterThanOrEqual(1);
       });
     });
 
-    it("throws JsonFileReadError after exhausting retries on persistent race", async () => {
+    it("throws JsonFileReadError on persistent read target changes", async () => {
       await withTempDir({ prefix: "openclaw-json-files-exhaust-" }, async (base) => {
         const filePath = path.join(base, "config.json");
         await fsPromises.writeFile(filePath, '{"ok":true}', "utf8");
 
-        // Always fail lstat — all 3 retries should exhaust
         setupLstatSpy(filePath, Infinity);
 
         await expect(readJson(filePath)).rejects.toThrow(JsonFileReadError);
       });
     });
 
-    it("tryReadJson returns null after exhausting retries", async () => {
+    it("tryReadJson returns null when the target changes during read", async () => {
       await withTempDir({ prefix: "openclaw-json-files-try-" }, async (base) => {
         const filePath = path.join(base, "config.json");
         await fsPromises.writeFile(filePath, '{"ok":true}', "utf8");
 
-        // Always fail lstat — tryReadJson catches and returns null
         setupLstatSpy(filePath, Infinity);
 
         const result = await tryReadJson(filePath);

@@ -26,7 +26,9 @@ import { formatCliCommand } from "../cli/command-format.js";
 import { resolveOAuthDir, resolveStateDir } from "../config/paths.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { loadJsonFile, saveJsonFile } from "../infra/json-file.js";
-import { requireNodeSqlite } from "../infra/node-sqlite.js";
+import { executeSqliteQuerySync, getNodeSqliteKysely } from "../infra/kysely-sync.js";
+import type { DB as OpenClawStateKyselyDatabase } from "../state/openclaw-state-db.generated.js";
+import { openOpenClawStateDatabase } from "../state/openclaw-state-db.js";
 import { resolveOpenClawStateSqlitePath } from "../state/openclaw-state-db.paths.js";
 import { note } from "../terminal/note.js";
 import { shortenHomePath } from "../utils.js";
@@ -104,21 +106,17 @@ function listAuthProfileStoreKeysFromState(env: NodeJS.ProcessEnv): string[] {
     return [];
   }
   try {
-    const sqlite = requireNodeSqlite();
-    const database = new sqlite.DatabaseSync(databasePath, { readOnly: true });
-    try {
-      return (
-        database
-          .prepare("select store_key from auth_profile_stores order by store_key")
-          .all() as Array<{
-          store_key?: unknown;
-        }>
-      ).flatMap((row) =>
-        typeof row.store_key === "string" && row.store_key ? [row.store_key] : [],
-      );
-    } finally {
-      database.close();
-    }
+    const database = openOpenClawStateDatabase({ path: databasePath, env });
+    const db = getNodeSqliteKysely<Pick<OpenClawStateKyselyDatabase, "auth_profile_stores">>(
+      database.db,
+    );
+    const rows = executeSqliteQuerySync(
+      database.db,
+      db.selectFrom("auth_profile_stores").select(["store_key"]).orderBy("store_key"),
+    ).rows;
+    return rows.flatMap((row) =>
+      typeof row.store_key === "string" && row.store_key ? [row.store_key] : [],
+    );
   } catch {
     return [];
   }
@@ -168,16 +166,18 @@ function resolveLegacyOAuthSidecarStore(
   candidate: AuthProfileRepairCandidate,
   env: NodeJS.ProcessEnv,
 ): LegacyOAuthSidecarStore | null {
-  const entry = readAuthProfileStorePayloadResultReadOnly(
-    resolveAuthProfileStoreKey(candidate.agentDir, env),
-    { env },
-  );
+  const storeKey = candidate.agentDir
+    ? resolveAuthProfileStoreKey(candidate.agentDir, env)
+    : candidate.authPath;
+  const entry = readAuthProfileStorePayloadResultReadOnly(storeKey, { env });
   const sqliteRaw = entry.exists ? entry.value : undefined;
   const sqliteProfiles = collectLegacyOAuthProfiles(sqliteRaw);
   if (sqliteRaw && sqliteProfiles.length > 0) {
     return {
       ...candidate,
-      authPath: resolveAuthProfileStoreLocationForDisplay(candidate.agentDir, env),
+      authPath: candidate.agentDir
+        ? resolveAuthProfileStoreLocationForDisplay(candidate.agentDir, env)
+        : candidate.authPath,
       raw: sqliteRaw as unknown as Record<string, unknown>,
       originalRaw: structuredClone(sqliteRaw as unknown as Record<string, unknown>),
       profiles: sqliteProfiles,
@@ -272,7 +272,7 @@ function saveLegacyOAuthSidecarStore(store: LegacyOAuthSidecarStore, env: NodeJS
     return;
   }
   writeAuthProfileStorePayload(
-    resolveAuthProfileStoreKey(store.agentDir, env),
+    store.agentDir ? resolveAuthProfileStoreKey(store.agentDir, env) : store.authPath,
     store.raw as unknown as AuthProfilePayloadValue,
     { env },
   );

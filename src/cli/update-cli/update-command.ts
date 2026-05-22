@@ -70,6 +70,7 @@ import {
   createGlobalInstallEnv,
   cleanupGlobalRenameDirs,
   globalInstallArgs,
+  isOpenClawSourcePackageInstallSpec,
   resolveGlobalInstallTarget,
   resolveGlobalInstallSpec,
   resolvePnpmGlobalDirFromGlobalRoot,
@@ -2605,6 +2606,7 @@ async function continuePostCoreUpdateInFreshProcess(params: {
   try {
     await writePostCorePluginInstallRecordsFile(installRecordsPath, params.pluginInstallRecords);
     await writePostCoreSourceConfigFile(sourceConfigPath, params.preUpdateConfig);
+    const candidateHostVersion = await readPackageVersion(params.root);
     const childStdio = resolvePostCoreUpdateChildStdio();
     const child = spawn(resolveNodeRunner(), argv, {
       stdio: childStdio,
@@ -2618,6 +2620,9 @@ async function continuePostCoreUpdateInFreshProcess(params: {
         [POST_CORE_UPDATE_RESULT_PATH_ENV]: resultPath,
         [POST_CORE_UPDATE_INSTALL_RECORDS_PATH_ENV]: installRecordsPath,
         [POST_CORE_UPDATE_STARTED_AT_ENV]: String(params.updateStartedAtMs),
+        ...(candidateHostVersion === null
+          ? {}
+          : { OPENCLAW_COMPATIBILITY_HOST_VERSION: candidateHostVersion }),
         ...(params.preUpdateConfig
           ? { [POST_CORE_UPDATE_SOURCE_CONFIG_PATH_ENV]: sourceConfigPath }
           : {}),
@@ -3068,6 +3073,17 @@ export async function updateCommand(opts: UpdateCommandOptions): Promise<void> {
   }
 
   if (updateInstallKind === "package") {
+    if (isOpenClawSourcePackageInstallSpec(tag)) {
+      defaultRuntime.error(
+        [
+          "Unsupported package update target.",
+          "OpenClaw package updates use published npm artifacts or built tarballs; use the dev channel for GitHub main.",
+          `Run ${replaceCliName(formatCliCommand("openclaw update --channel dev"), CLI_NAME)} instead of targeting openclaw/openclaw directly.`,
+        ].join("\n"),
+      );
+      defaultRuntime.exit(1);
+      return;
+    }
     const runtimePreflightError = await resolvePackageRuntimePreflightError({
       tag,
       timeoutMs,
