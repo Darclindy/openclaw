@@ -252,6 +252,7 @@ describe("backupRestoreCommand", () => {
       restoredWorkspaceDir,
     });
     vi.stubEnv("OPENCLAW_CONFIG_PATH", configPath);
+    vi.spyOn(process, "cwd").mockReturnValue(currentWorkspaceDir);
 
     const runtime = createRuntime();
     const result = await backupRestoreCommand(runtime, { archive: archivePath, yes: true });
@@ -265,6 +266,32 @@ describe("backupRestoreCommand", () => {
     ]);
     expect(await fs.readFile(path.join(currentWorkspaceDir, "project.txt"), "utf8")).toBe(
       "restored\n",
+    );
+  });
+
+  it("rejects workspace restores outside the current workspace", async () => {
+    const currentWorkspaceDir = path.join(tempDir, "workspace");
+    const archivedWorkspaceDir = path.join(tempDir, "other-workspace");
+    const restoredWorkspaceDir = path.join(tempDir, "snapshot-workspace");
+    const archivePath = path.join(tempDir, "workspace-backup.tar.gz");
+    await fs.mkdir(currentWorkspaceDir, { recursive: true });
+    await fs.mkdir(archivedWorkspaceDir, { recursive: true });
+    await fs.writeFile(path.join(archivedWorkspaceDir, "project.txt"), "current\n");
+    await fs.mkdir(restoredWorkspaceDir, { recursive: true });
+    await fs.writeFile(path.join(restoredWorkspaceDir, "project.txt"), "restored\n");
+    await createWorkspaceBackupArchive({
+      archivePath,
+      sourceWorkspaceDir: archivedWorkspaceDir,
+      restoredWorkspaceDir,
+    });
+    vi.spyOn(process, "cwd").mockReturnValue(currentWorkspaceDir);
+
+    const runtime = createRuntime();
+    await expect(
+      backupRestoreCommand(runtime, { archive: archivePath, yes: true }),
+    ).rejects.toThrow("Refusing to restore workspace asset");
+    expect(await fs.readFile(path.join(archivedWorkspaceDir, "project.txt"), "utf8")).toBe(
+      "current\n",
     );
   });
 });

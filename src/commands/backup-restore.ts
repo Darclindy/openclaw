@@ -91,6 +91,38 @@ function normalizeRestoreAssetKind(kind: string): BackupAssetKind {
   }
 }
 
+function isSamePath(left: string, right: string): boolean {
+  return path.resolve(left) === path.resolve(right);
+}
+
+function resolveCurrentWorkingDirectory(): string {
+  try {
+    return process.cwd();
+  } catch {
+    return ".";
+  }
+}
+
+function resolveAllowedWorkspaceRestoreTargets(): string[] {
+  return [
+    path.resolve(resolveCurrentWorkingDirectory()),
+    path.resolve(resolveStateDir(), "workspace"),
+  ];
+}
+
+function assertAllowedWorkspaceRestoreTarget(targetPath: string): void {
+  const target = path.resolve(targetPath);
+  const allowedTargets = resolveAllowedWorkspaceRestoreTargets();
+  if (allowedTargets.some((allowedTarget) => isSamePath(target, allowedTarget))) {
+    return;
+  }
+  throw new Error(
+    `Refusing to restore workspace asset to ${shortenHomePath(
+      target,
+    )}. Run restore from that workspace directory or restore the workspace manually from the verified archive.`,
+  );
+}
+
 function resolveBackupRestoreTarget(params: { kind: string; sourcePath: string }): string {
   const kind = normalizeRestoreAssetKind(params.kind);
   switch (kind) {
@@ -101,7 +133,9 @@ function resolveBackupRestoreTarget(params: { kind: string; sourcePath: string }
     case "credentials":
       return path.resolve(resolveOAuthDir());
     case "workspace": {
-      return path.resolve(params.sourcePath);
+      const targetPath = path.resolve(params.sourcePath);
+      assertAllowedWorkspaceRestoreTarget(targetPath);
+      return targetPath;
     }
   }
   throw new Error("Backup restore does not support the requested asset kind.");
