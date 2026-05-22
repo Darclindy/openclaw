@@ -72,7 +72,6 @@ import {
   createGlobalInstallEnv,
   cleanupGlobalRenameDirs,
   globalInstallArgs,
-  isOpenClawSourcePackageInstallSpec,
   resolveGlobalInstallTarget,
   resolveGlobalInstallSpec,
   resolvePnpmGlobalDirFromGlobalRoot,
@@ -3119,17 +3118,6 @@ export async function updateCommand(opts: UpdateCommandOptions): Promise<void> {
   }
 
   if (updateInstallKind === "package") {
-    if (isOpenClawSourcePackageInstallSpec(tag)) {
-      defaultRuntime.error(
-        [
-          "Unsupported package update target.",
-          "OpenClaw package updates use published npm artifacts or built tarballs; use the dev channel for GitHub main.",
-          `Run ${replaceCliName(formatCliCommand("openclaw update --channel dev"), CLI_NAME)} instead of targeting openclaw/openclaw directly.`,
-        ].join("\n"),
-      );
-      defaultRuntime.exit(1);
-      return;
-    }
     const managedServiceNode = await resolveManagedServiceNodeVersion({
       timeoutMs: updateStepTimeoutMs,
     });

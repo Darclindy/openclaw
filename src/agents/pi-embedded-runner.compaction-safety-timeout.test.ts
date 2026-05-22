@@ -166,7 +166,7 @@ describe("compactContextEngineWithSafetyTimeout", () => {
   type CompactFn = ContextEngine["compact"];
   const baseParams: Parameters<CompactFn>[0] = {
     sessionId: "session-1",
-    sessionFile: "/tmp/session-1.jsonl",
+    transcriptScope: { agentId: "main", sessionId: "session-1" },
     tokenBudget: 100_000,
     force: true,
   };
