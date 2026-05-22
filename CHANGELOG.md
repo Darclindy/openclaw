@@ -28,6 +28,7 @@ Docs: https://docs.openclaw.ai
 - Agents/subagents: limit default sub-agent bootstrap context to `AGENTS.md` and `TOOLS.md`, keeping persona, identity, user, memory, heartbeat, and setup files out of delegated workers by default. (#85283) Thanks @100yenadmin.
 - Maintainer skills: require clean autoreview before surfacing bug-sweep PR URLs and treat changelog-only conflicts as routine busy-main churn.
 - Control UI: add a Workboard dashboard tab backed by a bundled plugin for Kanban-style agent work cards and session handoff.
+- Control UI: sync Workboard cards with linked session lifecycle state, including active, completed, and failed runs.
 - Maintainer skills: exclude plugin SDK/API boundary work from `openclaw-landable-bug-sweep` so bugbash sweeps stay focused on small paper-cut fixes.
 - QA-Lab/diagnostics: extend the OpenTelemetry smoke harness to prove trace, metric, and log export, and add first-class Prometheus and observability smoke aliases.
 - Plugin SDK: add a generic channel-message poll sender so channel plugins can expose poll delivery without depending on channel-specific SDK facades.

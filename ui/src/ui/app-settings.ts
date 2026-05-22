@@ -424,7 +424,7 @@ export async function refreshActiveTab(host: SettingsHost) {
         await loadOverview(host);
         break;
       case "workboard":
-        await loadConfig(app);
+        await Promise.all([loadConfig(app), loadSessions(app), loadAgents(app)]);
         break;
       case "channels":
         await loadChannelsTab(host);
