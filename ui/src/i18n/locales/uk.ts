@@ -436,6 +436,11 @@ export const uk: TranslationMap = {
     logs: "Журнали шлюзу в реальному часі.",
     dreams: "Консолідація пам’яті під час сну.",
   },
+  workboard: {
+    disabledHelpStart: "Workboard вимкнено. Увімкніть",
+    enableConfigKey: "plugins.entries.workboard.enabled = true",
+    disabledHelpEnd: ", потім перезавантажте цю вкладку.",
+  },
   overview: {
     access: {
       title: "Доступ до шлюзу",

@@ -433,6 +433,11 @@ export const zh_TW: TranslationMap = {
     logs: "實時網關日誌。",
     dreams: "睡眠期間的記憶整合。",
   },
+  workboard: {
+    disabledHelpStart: "Workboard 已停用。啟用",
+    enableConfigKey: "plugins.entries.workboard.enabled = true",
+    disabledHelpEnd: "，然後重新載入此分頁。",
+  },
   overview: {
     access: {
       title: "網關訪問",

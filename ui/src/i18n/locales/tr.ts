@@ -437,6 +437,11 @@ export const tr: TranslationMap = {
     logs: "Canlı Gateway günlükleri.",
     dreams: "Uyku sırasında bellek birleştirme.",
   },
+  workboard: {
+    disabledHelpStart: "Workboard devre dışı. Etkinleştirin",
+    enableConfigKey: "plugins.entries.workboard.enabled = true",
+    disabledHelpEnd: ", ardından bu sekmeyi yeniden yükleyin.",
+  },
   overview: {
     access: {
       title: "Gateway Erişimi",

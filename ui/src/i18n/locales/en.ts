@@ -433,6 +433,11 @@ export const en: TranslationMap = {
     logs: "Live gateway logs.",
     dreams: "Memory dreaming, consolidation, and reflection.",
   },
+  workboard: {
+    disabledHelpStart: "Workboard is disabled. Enable",
+    enableConfigKey: "plugins.entries.workboard.enabled = true",
+    disabledHelpEnd: ", then reload this tab.",
+  },
   overview: {
     access: {
       title: "Gateway Access",

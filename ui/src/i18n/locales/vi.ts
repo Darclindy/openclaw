@@ -435,6 +435,11 @@ export const vi: TranslationMap = {
     logs: "Nhật ký gateway trực tiếp.",
     dreams: "Mơ bộ nhớ, hợp nhất và phản chiếu.",
   },
+  workboard: {
+    disabledHelpStart: "Workboard đã bị tắt. Bật",
+    enableConfigKey: "plugins.entries.workboard.enabled = true",
+    disabledHelpEnd: ", rồi tải lại tab này.",
+  },
   overview: {
     access: {
       title: "Truy cập Gateway",

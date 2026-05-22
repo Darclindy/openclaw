@@ -437,6 +437,11 @@ export const nl: TranslationMap = {
     logs: "Live Gateway-logs.",
     dreams: "Geheugendromen, consolidatie en reflectie.",
   },
+  workboard: {
+    disabledHelpStart: "Workboard is uitgeschakeld. Schakel",
+    enableConfigKey: "plugins.entries.workboard.enabled = true",
+    disabledHelpEnd: "in en laad dit tabblad opnieuw.",
+  },
   overview: {
     access: {
       title: "Gateway-toegang",

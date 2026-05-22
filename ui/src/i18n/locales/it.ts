@@ -437,6 +437,11 @@ export const it: TranslationMap = {
     logs: "Log gateway live.",
     dreams: "Sogni della memoria, consolidamento e riflessione.",
   },
+  workboard: {
+    disabledHelpStart: "Workboard è disabilitata. Abilita",
+    enableConfigKey: "plugins.entries.workboard.enabled = true",
+    disabledHelpEnd: ", quindi ricarica questa scheda.",
+  },
   overview: {
     access: {
       title: "Accesso Gateway",

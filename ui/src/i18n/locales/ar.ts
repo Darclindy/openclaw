@@ -434,6 +434,11 @@ export const ar: TranslationMap = {
     logs: "سجلات Gateway المباشرة.",
     dreams: "حلم الذاكرة، والدمج، والتأمل.",
   },
+  workboard: {
+    disabledHelpStart: "لوحة العمل معطّلة. فعّل",
+    enableConfigKey: "plugins.entries.workboard.enabled = true",
+    disabledHelpEnd: "، ثم أعد تحميل علامة التبويب هذه.",
+  },
   overview: {
     access: {
       title: "الوصول إلى Gateway",

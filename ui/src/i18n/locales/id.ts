@@ -435,6 +435,11 @@ export const id: TranslationMap = {
     logs: "Log Gateway langsung.",
     dreams: "Konsolidasi memori saat tidur.",
   },
+  workboard: {
+    disabledHelpStart: "Workboard dinonaktifkan. Aktifkan",
+    enableConfigKey: "plugins.entries.workboard.enabled = true",
+    disabledHelpEnd: ", lalu muat ulang tab ini.",
+  },
   overview: {
     access: {
       title: "Akses Gateway",

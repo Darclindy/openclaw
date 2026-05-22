@@ -436,6 +436,11 @@ export const fa: TranslationMap = {
     logs: "گزارش‌های زنده Gateway.",
     dreams: "رؤیاپردازی حافظه، یکپارچه‌سازی و بازتاب.",
   },
+  workboard: {
+    disabledHelpStart: "Workboard غیرفعال است. فعال کنید",
+    enableConfigKey: "plugins.entries.workboard.enabled = true",
+    disabledHelpEnd: "، سپس این زبانه را دوباره بارگذاری کنید.",
+  },
   overview: {
     access: {
       title: "دسترسی Gateway",

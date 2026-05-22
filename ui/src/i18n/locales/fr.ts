@@ -437,6 +437,11 @@ export const fr: TranslationMap = {
     logs: "Journaux Gateway en direct.",
     dreams: "Consolidation de la mémoire pendant le sommeil.",
   },
+  workboard: {
+    disabledHelpStart: "Le tableau de travail est désactivé. Activez",
+    enableConfigKey: "plugins.entries.workboard.enabled = true",
+    disabledHelpEnd: ", puis rechargez cet onglet.",
+  },
   overview: {
     access: {
       title: "Accès Gateway",

@@ -433,6 +433,11 @@ export const th: TranslationMap = {
     logs: "บันทึกเกตเวย์แบบสด",
     dreams: "การฝันของหน่วยความจำ การรวมข้อมูล และการสะท้อนคิด",
   },
+  workboard: {
+    disabledHelpStart: "Workboard ถูกปิดใช้งาน เปิดใช้งาน",
+    enableConfigKey: "plugins.entries.workboard.enabled = true",
+    disabledHelpEnd: " แล้วโหลดแท็บนี้ใหม่",
+  },
   overview: {
     access: {
       title: "การเข้าถึงเกตเวย์",

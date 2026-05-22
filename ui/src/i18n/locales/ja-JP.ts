@@ -438,6 +438,11 @@ export const ja_JP: TranslationMap = {
     logs: "ライブ Gateway ログ。",
     dreams: "スリープ中のメモリ統合。",
   },
+  workboard: {
+    disabledHelpStart: "Workboard は無効になっています。有効にするには",
+    enableConfigKey: "plugins.entries.workboard.enabled = true",
+    disabledHelpEnd: "を設定してから、このタブを再読み込みしてください。",
+  },
   overview: {
     access: {
       title: "Gateway アクセス",

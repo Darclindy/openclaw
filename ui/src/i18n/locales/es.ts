@@ -435,6 +435,11 @@ export const es: TranslationMap = {
     logs: "Seguimiento en vivo de los registros de la puerta de enlace.",
     dreams: "Consolidación de la memoria durante el sueño.",
   },
+  workboard: {
+    disabledHelpStart: "Workboard está desactivado. Activa",
+    enableConfigKey: "plugins.entries.workboard.enabled = true",
+    disabledHelpEnd: ", luego vuelve a cargar esta pestaña.",
+  },
   overview: {
     access: {
       title: "Acceso a la puerta de enlace",

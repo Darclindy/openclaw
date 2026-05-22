@@ -438,6 +438,11 @@ export const de: TranslationMap = {
     logs: "Live-Verfolgung der Gateway-Protokolldateien.",
     dreams: "Speicherkonsolidierung im Schlaf.",
   },
+  workboard: {
+    disabledHelpStart: "Workboard ist deaktiviert. Aktivieren Sie",
+    enableConfigKey: "plugins.entries.workboard.enabled = true",
+    disabledHelpEnd: ", und laden Sie dann diesen Tab neu.",
+  },
   overview: {
     access: {
       title: "Gateway-Zugang",
