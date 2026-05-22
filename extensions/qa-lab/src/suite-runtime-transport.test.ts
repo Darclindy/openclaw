@@ -97,6 +97,76 @@ describe("qa suite transport helpers", () => {
     await expect(pending).rejects.toThrow("Tool read not found");
   });
 
+  it("applies sinceIndex to the mixed message stream before filtering outbound replies", async () => {
+    const state = createQaBusState();
+    state.addInboundMessage({
+      conversation: { id: "qa-operator", kind: "direct" },
+      senderId: "alice",
+      senderName: "Alice",
+      text: "first inbound",
+    });
+    state.addOutboundMessage({
+      to: "dm:qa-operator",
+      text: "old outbound",
+      senderId: "openclaw",
+      senderName: "OpenClaw QA",
+    });
+    state.addInboundMessage({
+      conversation: { id: "qa-operator", kind: "direct" },
+      senderId: "alice",
+      senderName: "Alice",
+      text: "second inbound",
+    });
+    const sinceIndex = state.getSnapshot().messages.length;
+    const pending = waitForOutboundMessage(
+      state,
+      (candidate) => candidate.conversation.id === "qa-operator" && candidate.text === "done",
+      5_000,
+      { sinceIndex },
+    );
+
+    state.addOutboundMessage({
+      to: "dm:qa-operator",
+      text: "done",
+      senderId: "openclaw",
+      senderName: "OpenClaw QA",
+    });
+
+    await expect(pending).resolves.toMatchObject({ text: "done" });
+  });
+
+  it("detects failure replies after a mixed-stream sinceIndex", async () => {
+    const state = createQaBusState();
+    state.addInboundMessage({
+      conversation: { id: "qa-operator", kind: "direct" },
+      senderId: "alice",
+      senderName: "Alice",
+      text: "first inbound",
+    });
+    state.addOutboundMessage({
+      to: "dm:qa-operator",
+      text: "old outbound",
+      senderId: "openclaw",
+      senderName: "OpenClaw QA",
+    });
+    const sinceIndex = state.getSnapshot().messages.length;
+    const pending = waitForOutboundMessage(
+      state,
+      (candidate) => candidate.text.includes("done"),
+      5_000,
+      { sinceIndex },
+    );
+
+    state.addOutboundMessage({
+      to: "dm:qa-operator",
+      text: '⚠️ No API key found for provider "openai".',
+      senderId: "openclaw",
+      senderName: "OpenClaw QA",
+    });
+
+    await expect(pending).rejects.toThrow('No API key found for provider "openai".');
+  });
+
   it("fails raw scenario waitForCondition calls when a classified failure reply arrives", async () => {
     const state = createQaBusState();
     const waitForCondition = createScenarioWaitForCondition(state);
