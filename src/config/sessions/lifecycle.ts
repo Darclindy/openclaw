@@ -27,6 +27,7 @@ function parseTimestampMs(value: unknown): number | undefined {
 export function readSessionHeaderStartedAtMs(params: {
   entry: SessionLifecycleEntry | undefined;
   agentId?: string;
+  databasePath?: string;
 }): number | undefined {
   const sessionId = params.entry?.sessionId?.trim();
   if (!sessionId) {
@@ -34,6 +35,7 @@ export function readSessionHeaderStartedAtMs(params: {
   }
   const scope = resolveSqliteSessionTranscriptScope({
     agentId: params.agentId,
+    path: params.databasePath,
     sessionId,
   });
   if (!scope) {
@@ -70,6 +72,7 @@ export function readSessionHeaderStartedAtMs(params: {
 export function resolveSessionLifecycleTimestamps(params: {
   entry: SessionLifecycleEntry | undefined;
   agentId?: string;
+  databasePath?: string;
 }): { sessionStartedAt?: number; lastInteractionAt?: number } {
   const entry = params.entry;
   if (!entry) {
@@ -81,6 +84,7 @@ export function resolveSessionLifecycleTimestamps(params: {
       readSessionHeaderStartedAtMs({
         entry,
         agentId: params.agentId,
+        databasePath: params.databasePath,
       }),
     lastInteractionAt: resolveTimestamp(entry.lastInteractionAt),
   };

@@ -199,6 +199,48 @@ describe("session lifecycle timestamps", () => {
       await fsPromises.rm(dir, { recursive: true, force: true });
     }
   });
+
+  it("reads transcript headers from an explicit session database path", async () => {
+    const dir = await fsPromises.mkdtemp("/tmp/openclaw-lifecycle-path-test-");
+    const previousStateDir = process.env.OPENCLAW_STATE_DIR;
+    process.env.OPENCLAW_STATE_DIR = dir;
+    try {
+      const databasePath = path.join(dir, "registered", "ops.sqlite");
+      const headerTimestamp = "2026-04-19T04:30:00.000Z";
+      replaceSqliteSessionTranscriptEvents({
+        agentId: "ops",
+        path: databasePath,
+        sessionId: "registered-lifecycle-session",
+        events: [
+          {
+            type: "session",
+            version: 1,
+            id: "registered-lifecycle-session",
+            timestamp: headerTimestamp,
+            cwd: dir,
+          },
+        ],
+      });
+
+      const timestamps = resolveSessionLifecycleTimestamps({
+        agentId: "ops",
+        databasePath,
+        entry: {
+          sessionId: "registered-lifecycle-session",
+          updatedAt: Date.parse("2026-04-25T08:00:00.000Z"),
+        },
+      });
+
+      expect(timestamps.sessionStartedAt).toBe(Date.parse(headerTimestamp));
+    } finally {
+      if (previousStateDir === undefined) {
+        delete process.env.OPENCLAW_STATE_DIR;
+      } else {
+        process.env.OPENCLAW_STATE_DIR = previousStateDir;
+      }
+      await fsPromises.rm(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("SQLite session row patch retries", () => {
