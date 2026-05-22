@@ -7,6 +7,7 @@ export async function resolveAndPersistSessionTranscriptScope(params: {
   sessionKey: string;
   sessionEntry?: SessionEntry;
   agentId?: string;
+  path?: string;
 }): Promise<{ agentId: string; sessionId: string; sessionEntry: SessionEntry }> {
   const { sessionId, sessionKey } = params;
   const now = Date.now();
@@ -14,7 +15,11 @@ export async function resolveAndPersistSessionTranscriptScope(params: {
   if (!agentId) {
     throw new Error(`Session stores are SQLite-only; cannot resolve agent for ${sessionKey}`);
   }
-  const existingEntry = params.sessionEntry ?? getSessionEntry({ agentId, sessionKey });
+  const rowOptions = {
+    agentId,
+    ...(params.path ? { path: params.path } : {}),
+  };
+  const existingEntry = params.sessionEntry ?? getSessionEntry({ ...rowOptions, sessionKey });
   const baseEntry = existingEntry ?? {
     sessionId,
     updatedAt: now,
@@ -28,7 +33,7 @@ export async function resolveAndPersistSessionTranscriptScope(params: {
   };
   if (!existingEntry || baseEntry.sessionId !== sessionId) {
     upsertSessionEntry({
-      agentId,
+      ...rowOptions,
       sessionKey,
       entry: persistedEntry,
     });

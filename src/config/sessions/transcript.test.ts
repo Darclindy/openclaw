@@ -132,6 +132,43 @@ describe("appendAssistantMessageToSessionTranscript", () => {
     }
   });
 
+  it("appends exact assistant messages to an explicit SQLite session database path", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-transcript-relocated-"));
+    const databasePath = path.join(root, "relocated", "openclaw-agent.sqlite");
+    const relocatedSessionId = "relocated-session-id";
+    try {
+      upsertSessionEntry({
+        agentId: "ops",
+        path: databasePath,
+        sessionKey: "main",
+        entry: {
+          sessionId: relocatedSessionId,
+          updatedAt: 1,
+        },
+      });
+
+      const result = await appendExactAssistantMessageToSessionTranscript({
+        agentId: "ops",
+        sessionKey: "main",
+        storePath: databasePath,
+        updateMode: "none",
+        message: createExactAssistantMessage({ text: "Relocated transcript append" }),
+      });
+
+      expect(result.ok).toBe(true);
+      const events = loadSqliteSessionTranscriptEvents({
+        agentId: "ops",
+        path: databasePath,
+        sessionId: relocatedSessionId,
+      }).map((entry) => entry.event as { message?: { role?: string; content?: unknown } });
+      expect(events).toHaveLength(2);
+      expect(events[1]?.message?.role).toBe("assistant");
+    } finally {
+      closeOpenClawAgentDatabasesForTest();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("emits transcript update events for delivery mirrors", async () => {
     await writeTranscriptStore();
     const emitSpy = vi.spyOn(transcriptEvents, "emitSessionTranscriptUpdate");

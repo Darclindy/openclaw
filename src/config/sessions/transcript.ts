@@ -1,3 +1,4 @@
+import nodePath from "node:path";
 import { redactTranscriptMessage } from "../../agents/transcript-redact.js";
 import type { PersistableSessionMessage } from "../../agents/transcript/session-transcript-types.js";
 import { formatErrorMessage } from "../../infra/errors.js";
@@ -8,6 +9,7 @@ import {
 } from "../../routing/session-key.js";
 import { emitSessionTranscriptUpdate } from "../../sessions/transcript-events.js";
 import { extractAssistantVisibleText } from "../../shared/chat-message-content.js";
+import { resolveOpenClawAgentSqlitePath } from "../../state/openclaw-agent-db.js";
 import type { OpenClawConfig } from "../types.openclaw.js";
 import { resolveAndPersistSessionTranscriptScope } from "./session-scope.js";
 import { getSessionEntry, normalizeSessionRowKey } from "./store.js";
@@ -42,6 +44,68 @@ type TranscriptQueryScope = {
   agentId?: string;
   sessionId?: string;
 };
+
+type TranscriptSessionStoreTarget = {
+  agentId: string;
+  path?: string;
+};
+
+function parseCanonicalSessionStorePath(
+  storePath: string,
+): { agentId: string; stateDir: string } | undefined {
+  const resolved = nodePath.resolve(storePath);
+  if (nodePath.basename(resolved) !== "sessions.json") {
+    return undefined;
+  }
+  const sessionsDir = nodePath.dirname(resolved);
+  if (nodePath.basename(sessionsDir) !== "sessions") {
+    return undefined;
+  }
+  const agentDir = nodePath.dirname(sessionsDir);
+  const agentsDir = nodePath.dirname(agentDir);
+  if (nodePath.basename(agentsDir) !== "agents") {
+    return undefined;
+  }
+  const agentId = nodePath.basename(agentDir);
+  if (!agentId) {
+    return undefined;
+  }
+  return {
+    agentId: normalizeAgentId(agentId),
+    stateDir: nodePath.dirname(agentsDir),
+  };
+}
+
+function resolveTranscriptSessionStoreTarget(params: {
+  agentId: string;
+  storePath?: string;
+}): TranscriptSessionStoreTarget {
+  const agentId = normalizeAgentId(params.agentId);
+  const storePath = params.storePath?.trim();
+  if (!storePath || storePath === "(sqlite)") {
+    return { agentId };
+  }
+  const parsed = parseCanonicalSessionStorePath(storePath);
+  if (parsed) {
+    return {
+      agentId: parsed.agentId,
+      path: resolveOpenClawAgentSqlitePath({
+        agentId: parsed.agentId,
+        env: {
+          ...process.env,
+          OPENCLAW_STATE_DIR: parsed.stateDir,
+        },
+      }),
+    };
+  }
+  if (nodePath.extname(storePath) === ".json") {
+    return { agentId };
+  }
+  return {
+    agentId,
+    path: storePath,
+  };
+}
 
 function hasTranscriptQueryScope(scope?: TranscriptQueryScope | string): scope is {
   agentId: string;
@@ -270,7 +334,12 @@ export async function appendExactAssistantMessageToSessionTranscript(params: {
     params.agentId ?? resolveAgentIdFromSessionKey(sessionKey) ?? DEFAULT_AGENT_ID,
   );
   const normalizedKey = normalizeSessionRowKey(sessionKey);
-  const entry = getSessionEntry({ agentId, sessionKey: normalizedKey });
+  const target = resolveTranscriptSessionStoreTarget({ agentId, storePath: params.storePath });
+  const entry = getSessionEntry({
+    agentId: target.agentId,
+    ...(target.path ? { path: target.path } : {}),
+    sessionKey: normalizedKey,
+  });
   if (!entry?.sessionId) {
     return { ok: false, reason: `unknown sessionKey: ${sessionKey}` };
   }
@@ -280,7 +349,8 @@ export async function appendExactAssistantMessageToSessionTranscript(params: {
       sessionId: entry.sessionId,
       sessionKey: normalizedKey,
       sessionEntry: entry,
-      agentId,
+      agentId: target.agentId,
+      ...(target.path ? { path: target.path } : {}),
     });
   } catch (err) {
     return {
@@ -305,7 +375,8 @@ export async function appendExactAssistantMessageToSessionTranscript(params: {
       )
     : null;
   const { messageId, message: appendedMessage } = await appendSessionTranscriptMessage({
-    agentId,
+    agentId: target.agentId,
+    ...(target.path ? { path: target.path } : {}),
     ...(dedupeLatestAssistantText ? { dedupeLatestAssistantText } : {}),
     message,
     sessionId: entry.sessionId,
@@ -315,7 +386,7 @@ export async function appendExactAssistantMessageToSessionTranscript(params: {
   switch (params.updateMode ?? "inline") {
     case "inline":
       emitSessionTranscriptUpdate({
-        agentId,
+        agentId: target.agentId,
         sessionId: entry.sessionId,
         sessionKey,
         message: appendedMessage,
@@ -324,7 +395,7 @@ export async function appendExactAssistantMessageToSessionTranscript(params: {
       break;
     case "signal-only":
       emitSessionTranscriptUpdate({
-        agentId,
+        agentId: target.agentId,
         sessionId: entry.sessionId,
         sessionKey,
       });
