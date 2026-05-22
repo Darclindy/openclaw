@@ -40,10 +40,13 @@ export type SessionsState = SessionsChatRunState & {
   sessionsCheckpointErrorByKey: Record<string, string>;
 };
 
-type LoadSessionsOverrides = {
+export type LoadSessionsOverrides = {
   agentId?: string;
   activeMinutes?: number;
   limit?: number;
+  offset?: number;
+  append?: boolean;
+  search?: string;
   includeGlobal?: boolean;
   includeUnknown?: boolean;
   showArchived?: boolean;
