@@ -11,7 +11,11 @@ import {
   clearAllowFromStoreReadCacheForTest,
   readChannelAllowFromStoreEntriesSync,
 } from "./allow-from-store-read.js";
-import { addChannelAllowFromStoreEntry } from "./pairing-store.js";
+import { resolveAllowFromAccountId } from "./pairing-store-keys.js";
+import {
+  readChannelPairingStateSnapshot,
+  writeChannelPairingStateSnapshot,
+} from "./pairing-store.js";
 
 let fixtureRoot = "";
 let caseId = 0;
@@ -30,20 +34,16 @@ function makeHomeDir(): string {
   return dir;
 }
 
-async function writeAllowFromStore(params: {
+function writeAllowFromStore(params: {
   channel: "telegram";
   env: NodeJS.ProcessEnv;
   accountId?: string;
   allowFrom: string[];
-}): Promise<void> {
-  for (const entry of params.allowFrom) {
-    await addChannelAllowFromStoreEntry({
-      channel: params.channel,
-      env: params.env,
-      accountId: params.accountId,
-      entry,
-    });
-  }
+}): void {
+  const state = readChannelPairingStateSnapshot(params.channel, params.env);
+  state.allowFrom ??= {};
+  state.allowFrom[resolveAllowFromAccountId(params.accountId)] = params.allowFrom;
+  writeChannelPairingStateSnapshot(params.channel, state, params.env);
 }
 
 function writeLegacyAllowFromStore(params: {
@@ -80,7 +80,7 @@ afterEach(() => {
 describe("allow-from-store-read", () => {
   it("reads default account entries from SQLite", async () => {
     const env = makeEnv(makeHomeDir());
-    await writeAllowFromStore({
+    writeAllowFromStore({
       channel: "telegram",
       env,
       accountId: "default",
@@ -92,12 +92,12 @@ describe("allow-from-store-read", () => {
 
   it("keeps non-default account reads scoped", async () => {
     const env = makeEnv(makeHomeDir());
-    await writeAllowFromStore({
+    writeAllowFromStore({
       channel: "telegram",
       env,
       allowFrom: ["default-a"],
     });
-    await writeAllowFromStore({
+    writeAllowFromStore({
       channel: "telegram",
       env,
       accountId: "work",
