@@ -193,6 +193,27 @@ function requireRecord(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function createAgentSessionMock(sessionStore: Record<string, unknown>) {
+  return {
+    resolveStorePath: vi.fn(() => "/tmp/sessions.json"),
+    loadSessionStore: vi.fn(() => sessionStore),
+    saveSessionStore: vi.fn(async () => {}),
+    updateSessionStore: vi.fn(async (_storePath, mutator) => mutator(sessionStore as never)),
+    resolveSessionFilePath: vi.fn(() => "/tmp/session.json"),
+    getSessionEntry: vi.fn(({ sessionKey }: { sessionKey: string }) => sessionStore[sessionKey]),
+    patchSessionEntry: vi.fn(async (params) => {
+      const current = (sessionStore[params.sessionKey] ?? params.fallbackEntry ?? {}) as Record<
+        string,
+        unknown
+      >;
+      const patch = (await params.update(current as never)) as Record<string, unknown>;
+      const next = { ...current, ...patch };
+      sessionStore[params.sessionKey] = next;
+      return next;
+    }),
+  };
+}
+
 function requireRealtimeConsultToolHandler(): RealtimeConsultToolHandler {
   const registeredToolHandler = firstMockCall(
     mocks.realtimeHandlerRegisterToolHandler.mock.calls,
