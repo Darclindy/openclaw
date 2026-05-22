@@ -11,6 +11,8 @@ export type CompactEmbeddedPiSessionParams = {
   sessionId: string;
   agentId?: string;
   path?: string;
+  sessionFile?: string;
+  storePath?: string;
   runId?: string;
   sessionKey?: string;
   /** Session key used only for runtime policy/sandbox resolution. Defaults to sessionKey. */

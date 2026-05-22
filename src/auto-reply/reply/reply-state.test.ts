@@ -52,7 +52,7 @@ async function createCompactionSessionFixture(entry: SessionEntry) {
   const sessionKey = "main";
   const sessionStore: Record<string, SessionEntry> = { [sessionKey]: entry };
   await seedMainAgentSessionRow({ sessionKey, entry });
-  return { sessionKey, sessionStore };
+  return { storePath: path.join(tmp, "sessions.json"), sessionKey, sessionStore };
 }
 
 async function rotateCompactionSessionId(newSessionId: string) {

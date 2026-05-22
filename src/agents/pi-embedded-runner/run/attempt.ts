@@ -785,12 +785,13 @@ async function cancelQueuedSteeringMessage(
   return true;
 }
 
-export const testing = {
+export const __testing = {
   cancelQueuedSteeringMessage,
   resolveEmbeddedAttemptSessionWriteLockOptions,
-  resolveAttemptStreamAuthProfileId,
   steerAndWaitForTranscriptCommit,
+  resolveAttemptStreamAuthProfileId,
 };
+export { __testing as testing };
 
 function resolveEmbeddedAttemptSessionWriteLockOptions(params: {
   config?: OpenClawConfig;

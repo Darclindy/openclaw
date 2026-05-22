@@ -2,11 +2,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { resolveAuthProfileStoreLocationForDisplay } from "../agents/auth-profiles/paths.js";
 import {
   authProfileStoreKey,
   savePersistedAuthProfileSecretsStore,
 } from "../agents/auth-profiles/persisted.js";
-import { resolveAuthProfileStoreLocationForDisplay } from "../agents/auth-profiles/paths.js";
 import { deleteAuthProfileStorePayload } from "../agents/auth-profiles/sqlite-storage.js";
 import type { AuthProfileCredential } from "../agents/auth-profiles/types.js";
 import { writeStoredModelsConfigRaw } from "../agents/models-config-store.js";
@@ -19,6 +19,7 @@ type AuditFixture = {
   agentDir: string;
   modelCatalogSource: string;
   authStoreLocation: string;
+  authStorePath: string;
   envPath: string;
   env: NodeJS.ProcessEnv;
 };
@@ -169,6 +170,7 @@ async function createAuditFixture(): Promise<AuditFixture> {
     agentDir,
     modelCatalogSource,
     authStoreLocation,
+    authStorePath: authStoreLocation,
     envPath,
     env: {
       OPENCLAW_STATE_DIR: stateDir,

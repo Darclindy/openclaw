@@ -17,6 +17,7 @@ type ExportTrajectoryCommandOptions = {
   workspace?: string;
   json?: boolean;
   requestJsonBase64?: string;
+  store?: string;
 };
 
 type EncodedExportTrajectoryRequest = {

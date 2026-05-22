@@ -839,7 +839,7 @@ describe("session history HTTP endpoints", () => {
   });
 
   test("maintains HTTP SSE streams with shared-secret bearer auth across transcript updates", async () => {
-    const { storePath } = await seedSession({ text: "bearer allowed history" });
+    await seedSession({ text: "bearer allowed history" });
 
     const started = await startServerWithClient("test-gateway-token-1234567890");
     const { server, ws, port, envSnapshot } = started;
@@ -863,7 +863,6 @@ describe("session history HTTP endpoints", () => {
       const appended = await appendAssistantMessageToSessionTranscript({
         sessionKey: "agent:main:main",
         text: "bearer sse update",
-        storePath,
       });
       expect(appended.ok).toBe(true);
 

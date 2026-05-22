@@ -20,7 +20,7 @@ import {
 import type { SessionEntry } from "./types.js";
 
 export type SessionTranscriptAppendResult =
-  | { ok: true; messageId: string }
+  | { ok: true; messageId: string; sessionFile?: string }
   | { ok: false; reason: string };
 
 export type SessionTranscriptUpdateMode = "inline" | "signal-only" | "none";
@@ -252,6 +252,7 @@ export async function appendAssistantMessageToSessionTranscript(params: {
 export async function appendExactAssistantMessageToSessionTranscript(params: {
   agentId?: string;
   sessionKey: string;
+  storePath?: string;
   message: SessionTranscriptAssistantMessage;
   idempotencyKey?: string;
   updateMode?: SessionTranscriptUpdateMode;

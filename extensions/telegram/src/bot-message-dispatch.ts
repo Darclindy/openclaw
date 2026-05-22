@@ -226,7 +226,10 @@ type DispatchTelegramMessageParams = {
 
 type TelegramReasoningLevel = "off" | "on" | "stream";
 
-type TelegramTranscriptMirrorPayload = { text?: string; mediaUrls?: string[] };
+type TelegramTranscriptMirror = (payload: {
+  text?: string;
+  mediaUrls?: string[];
+}) => void | Promise<void>;
 
 function resolveTelegramReasoningLevel(params: {
   cfg: OpenClawConfig;
@@ -902,6 +905,7 @@ export const dispatchTelegramMessage = async ({
     replyQuotePosition,
     replyQuoteEntities,
     replyQuoteByMessageId,
+    transcriptMirror: undefined as TelegramTranscriptMirror | undefined,
   };
   const silentErrorReplies = telegramCfg.silentErrorReplies === true;
   const isDmTopic = !isGroup && threadSpec.scope === "dm" && threadSpec.id != null;

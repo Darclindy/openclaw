@@ -124,6 +124,18 @@ export function listSessionEntries(
   return listSqliteSessionEntries(options);
 }
 
+export function loadSessionStore(
+  _storePath?: string,
+  _options?: { skipCache?: boolean },
+): Record<string, SessionEntry> {
+  return Object.fromEntries(
+    listSessionEntries({ agentId: DEFAULT_AGENT_ID }).map(({ sessionKey, entry }) => [
+      `agent:${DEFAULT_AGENT_ID}:${sessionKey}`,
+      entry,
+    ]),
+  );
+}
+
 export function upsertSessionEntry(
   options: SessionEntryRowOptions & {
     sessionKey: string;
@@ -193,8 +205,7 @@ export async function patchSessionEntry(
     if (!patchResult) {
       return resolved.entry ? existing : null;
     }
-    const patch =
-      "patch" in patchResult ? patchResult.patch : (patchResult as Partial<SessionEntry>);
+    const patch = "patch" in patchResult ? patchResult.patch : patchResult;
     const conversationIdentities =
       "patch" in patchResult ? patchResult.conversationIdentities : undefined;
     const next =
@@ -291,6 +302,10 @@ export async function recordSessionMetaFromInbound(params: {
       };
     },
   });
+}
+
+export function clearSessionStoreCacheForTest(): void {
+  // SQLite-backed session rows do not keep the legacy JSON store cache.
 }
 
 export async function updateLastRoute(params: {

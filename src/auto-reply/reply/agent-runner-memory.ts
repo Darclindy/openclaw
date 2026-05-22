@@ -91,6 +91,10 @@ const memoryDeps = {
   runWithModelFallback,
   ensureSelectedAgentHarnessPlugin,
   runEmbeddedPiAgent: runEmbeddedPiAgentDefault,
+  ensureMemoryFlushTargetFile: async (_params: {
+    workspaceDir: string;
+    relativePath: string;
+  }): Promise<void> => {},
   registerAgentRunContext,
   refreshQueuedFollowupSession,
   incrementCompactionCount,
@@ -105,6 +109,10 @@ export function setAgentRunnerMemoryTestDeps(overrides?: Partial<typeof memoryDe
     ensureSelectedAgentHarnessPlugin,
     compactEmbeddedPiSession: compactEmbeddedPiSessionDefault,
     runEmbeddedPiAgent: runEmbeddedPiAgentDefault,
+    ensureMemoryFlushTargetFile: async (_params: {
+      workspaceDir: string;
+      relativePath: string;
+    }): Promise<void> => {},
     registerAgentRunContext,
     refreshQueuedFollowupSession,
     incrementCompactionCount,
@@ -197,6 +205,7 @@ function resolveMemoryFlushRuntimeOverrideForProvider(params: {
 
 function resolveFollowupContextConfigProvider(params: {
   cfg: OpenClawConfig;
+  storePath?: string;
   followupRun: FollowupRun;
   sessionEntry?: SessionEntry;
   sessionKey?: string;
@@ -487,6 +496,7 @@ export async function runPreflightCompactionIfNeeded(params: {
   agentCfgContextTokens?: number;
   sessionEntry?: SessionEntry;
   sessionStore?: Record<string, SessionEntry>;
+  storePath?: string;
   sessionKey?: string;
   runtimePolicySessionKey?: string;
   isHeartbeat: boolean;

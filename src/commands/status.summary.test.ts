@@ -6,6 +6,7 @@ const statusSummaryMocks = vi.hoisted(() => ({
   listSessionEntries: vi.fn(
     () => [] as Array<{ sessionKey: string; entry: Record<string, unknown> }>,
   ),
+  readSessionStoreReadOnly: vi.fn(() => ({})),
 }));
 
 vi.mock("../plugins/channel-plugin-ids.js", () => ({
@@ -44,6 +45,7 @@ vi.mock("../config/config.js", () => ({
 
 vi.mock("../config/sessions/store.js", () => ({
   listSessionEntries: statusSummaryMocks.listSessionEntries,
+  readSessionStoreReadOnly: statusSummaryMocks.readSessionStoreReadOnly,
 }));
 
 vi.mock("../gateway/agent-list.js", () => ({

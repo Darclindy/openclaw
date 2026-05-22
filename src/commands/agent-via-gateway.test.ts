@@ -65,6 +65,15 @@ async function withTempConfig(
   }
 }
 
+async function withTempStore(
+  fn: (ctx: { dir: string; store: string }) => Promise<void>,
+  overrides?: Partial<OpenClawConfig>,
+) {
+  await withTempConfig(async ({ dir }) => {
+    await fn({ dir, store: path.join(dir, "sessions.json") });
+  }, overrides);
+}
+
 function mockGatewaySuccessReply(text = "hello") {
   callGateway.mockResolvedValue({
     runId: "idem-1",

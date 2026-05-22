@@ -4,10 +4,14 @@ import { exportTrajectoryCommand } from "./export-trajectory.js";
 
 const mocks = vi.hoisted(() => ({
   getSessionEntry: vi.fn(),
+  loadSessionStore: vi.fn(),
+  resolveDefaultSessionStorePath: vi.fn(),
 }));
 
 vi.mock("../config/sessions/store.js", () => ({
   getSessionEntry: mocks.getSessionEntry,
+  loadSessionStore: mocks.loadSessionStore,
+  resolveDefaultSessionStorePath: mocks.resolveDefaultSessionStorePath,
 }));
 
 function createRuntime(): RuntimeEnv {

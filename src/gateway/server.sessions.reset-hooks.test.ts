@@ -46,6 +46,26 @@ function expectMainHookContext(context: HookEventRecord, sessionId: string) {
   expect(context.sessionId).toBe(sessionId);
 }
 
+async function createSessionStoreDir(): Promise<{ dir: string }> {
+  return { dir: fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-reset-sessions-")) };
+}
+
+async function writeSingleLineSession(dir: string, sessionId: string, text: string): Promise<void> {
+  await seedSqliteSessionTranscript(sessionId, text);
+  const filePath = path.join(dir, `${sessionId}.jsonl`);
+  await fs.promises.writeFile(
+    filePath,
+    `${JSON.stringify({ type: "message", message: { role: "user", content: text } })}\n`,
+    "utf-8",
+  );
+}
+
+async function writeSessionStore(params: {
+  entries: Record<string, Partial<ReturnType<typeof sessionStoreEntry>>>;
+}): Promise<void> {
+  await seedGatewaySessionEntries({ entries: params.entries });
+}
+
 test("sessions.reset emits internal command hook with reason", async () => {
   await seedSqliteSessionTranscript("sess-main", "hello");
 
@@ -645,7 +665,7 @@ test("sessions.reset drops cli session bindings so the next turn does not --resu
 test("sessions.reset clears cli session bindings for parent-linked non-subagent sessions (e.g. dashboard children)", async () => {
   const { dir } = await createSessionStoreDir();
   const dashboardTranscript = path.join(dir, "sess-dashboard-child.jsonl");
-  await fs.writeFile(
+  await fs.promises.writeFile(
     dashboardTranscript,
     `${JSON.stringify({
       type: "message",
@@ -702,7 +722,7 @@ test("sessions.reset clears cli session bindings for parent-linked non-subagent 
 test("sessions.reset preserves cli session bindings for spawned subagents (Tak Hoffman's fa56682b3ced contract)", async () => {
   const { dir } = await createSessionStoreDir();
   const childTranscript = path.join(dir, "sess-spawned-child.jsonl");
-  await fs.writeFile(
+  await fs.promises.writeFile(
     childTranscript,
     `${JSON.stringify({
       type: "message",

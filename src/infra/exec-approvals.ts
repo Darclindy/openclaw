@@ -750,6 +750,24 @@ export function resolveExecApprovals(
   });
 }
 
+export function resolveExecApprovalsFromFile(params?: {
+  file?: ExecApprovalsFile;
+  agentId?: string;
+  overrides?: ExecApprovalsDefaultOverrides;
+}): ExecApprovalsResolved {
+  if (params?.file) {
+    return resolveExecApprovalsDocument({
+      document: params.file,
+      agentId: params.agentId,
+      overrides: params.overrides,
+      path: resolveExecApprovalsStoreLocationForDisplay(),
+      socketPath: expandHomePrefix(params.file.socket?.path ?? resolveExecApprovalsSocketPath()),
+      token: params.file.socket?.token ?? "",
+    });
+  }
+  return resolveExecApprovals(params?.agentId, params?.overrides);
+}
+
 export function resolveExecApprovalsDocument(params: {
   document: ExecApprovalsFile;
   agentId?: string;

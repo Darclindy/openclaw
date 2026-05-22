@@ -18,8 +18,8 @@ import {
   type MessagingToolSourceReplyPayload,
   wrapToolWithBeforeToolCallHook,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
-import { normalizeAgentId } from "openclaw/plugin-sdk/routing";
 import type { ImageContent, TextContent } from "openclaw/plugin-sdk/provider-ai";
+import { normalizeAgentId } from "openclaw/plugin-sdk/routing";
 import type { CodexDynamicToolsLoading } from "./config.js";
 import { invalidInlineImageText, sanitizeInlineImageDataUrl } from "./image-payload-sanitizer.js";
 import {
@@ -446,7 +446,7 @@ function readPositiveInteger(value: unknown): number | undefined {
   return Math.floor(value);
 }
 
-function isToolResultError(result: AgentToolResult<unknown>): boolean {
+function isToolResultError(result: AgentToolResult): boolean {
   const details = result.details;
   if (!isRecord(details)) {
     return false;
@@ -484,7 +484,7 @@ function isToolResultYield(result: AgentToolResult<unknown>): boolean {
 }
 
 function inferToolResultDiagnosticTerminalType(
-  result: AgentToolResult<unknown>,
+  result: AgentToolResult,
   isError: boolean,
 ): CodexDynamicToolDiagnosticTerminalType {
   const details = result.details;

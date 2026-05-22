@@ -3,6 +3,7 @@ import { expect, vi } from "vitest";
 import { runEmbeddedPiAgent } from "../agents/pi-embedded.js";
 import type { CliDeps } from "../cli/deps.js";
 import { getSessionEntry } from "../config/sessions/store.js";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { runCronIsolatedAgentTurn } from "./isolated-agent.js";
 import {
   makeCfg,
@@ -138,7 +139,7 @@ export async function runTurnWithStoredModelOverride(
   jobPayload: CronJob["payload"],
   modelOverride = "gpt-4.1-mini",
   providerOverride = "openai",
-  cfgOverrides?: Parameters<typeof makeCfg>[2],
+  cfgOverrides?: Partial<OpenClawConfig>,
 ) {
   return runCronTurn(home, {
     cfgOverrides,

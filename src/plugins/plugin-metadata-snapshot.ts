@@ -23,6 +23,7 @@ import {
 } from "./manifest-registry-installed.js";
 import { loadPluginManifestRegistry, type PluginManifestRecord } from "./manifest-registry.js";
 import { resolvePluginControlPlaneFingerprint } from "./plugin-control-plane-context.js";
+import { registerPluginMetadataSnapshotMemoClear } from "./plugin-metadata-snapshot-memo.js";
 import type {
   LoadPluginMetadataSnapshotParams,
   PluginMetadataSnapshot,
@@ -53,6 +54,8 @@ let pluginMetadataSnapshotMemo: PluginMetadataSnapshotMemo | undefined;
 export function clearLoadPluginMetadataSnapshotMemo(): void {
   pluginMetadataSnapshotMemo = undefined;
 }
+
+registerPluginMetadataSnapshotMemoClear(clearLoadPluginMetadataSnapshotMemo);
 
 const MEMO_RELEVANT_ENV_KEYS = [
   "APPDATA",

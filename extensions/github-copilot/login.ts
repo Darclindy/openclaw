@@ -57,6 +57,9 @@ export function setGitHubCopilotDeviceFlowFetchGuardForTesting(
   githubDeviceFlowFetchGuard = impl ?? fetchWithSsrFGuard;
 }
 
+export const _setGitHubCopilotDeviceFlowFetchGuardForTesting =
+  setGitHubCopilotDeviceFlowFetchGuardForTesting;
+
 async function upsertAuthProfileWithLockOrThrow(params: UpsertAuthProfileParams): Promise<void> {
   const updated = await upsertAuthProfileWithLock(params);
   if (!updated) {

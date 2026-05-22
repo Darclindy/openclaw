@@ -519,6 +519,8 @@ export function _resetIMessageShortIdState(): void {
   }
 }
 
+export const resetIMessageShortIdState = _resetIMessageShortIdState;
+
 export function _resetIMessageShortIdMemoryForTest(): void {
   imessageReplyCacheByMessageId.clear();
   imessageShortIdToUuid.clear();

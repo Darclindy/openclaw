@@ -14,16 +14,16 @@ import {
 
 const { createSessionFixtureDir, openClient } = setupGatewaySessionsTestHarness();
 
-async function directSessionHandlerReq<TPayload = unknown>(
+async function directSessionHandlerReq(
   method: keyof Awaited<ReturnType<typeof getSessionsHandlers>>,
   params: Record<string, unknown>,
-): Promise<{ ok: boolean; payload?: TPayload; error?: unknown }> {
+): Promise<{ ok: boolean; payload?: unknown; error?: unknown }> {
   const sessionsHandlers = await getSessionsHandlers();
   const { getRuntimeConfig } = await getGatewayConfigModule();
   let result:
     | {
         ok: boolean;
-        payload?: TPayload;
+        payload?: unknown;
         error?: unknown;
       }
     | undefined;
@@ -33,7 +33,7 @@ async function directSessionHandlerReq<TPayload = unknown>(
     respond: (ok, payload, error) => {
       result = {
         ok,
-        payload: payload === undefined ? undefined : (payload as TPayload),
+        payload,
         error,
       };
     },
@@ -48,7 +48,7 @@ async function directSessionHandlerReq<TPayload = unknown>(
     isWebchatConnect: () => false,
   });
   if (!result) {
-    throw new Error(`${String(method)} did not respond`);
+    throw new Error(`${method} did not respond`);
   }
   return result;
 }
@@ -513,23 +513,26 @@ test("sessions.list configuredAgentsOnly keeps configured-agent children and hid
     },
   });
 
-  const configuredOnly = await directSessionHandlerReq<{ sessions: Array<{ key: string }> }>(
-    "sessions.list",
-    { includeGlobal: false, includeUnknown: false, configuredAgentsOnly: true },
-  );
+  const configuredOnly = await directSessionHandlerReq("sessions.list", {
+    includeGlobal: false,
+    includeUnknown: false,
+    configuredAgentsOnly: true,
+  });
   expect(configuredOnly.ok).toBe(true);
-  expect(configuredOnly.payload?.sessions.map((session) => session.key)).toEqual([
+  const configuredPayload = configuredOnly.payload as { sessions: Array<{ key: string }> };
+  expect(configuredPayload.sessions.map((session) => session.key)).toEqual([
     "agent:claude:acp:25f77580-de30-4d80-9bc3-7cbc6374bce7",
     "agent:codex:subagent:app-server-child",
     "agent:main:main",
   ]);
 
-  const broad = await directSessionHandlerReq<{ sessions: Array<{ key: string }> }>(
-    "sessions.list",
-    { includeGlobal: false, includeUnknown: false },
-  );
+  const broad = await directSessionHandlerReq("sessions.list", {
+    includeGlobal: false,
+    includeUnknown: false,
+  });
   expect(broad.ok).toBe(true);
-  expect(broad.payload?.sessions.map((session) => session.key)).toEqual([
+  const broadPayload = broad.payload as { sessions: Array<{ key: string }> };
+  expect(broadPayload.sessions.map((session) => session.key)).toEqual([
     "agent:claude:acp:25f77580-de30-4d80-9bc3-7cbc6374bce7",
     "agent:codex:subagent:app-server-child",
     "agent:main:main",

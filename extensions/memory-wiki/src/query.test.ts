@@ -24,6 +24,7 @@ const {
     return match?.[1] ?? "main";
   }),
 }));
+const loadCombinedSessionStoreForGatewayMock = loadCombinedSessionEntriesForGatewayMock;
 
 vi.mock("openclaw/plugin-sdk/memory-host-search", () => ({
   getActiveMemorySearchManager: getActiveMemorySearchManagerMock,

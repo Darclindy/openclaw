@@ -37,15 +37,15 @@ export function createTelegramMessageDispatchReplayGuard(params: {
   return createClaimableDedupe({
     ttlMs: TELEGRAM_MESSAGE_DISPATCH_TTL_MS,
     memoryMaxSize: TELEGRAM_MESSAGE_DISPATCH_MEMORY_MAX,
-    fileMaxEntries: TELEGRAM_MESSAGE_DISPATCH_FILE_MAX,
-    resolveFilePath: (namespace) =>
+    maxEntries: TELEGRAM_MESSAGE_DISPATCH_FILE_MAX,
+    resolveScopeKey: (namespace: string) =>
       path.join(
         path.dirname(params.storePath),
         `${path.basename(params.storePath)}.telegram-message-dispatch-${sanitizeFileSegment(
           namespace,
         )}.json`,
       ),
-    onDiskError: params.onDiskError,
+    onStorageError: params.onDiskError,
   });
 }
 

@@ -180,7 +180,7 @@ export async function installCompletion(
     profilePath = resolveCompletionProfilePath("powershell");
     sourceLine = formatCompletionSourceLine("powershell", binName);
   } else {
-    console.error(`Automated installation not supported for ${shell} yet.`);
+    console.error("Automated installation not supported for this shell yet.");
     return;
   }
 

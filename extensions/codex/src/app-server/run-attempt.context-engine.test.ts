@@ -5,6 +5,7 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { EmbeddedRunAttemptParams } from "openclaw/plugin-sdk/agent-harness";
 import {
   embeddedAgentLog,
+  openTranscriptSessionManagerForSession,
   type HarnessContextEngine as ContextEngine,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { replaceSqliteSessionTranscriptEvents } from "openclaw/plugin-sdk/session-store-runtime";
@@ -956,11 +957,15 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
   });
 
   it("bounds a hung owning context-engine compaction during Codex overflow recovery", async () => {
+    const sessionId = "session-1";
     const sessionFile = path.join(tempDir, "session.jsonl");
     const workspaceDir = path.join(tempDir, "workspace");
-    SessionManager.open(sessionFile).appendMessage(
-      assistantMessage("pre-compaction context", Date.now()) as never,
-    );
+    openTranscriptSessionManagerForSession({
+      agentId: "main",
+      path: sessionFile,
+      sessionId,
+      cwd: workspaceDir,
+    }).appendMessage(assistantMessage("pre-compaction context", Date.now()) as never);
     await writeCodexAppServerBinding(sessionFile, {
       threadId: "thread-old",
       cwd: workspaceDir,

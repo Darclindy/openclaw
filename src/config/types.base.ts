@@ -186,6 +186,7 @@ export type SessionThreadBindingsConfig = {
 };
 
 export type SessionConfig = {
+  store?: string;
   scope?: SessionScope;
   /** DM session scoping (default: "main"). */
   dmScope?: DmScope;

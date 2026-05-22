@@ -27,6 +27,7 @@ type ReplayMetadataAttempt = Pick<
   | "didSendViaMessagingTool"
   | "messagingToolSentTexts"
   | "messagingToolSentMediaUrls"
+  | "acceptedSessionSpawns"
   | "successfulCronAdds"
 > &
   Partial<Pick<EmbeddedRunAttemptResult, "messagingToolSentTargets">>;
@@ -42,6 +43,7 @@ type IncompleteTurnAttempt = Pick<
   | "messagingToolSentTexts"
   | "messagingToolSentMediaUrls"
   | "messagingToolSentTargets"
+  | "acceptedSessionSpawns"
   | "lastToolError"
   | "lastAssistant"
   | "replayMetadata"

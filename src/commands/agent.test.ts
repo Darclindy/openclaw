@@ -264,10 +264,17 @@ async function withTempHome<T>(fn: (home: string) => Promise<T>): Promise<T> {
 
 function mockConfig(
   home: string,
-  agentOverrides?: Partial<NonNullable<NonNullable<OpenClawConfig["agents"]>["defaults"]>>,
+  agentOverridesOrStore?:
+    | string
+    | Partial<NonNullable<NonNullable<OpenClawConfig["agents"]>["defaults"]>>,
   telegramOverrides?: Partial<NonNullable<NonNullable<OpenClawConfig["channels"]>["telegram"]>>,
+  _legacyUnused?: unknown,
   agentsList?: Array<{ id: string; default?: boolean }>,
 ) {
+  const agentOverrides =
+    typeof agentOverridesOrStore === "string" ? undefined : agentOverridesOrStore;
+  const resolvedAgentsList =
+    agentsList ?? (Array.isArray(_legacyUnused) ? _legacyUnused : undefined);
   const cfg = {
     agents: {
       defaults: {
@@ -276,7 +283,7 @@ function mockConfig(
         workspace: path.join(home, "openclaw"),
         ...agentOverrides,
       },
-      list: agentsList,
+      list: resolvedAgentsList,
     },
     session: { mainKey: "main" },
     channels: {

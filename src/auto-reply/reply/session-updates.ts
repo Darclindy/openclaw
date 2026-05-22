@@ -336,6 +336,7 @@ export async function ensureSkillSnapshot(params: {
 export async function incrementCompactionCount(params: {
   sessionEntry?: SessionEntry;
   sessionStore?: Record<string, SessionEntry>;
+  storePath?: string;
   sessionKey?: string;
   cfg?: OpenClawConfig;
   now?: number;

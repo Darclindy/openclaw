@@ -8,6 +8,7 @@ import type {
 } from "../../state/openclaw-state-db.js";
 import { normalizeProviderId } from "../provider-id.js";
 import { AUTH_STORE_VERSION, log } from "./constants.js";
+import { loadLegacyOAuthSidecarMaterial } from "./legacy-oauth-sidecar.js";
 import {
   hasOAuthIdentity,
   hasUsableOAuthCredential,
@@ -53,7 +54,9 @@ export type PersistedAuthProfileStoreEntry = {
 };
 
 type AuthProfileStoreEntryLoadOptions = OpenClawStateDatabaseOptions & {
+  allowKeychainPrompt?: boolean;
   legacyFallback?: boolean;
+  resolveLegacyOAuthSidecars?: boolean;
 };
 
 type CredentialRejectReason = "non_object" | "invalid_type" | "missing_provider";
@@ -160,7 +163,10 @@ function normalizeCommonCredentialFields(entry: Record<string, unknown>): Record
   return normalized;
 }
 
-function normalizeRawCredentialEntry(raw: Record<string, unknown>): Partial<AuthProfileCredential> {
+function normalizeRawCredentialEntry(
+  raw: Record<string, unknown>,
+  options?: Pick<AuthProfileStoreEntryLoadOptions, "resolveLegacyOAuthSidecars">,
+): Partial<AuthProfileCredential> {
   const entry = { ...raw } as Record<string, unknown>;
   if (!("type" in entry) && typeof entry["mode"] === "string") {
     entry["type"] = entry["mode"];
@@ -232,9 +238,36 @@ function normalizeRawCredentialEntry(raw: Record<string, unknown>): Partial<Auth
     if (expires !== undefined) {
       normalized.expires = expires;
     }
+    if (options?.resolveLegacyOAuthSidecars === false && isLegacyOAuthRef(entry.oauthRef)) {
+      normalized.oauthRef = entry.oauthRef;
+    }
     return normalized;
   }
   return entry as Partial<AuthProfileCredential>;
+}
+
+function resolveLegacyOAuthSidecarCredential(params: {
+  credential: AuthProfileCredential;
+  profileId: string;
+  raw: unknown;
+  options?: AuthProfileStoreEntryLoadOptions;
+}): AuthProfileCredential {
+  if (
+    params.options?.resolveLegacyOAuthSidecars !== true ||
+    params.credential.type !== "oauth" ||
+    !isRecord(params.raw) ||
+    !isLegacyOAuthRef(params.raw.oauthRef)
+  ) {
+    return params.credential;
+  }
+  const material = loadLegacyOAuthSidecarMaterial({
+    ref: params.raw.oauthRef,
+    profileId: params.profileId,
+    provider: params.credential.provider,
+    env: params.options.env,
+    allowKeychainPrompt: params.options.allowKeychainPrompt,
+  });
+  return material ? { ...params.credential, ...material } : params.credential;
 }
 
 function readNonEmptyString(value: unknown): string | undefined {
@@ -324,11 +357,13 @@ function coerceLegacyFlatCredential(
 function parseCredentialEntry(
   raw: unknown,
   fallbackProvider?: string,
+  profileId = "",
+  options?: AuthProfileStoreEntryLoadOptions,
 ): { ok: true; credential: AuthProfileCredential } | { ok: false; reason: CredentialRejectReason } {
   if (!raw || typeof raw !== "object") {
     return { ok: false, reason: "non_object" };
   }
-  const typed = normalizeRawCredentialEntry(raw as Record<string, unknown>);
+  const typed = normalizeRawCredentialEntry(raw as Record<string, unknown>, options);
   if (!AUTH_PROFILE_TYPES.has(typed.type as AuthProfileCredential["type"])) {
     return { ok: false, reason: "invalid_type" };
   }
@@ -338,10 +373,15 @@ function parseCredentialEntry(
   }
   return {
     ok: true,
-    credential: {
-      ...typed,
-      provider: normalizeProviderId(provider),
-    } as AuthProfileCredential,
+    credential: resolveLegacyOAuthSidecarCredential({
+      credential: {
+        ...typed,
+        provider: normalizeProviderId(provider),
+      } as AuthProfileCredential,
+      profileId,
+      raw,
+      options,
+    }),
   };
 }
 
@@ -364,7 +404,10 @@ function warnRejectedCredentialEntries(source: string, rejected: RejectedCredent
   });
 }
 
-export function coercePersistedAuthProfileStore(raw: unknown): AuthProfileStore | null {
+export function coercePersistedAuthProfileStore(
+  raw: unknown,
+  options?: AuthProfileStoreEntryLoadOptions,
+): AuthProfileStore | null {
   if (!isRecord(raw)) {
     return null;
   }
@@ -376,7 +419,7 @@ export function coercePersistedAuthProfileStore(raw: unknown): AuthProfileStore 
   const normalized: Record<string, AuthProfileCredential> = {};
   const rejected: RejectedCredentialEntry[] = [];
   for (const [key, value] of Object.entries(profiles)) {
-    const parsed = parseCredentialEntry(value);
+    const parsed = parseCredentialEntry(value, undefined, key, options);
     if (!parsed.ok) {
       rejected.push({ key, reason: parsed.reason });
       continue;
@@ -835,7 +878,7 @@ export function loadPersistedAuthProfileStoreEntryFromDatabase(
     return null;
   }
   const raw = result.value;
-  const store = coercePersistedAuthProfileStore(raw);
+  const store = coercePersistedAuthProfileStore(raw, options);
   if (!store) {
     return null;
   }
@@ -866,7 +909,7 @@ export function loadPersistedAuthProfileStoreEntry(
       : loadLegacyAuthProfileStoreEntry(agentDir, options);
   }
   const raw = result.value;
-  const store = coercePersistedAuthProfileStore(raw);
+  const store = coercePersistedAuthProfileStore(raw, options);
   if (!store) {
     return options.legacyFallback === false
       ? null
@@ -899,7 +942,7 @@ export function loadPersistedAuthProfileStoreEntryReadOnly(
       : loadLegacyAuthProfileStoreEntry(agentDir, options);
   }
   const raw = result.value;
-  const store = coercePersistedAuthProfileStore(raw);
+  const store = coercePersistedAuthProfileStore(raw, options);
   if (!store) {
     return options.legacyFallback === false
       ? null
@@ -920,14 +963,15 @@ export function loadPersistedAuthProfileStoreEntryReadOnly(
 
 export function loadLegacyAuthProfileStoreEntry(
   agentDir?: string,
-  options: OpenClawStateDatabaseOptions = {},
+  options: AuthProfileStoreEntryLoadOptions = {},
 ): PersistedAuthProfileStoreEntry | null {
   const authPath = path.join(
     resolveAuthProfileStoreAgentDir(agentDir, options.env),
     LEGACY_AUTH_PROFILE_FILENAME,
   );
   const raw = loadJsonFile(authPath);
-  const store = coercePersistedAuthProfileStore(raw) ?? coerceLegacyFlatAuthProfileStore(raw);
+  const store =
+    coercePersistedAuthProfileStore(raw, options) ?? coerceLegacyFlatAuthProfileStore(raw);
   if (!store) {
     return null;
   }

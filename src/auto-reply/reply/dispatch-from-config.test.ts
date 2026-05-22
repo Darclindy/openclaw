@@ -143,6 +143,7 @@ const sessionStoreMocks = vi.hoisted(() => ({
     }
     return entries;
   }),
+  loadSessionStore: vi.fn(() => Object.fromEntries(sessionStoreMocks.entries.entries())),
   mergeSessionEntry: vi.fn(
     (
       existing: Record<string, unknown> | undefined,
@@ -182,7 +183,7 @@ const sessionStoreMocks = vi.hoisted(() => ({
             parentConversationId?: string;
             primaryConversationId?: string;
             sessionScope?: string;
-        }
+          }
         | undefined,
   ),
 }));

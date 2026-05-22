@@ -8,7 +8,26 @@
   },
   "rules": {
     "curly": "error",
-    "eslint/no-underscore-dangle": "error",
+    "eslint/no-underscore-dangle": [
+      "error",
+      {
+        "allow": [
+          "__openclaw",
+          "__test",
+          "__testing",
+          "__resetUsageFormatCachesForTest",
+          "_createdAt",
+          "_default",
+          "_getActiveHandles",
+          "_getActiveRequests",
+          "_registerProvider",
+          "_resetActiveManagedProxyStateForTests",
+          "_resetIMessageShortIdMemoryForTest",
+          "_resetIMessageShortIdState",
+          "_setGitHubCopilotDeviceFlowFetchGuardForTesting"
+        ]
+      }
+    ],
     "eslint-plugin-unicorn/prefer-array-find": "error",
     "eslint/no-array-constructor": "error",
     "eslint/no-await-in-loop": "off",

@@ -99,6 +99,12 @@ import type {
   SessionsListResult,
 } from "./session-utils.types.js";
 
+export function resolveGatewaySessionStoreTarget(_params: { cfg: OpenClawConfig; key?: string }): {
+  storePath: string;
+} {
+  return { storePath: "(sqlite)" };
+}
+
 export {
   attachOpenClawTranscriptMeta,
   capArrayByJsonBytes,
@@ -274,7 +280,7 @@ function isSessionCompactionCheckpoint(
     typeof candidate.createdAt === "number" &&
     Number.isFinite(candidate.createdAt) &&
     typeof candidate.reason === "string" &&
-    VALID_COMPACTION_CHECKPOINT_REASONS.has(candidate.reason as SessionCompactionCheckpointReason)
+    VALID_COMPACTION_CHECKPOINT_REASONS.has(candidate.reason)
   );
 }
 

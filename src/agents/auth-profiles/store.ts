@@ -37,6 +37,7 @@ type LoadAuthProfileStoreOptions = {
   env?: NodeJS.ProcessEnv;
   externalCli?: ExternalCliAuthDiscovery;
   readOnly?: boolean;
+  resolveLegacyOAuthSidecars?: boolean;
   syncExternalCli?: boolean;
   externalCliProviderIds?: Iterable<string>;
   externalCliProfileIds?: Iterable<string>;
@@ -64,6 +65,29 @@ const loadedAuthStoreCache = new Map<
     store: AuthProfileStore;
   }
 >();
+
+function resolveLoadedAuthStoreCacheKey(
+  agentDir?: string,
+  options?: Pick<
+    LoadAuthProfileStoreOptions,
+    "allowKeychainPrompt" | "env" | "resolveLegacyOAuthSidecars"
+  >,
+): string {
+  const storeKey = resolveAuthProfileStoreKey(agentDir, options?.env);
+  const sidecarMode =
+    options?.resolveLegacyOAuthSidecars === false ? "sidecar:false" : "sidecar:true";
+  const keychainMode = options?.allowKeychainPrompt === false ? "keychain:false" : "keychain:true";
+  return `${storeKey}\0${sidecarMode}\0${keychainMode}`;
+}
+
+function resolvePersistedAuthProfileLoadOptions(
+  options?: LoadAuthProfileStoreOptions,
+): LoadAuthProfileStoreOptions {
+  return {
+    ...options,
+    resolveLegacyOAuthSidecars: options?.resolveLegacyOAuthSidecars ?? true,
+  };
+}
 
 function isInheritedMainOAuthCredential(params: {
   agentDir?: string;
@@ -396,25 +420,34 @@ function loadAuthProfileStoreForAgent(
   options?: LoadAuthProfileStoreOptions,
 ): AuthProfileStore {
   const readOnly = options?.readOnly === true;
-  const storeKey = resolveAuthProfileStoreKey(agentDir, options?.env);
+  const persistedOptions = resolvePersistedAuthProfileLoadOptions(options);
+  const storeKey = resolveLoadedAuthStoreCacheKey(agentDir, persistedOptions);
   let persisted = readOnly
     ? loadPersistedAuthProfileStoreEntryReadOnly(agentDir, {
-        env: options?.env,
+        allowKeychainPrompt: persistedOptions.allowKeychainPrompt,
+        env: persistedOptions.env,
         legacyFallback: false,
+        resolveLegacyOAuthSidecars: persistedOptions.resolveLegacyOAuthSidecars,
       })
     : loadPersistedAuthProfileStoreEntry(agentDir, {
-        env: options?.env,
+        allowKeychainPrompt: persistedOptions.allowKeychainPrompt,
+        env: persistedOptions.env,
         legacyFallback: false,
+        resolveLegacyOAuthSidecars: persistedOptions.resolveLegacyOAuthSidecars,
       });
   let authMtimeMs = persisted?.updatedAt ?? null;
   if (!persisted) {
-    const legacy = loadLegacyAuthProfileStoreEntry(agentDir, { env: options?.env });
+    const legacy = loadLegacyAuthProfileStoreEntry(agentDir, {
+      allowKeychainPrompt: persistedOptions.allowKeychainPrompt,
+      env: persistedOptions.env,
+      resolveLegacyOAuthSidecars: persistedOptions.resolveLegacyOAuthSidecars,
+    });
     if (legacy) {
       persisted = legacy;
       authMtimeMs = legacy.updatedAt;
       if (!readOnly) {
         saveAuthProfileStore(legacy.store, agentDir, {
-          env: options?.env,
+          env: persistedOptions.env,
           syncExternalCli: false,
         });
       }
@@ -483,15 +516,18 @@ export function loadAuthProfileStoreForSecretsRuntime(agentDir?: string): AuthPr
 
 export function loadAuthProfileStoreWithoutExternalProfiles(
   agentDir?: string,
-  options?: Pick<LoadAuthProfileStoreOptions, "env">,
+  options?: Pick<LoadAuthProfileStoreOptions, "env" | "resolveLegacyOAuthSidecars">,
 ): AuthProfileStore {
   const loadOptions: LoadAuthProfileStoreOptions = {
     readOnly: true,
     allowKeychainPrompt: false,
     ...(options?.env ? { env: options.env } : {}),
+    ...(options?.resolveLegacyOAuthSidecars !== undefined
+      ? { resolveLegacyOAuthSidecars: options.resolveLegacyOAuthSidecars }
+      : {}),
   };
   const store = loadAuthProfileStoreForAgent(agentDir, loadOptions);
-  const storeKey = resolveAuthProfileStoreKey(agentDir, options?.env);
+  const storeKey = resolveLoadedAuthStoreCacheKey(agentDir, options);
   const mainStoreKey = resolveAuthProfileStoreKey(undefined, options?.env);
   if (!agentDir || storeKey === mainStoreKey) {
     return store;

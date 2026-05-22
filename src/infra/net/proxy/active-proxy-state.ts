@@ -121,6 +121,13 @@ export function getActiveManagedProxyTlsOptions(): ManagedProxyTlsOptions | unde
   return activeProxyTlsOptions;
 }
 
+export function _resetActiveManagedProxyStateForTests(): void {
+  activeProxyUrl = undefined;
+  activeProxyLoopbackMode = undefined;
+  activeProxyTlsOptions = undefined;
+  activeProxyRegistrationCount = 0;
+}
+
 export function resetActiveManagedProxyStateForTests(): void {
   activeProxyUrl = undefined;
   activeProxyLoopbackMode = undefined;

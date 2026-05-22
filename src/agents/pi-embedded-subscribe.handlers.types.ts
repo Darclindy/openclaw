@@ -211,6 +211,7 @@ type ToolHandlerState = Pick<
   | "toolMetaById"
   | "toolMetas"
   | "toolSummaryById"
+  | "acceptedSessionSpawns"
   | "execLiveUpdateStateById"
   | "itemActiveIds"
   | "itemStartedCount"

@@ -91,10 +91,7 @@ function normalizeRestoreAssetKind(kind: string): BackupAssetKind {
   }
 }
 
-function resolveBackupRestoreTarget(params: {
-  kind: string;
-  sourcePath: string;
-}): string {
+function resolveBackupRestoreTarget(params: { kind: string; sourcePath: string }): string {
   const kind = normalizeRestoreAssetKind(params.kind);
   switch (kind) {
     case "state":
@@ -107,6 +104,7 @@ function resolveBackupRestoreTarget(params: {
       return path.resolve(params.sourcePath);
     }
   }
+  throw new Error("Backup restore does not support the requested asset kind.");
 }
 
 async function resolveBackupRestoreAssets(

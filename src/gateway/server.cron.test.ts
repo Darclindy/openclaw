@@ -128,6 +128,7 @@ async function cleanupCronTestRun(params: {
   await params.server?.close();
   params.cronState?.cron.stop();
   testState.cronStoreKey = undefined;
+  testState.cronStorePath = undefined;
   if (params.clearSessionConfig) {
     testState.sessionConfig = undefined;
   }
@@ -149,6 +150,7 @@ async function setupCronTestRun(params: {
   process.env.OPENCLAW_SKIP_CRON = "0";
   const { dir, storeKey } = await createCronCasePaths(params.tempPrefix);
   testState.cronStoreKey = storeKey;
+  testState.cronStorePath = path.join(dir, "cron", "jobs.json");
   testState.sessionConfig = params.sessionConfig;
   testState.cronEnabled = params.cronEnabled;
   await saveCronStore(testState.cronStoreKey, {

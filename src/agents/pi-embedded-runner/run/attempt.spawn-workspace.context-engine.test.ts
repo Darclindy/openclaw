@@ -253,7 +253,11 @@ describe("runEmbeddedAttempt context engine sessionKey forwarding", () => {
       },
       createSession: () => {
         const session = createDefaultEmbeddedSession();
-        session.agent.streamFn = async (_model, _context, options) => {
+        session.agent.streamFn = async (
+          _model: unknown,
+          _context: unknown,
+          options: { onPayload?: (payload: Record<string, unknown>) => void },
+        ) => {
           observedOptions.push(options as Record<string, unknown>);
           const payload: Record<string, unknown> = {
             tools: [
@@ -276,7 +280,11 @@ describe("runEmbeddedAttempt context engine sessionKey forwarding", () => {
           };
         };
         session.prompt = async () => {
-          await session.agent.streamFn?.(
+          const streamFn = session.agent.streamFn;
+          if (!streamFn) {
+            throw new Error("Expected stream function");
+          }
+          await (streamFn as unknown as (...args: unknown[]) => Promise<unknown>)(
             {} as never,
             {
               messages: [],

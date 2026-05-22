@@ -7,6 +7,7 @@ import { asOpenClawConfig } from "./tools.test-helpers.js";
 type TestSessionEntry = {
   sessionId: string;
   updatedAt: number;
+  sessionFile?: string;
 };
 
 const crossAgentStore: Record<string, TestSessionEntry> = {
@@ -221,7 +222,7 @@ describe("filterMemorySearchHitsBySessionVisibility", () => {
   });
 
   it("keeps same-agent QMD-normalized archived reset .md hits when the store has a matching entry", async () => {
-    combinedSessionStore = {
+    combinedSessionEntries = {
       "agent:main:abc-uuid": {
         sessionId: "abc-uuid",
         updatedAt: 1,
@@ -254,7 +255,7 @@ describe("filterMemorySearchHitsBySessionVisibility", () => {
 
   it("keeps QMD .md hits whose live session id looks like an archive name", async () => {
     const sessionId = "foo.jsonl.deleted.2026-02-16T22-27-33.000Z";
-    combinedSessionStore = {
+    combinedSessionEntries = {
       "agent:main:archive-looking": {
         sessionId,
         updatedAt: 1,
@@ -286,7 +287,7 @@ describe("filterMemorySearchHitsBySessionVisibility", () => {
   });
 
   it("does not authorize QMD archived .md hits through lossy slug fallback", async () => {
-    combinedSessionStore = {
+    combinedSessionEntries = {
       "agent:main:foo_bar": {
         sessionId: "foo_bar",
         updatedAt: 1,
@@ -318,7 +319,7 @@ describe("filterMemorySearchHitsBySessionVisibility", () => {
   });
 
   it("keeps same-agent QMD archived deleted .md hits when no store entry remains", async () => {
-    combinedSessionStore = {};
+    combinedSessionEntries = {};
     const hit: MemorySearchResult = {
       path: "qmd/sessions-main/abc-uuid-jsonl-deleted-2026-02-16t22-26-33-000z.md",
       source: "sessions",

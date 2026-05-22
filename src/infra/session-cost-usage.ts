@@ -66,10 +66,7 @@ const emptyTotals = (): CostUsageTotals => ({
 });
 
 type UsageCostRefreshResult = "refreshed" | "busy";
-type SessionUsageTimePointBase = Omit<
-  SessionUsageTimePoint,
-  "cumulativeCost" | "cumulativeTokens"
->;
+type SessionUsageTimePointBase = Omit<SessionUsageTimePoint, "cumulativeCost" | "cumulativeTokens">;
 
 const extractCostBreakdown = (usageRaw?: UsageLike | null): CostBreakdown | undefined => {
   if (!usageRaw || typeof usageRaw !== "object") {
@@ -924,11 +921,10 @@ export async function loadSessionUsageTimeSeries(params: {
   const cumulativePoints: SessionUsageTimePoint[] = sortedPoints.map((point) => {
     cumulativeTokens += point.totalTokens;
     cumulativeCost += point.cost;
-    return {
-      ...point,
+    return Object.assign({}, point, {
       cumulativeTokens,
       cumulativeCost,
-    };
+    });
   });
 
   // Optionally downsample if too many points

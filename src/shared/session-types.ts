@@ -30,7 +30,8 @@ export type SessionsListResultBase<TDefaults, TRow> = {
   ts: number;
   /** Deprecated compatibility alias for clients that still read the JSON store path field. */
   path?: string;
-  databasePath: string;
+  /** SQLite database path; optional in older/test fixtures. */
+  databasePath?: string;
   count: number;
   totalCount?: number;
   limitApplied?: number;

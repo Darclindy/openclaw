@@ -118,7 +118,7 @@ describe("abort detection", () => {
     if (params?.sessionIdsByKey) {
       await writeSessionRows(params.sessionIdsByKey, params.nowMs);
     }
-    return { root, cfg };
+    return { root, storePath: path.join(root, "sessions.json"), cfg };
   }
 
   async function runStopCommand(params: {

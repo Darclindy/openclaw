@@ -203,6 +203,7 @@ export {
   type SessionEntry,
   type TranscriptEntry,
 } from "../agents/transcript/session-transcript-contract.js";
+export { openTranscriptSessionManagerForSession } from "../agents/transcript/session-manager.js";
 export {
   hasBeforeToolCallPolicy,
   isToolWrappedWithBeforeToolCallHook,

@@ -364,6 +364,21 @@ export type SessionEntry = {
   subject?: string;
   groupChannel?: string;
   space?: string;
+  origin?: {
+    chatType?: SessionChatType;
+    provider?: string;
+    label?: string;
+    surface?: string;
+    from?: string;
+    to?: string;
+    nativeChannelId?: string;
+    nativeDirectUserId?: string;
+    accountId?: string;
+    threadId?: string | number;
+  };
+  sessionFile?: string;
+  claudeCliSessionId?: string;
+  cliSessionIds?: Record<string, string> | string[];
   route?: ChannelRouteRef;
   deliveryContext?: DeliveryContext;
   lastChannel?: SessionChannelId;

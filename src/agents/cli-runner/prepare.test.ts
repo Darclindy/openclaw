@@ -146,6 +146,11 @@ function createTranscriptStateFixture() {
   return { dir };
 }
 
+function createSessionFile() {
+  const { dir } = createTranscriptStateFixture();
+  return { dir, sessionFile: path.join(dir, "session.jsonl") };
+}
+
 function appendTranscriptEntry(entry: {
   id: string;
   parentId: string | null;

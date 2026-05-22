@@ -37,7 +37,7 @@ type TrajectoryRuntimeRecorder = {
   runtimeScope: string;
   recordEvent: (type: string, data?: Record<string, unknown>) => void;
   flush: () => Promise<void>;
-  describeFlushState: () => string | undefined;
+  describeFlushState?: () => string | undefined;
 };
 
 const TRAJECTORY_RUNTIME_TRUNCATION_SENTINEL_RESERVE_BYTES = 2048;
