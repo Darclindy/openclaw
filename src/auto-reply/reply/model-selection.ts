@@ -4,6 +4,7 @@ import { resolveContextTokensForModel } from "../../agents/context.js";
 import { DEFAULT_CONTEXT_TOKENS } from "../../agents/defaults.js";
 import { resolveAgentHarnessPolicy } from "../../agents/harness/selection.js";
 import type { ModelCatalogEntry } from "../../agents/model-catalog.js";
+import type { ModelManifestNormalizationContext } from "../../agents/model-selection-normalize.js";
 import { parseConfiguredModelVisibilityEntries } from "../../agents/model-selection-shared.js";
 import {
   buildConfiguredModelCatalog,
@@ -14,7 +15,6 @@ import {
   resolveReasoningDefault,
   resolveThinkingDefault,
 } from "../../agents/model-selection.js";
-import type { ModelManifestNormalizationContext } from "../../agents/model-selection-normalize.js";
 import {
   createModelVisibilityPolicy,
   type ModelVisibilityPolicy,
@@ -88,29 +88,31 @@ function loadSessionStoreRuntime() {
   return sessionStoreRuntimeLoader.load();
 }
 
-export async function createModelSelectionState(params: {
-  cfg: OpenClawConfig;
-  agentId?: string;
-  agentCfg: NonNullable<NonNullable<OpenClawConfig["agents"]>["defaults"]> | undefined;
-  sessionEntry?: SessionEntry;
-  sessionStore?: Record<string, SessionEntry>;
-  sessionKey?: string;
-  parentSessionKey?: string;
-  storePath?: string;
-  defaultProvider: string;
-  defaultModel: string;
-  primaryProvider?: string;
-  primaryModel?: string;
-  provider: string;
-  model: string;
-  hasModelDirective: boolean;
-  hasOneTurnModelOverride?: boolean;
-  skipStoredModelOverride?: boolean;
-  /** True when heartbeat.model was explicitly resolved for this run.
-   *  In that case, skip session-stored overrides so the heartbeat selection wins. */
-  hasResolvedHeartbeatModelOverride?: boolean;
-  isHeartbeat?: boolean;
-} & ModelManifestNormalizationContext): Promise<ModelSelectionState> {
+export async function createModelSelectionState(
+  params: {
+    cfg: OpenClawConfig;
+    agentId?: string;
+    agentCfg: NonNullable<NonNullable<OpenClawConfig["agents"]>["defaults"]> | undefined;
+    sessionEntry?: SessionEntry;
+    sessionStore?: Record<string, SessionEntry>;
+    sessionKey?: string;
+    parentSessionKey?: string;
+    storePath?: string;
+    defaultProvider: string;
+    defaultModel: string;
+    primaryProvider?: string;
+    primaryModel?: string;
+    provider: string;
+    model: string;
+    hasModelDirective: boolean;
+    hasOneTurnModelOverride?: boolean;
+    skipStoredModelOverride?: boolean;
+    /** True when heartbeat.model was explicitly resolved for this run.
+     *  In that case, skip session-stored overrides so the heartbeat selection wins. */
+    hasResolvedHeartbeatModelOverride?: boolean;
+    isHeartbeat?: boolean;
+  } & ModelManifestNormalizationContext,
+): Promise<ModelSelectionState> {
   const timingEnabled = shouldLogModelSelectionTiming();
   const startMs = timingEnabled ? Date.now() : 0;
   const logStage = (stage: string, extra?: string) => {
@@ -189,7 +191,12 @@ export async function createModelSelectionState(params: {
   });
 
   if (needsModelCatalog) {
-    modelCatalog = await (await loadModelCatalogRuntime()).loadModelCatalog({ config: cfg });
+    modelCatalog = await (
+      await loadModelCatalogRuntime()
+    ).loadModelCatalog({
+      config: cfg,
+      metadataSnapshot: params.pluginMetadataSnapshot,
+    });
     logStage("catalog-loaded", `entries=${modelCatalog.length}`);
     visibilityPolicy = createModelVisibilityPolicy({
       cfg,
@@ -374,7 +381,12 @@ export async function createModelSelectionState(params: {
     const shouldHydrateRuntimeCatalog =
       !modelCatalog && (!selectedCatalogEntry || selectedCatalogEntry.reasoning === undefined);
     if (shouldHydrateRuntimeCatalog) {
-      modelCatalog = await (await loadModelCatalogRuntime()).loadModelCatalog({ config: cfg });
+      modelCatalog = await (
+        await loadModelCatalogRuntime()
+      ).loadModelCatalog({
+        config: cfg,
+        metadataSnapshot: params.pluginMetadataSnapshot,
+      });
       logStage("catalog-loaded-for-thinking", `entries=${modelCatalog.length}`);
       const runtimeSelectedEntry = modelCatalog.find(
         (entry) => entry.provider === provider && entry.id === model,
@@ -416,7 +428,12 @@ export async function createModelSelectionState(params: {
   const resolveDefaultReasoningLevel = async (): Promise<"on" | "off"> => {
     let catalogForReasoning = modelCatalog ?? allowedModelCatalog;
     if (!catalogForReasoning || catalogForReasoning.length === 0) {
-      modelCatalog = await (await loadModelCatalogRuntime()).loadModelCatalog({ config: cfg });
+      modelCatalog = await (
+        await loadModelCatalogRuntime()
+      ).loadModelCatalog({
+        config: cfg,
+        metadataSnapshot: params.pluginMetadataSnapshot,
+      });
       logStage("catalog-loaded-for-reasoning", `entries=${modelCatalog.length}`);
       catalogForReasoning = modelCatalog;
     }
