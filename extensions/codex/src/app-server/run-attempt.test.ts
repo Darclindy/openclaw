@@ -10,9 +10,17 @@ import {
   queueAgentHarnessMessage,
   replaceSqliteSessionTranscriptEvents,
   resetAgentEventsForTest,
+  wrapToolWithBeforeToolCallHook,
   type AgentEventPayload,
   type EmbeddedRunAttemptParams,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
+import {
+  emitDiagnosticEvent,
+  emitTrustedDiagnosticEvent,
+  onInternalDiagnosticEvent,
+  waitForDiagnosticEventsDrained,
+  type DiagnosticEventPayload,
+} from "openclaw/plugin-sdk/diagnostic-runtime";
 import {
   initializeGlobalHookRunner,
   resetGlobalHookRunner,
@@ -85,6 +93,44 @@ const activeAppServerAttemptsForTest = new Set<{
 type RunCodexAppServerAttemptOptions = NonNullable<
   Parameters<typeof runCodexAppServerAttemptImpl>[1]
 >;
+
+const testing = __testing;
+
+function flushDiagnosticEvents() {
+  return waitForDiagnosticEventsDrained();
+}
+
+function emitAsyncDiagnosticBacklog(count: number): void {
+  for (let index = 0; index < count; index += 1) {
+    emitDiagnosticEvent({
+      type: "model.call.started",
+      runId: `backlog-run-${index}`,
+      callId: `backlog-call-${index}`,
+      provider: "openai",
+      model: "gpt-5.4",
+    });
+  }
+}
+
+function activeDiagnosticToolKeys(events: DiagnosticEventPayload[]): Set<string> {
+  const active = new Set<string>();
+  for (const event of events) {
+    if (event.type === "tool.execution.started") {
+      active.add(
+        `${event.runId ?? event.sessionId ?? event.sessionKey ?? "unknown"}:${event.toolCallId ?? event.toolName}`,
+      );
+    } else if (
+      event.type === "tool.execution.completed" ||
+      event.type === "tool.execution.error" ||
+      event.type === "tool.execution.blocked"
+    ) {
+      active.delete(
+        `${event.runId ?? event.sessionId ?? event.sessionKey ?? "unknown"}:${event.toolCallId ?? event.toolName}`,
+      );
+    }
+  }
+  return active;
+}
 
 function setCodexAppServerClientFactoryForTest(factory: CodexAppServerClientFactory): void {
   codexAppServerClientFactoryForTest = factory;
@@ -494,9 +540,14 @@ function createNamedDynamicTool(
   };
 }
 
-function createRuntimeDynamicTool(name: string) {
+type RuntimeDynamicToolForTest = Parameters<
+  typeof createCodexDynamicToolBridge
+>[0]["tools"][number];
+
+function createRuntimeDynamicTool(name: string): RuntimeDynamicToolForTest {
   return {
     name,
+    label: name,
     description: `${name} test tool`,
     parameters: {
       type: "object",
@@ -507,7 +558,7 @@ function createRuntimeDynamicTool(name: string) {
       content: [{ type: "text" as const, text: `${name} done` }],
       details: {},
     })),
-  } as never;
+  };
 }
 
 function buildEmptyCodexToolTelemetry(): CodexAppServerToolTelemetry {
@@ -1831,7 +1882,9 @@ describe("runCodexAppServerAttempt", () => {
     const onRunAgentEvent = vi.fn();
     const onExecutionPhase = vi.fn();
     const globalAgentEvents: AgentEventPayload[] = [];
+    const diagnosticEvents: DiagnosticEventPayload[] = [];
     onAgentEvent((event) => globalAgentEvents.push(event));
+    onInternalDiagnosticEvent((event) => diagnosticEvents.push(event));
     const params = createParams("session", path.join(tempDir, "workspace"));
     params.onAgentEvent = onRunAgentEvent;
     params.onExecutionPhase = onExecutionPhase;

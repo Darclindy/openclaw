@@ -904,9 +904,7 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
   it("compacts over-budget rendered context-engine prompts before Codex turn/start", async () => {
     const sessionFile = path.join(tempDir, "session.jsonl");
     const workspaceDir = path.join(tempDir, "workspace");
-    SessionManager.open(sessionFile).appendMessage(
-      assistantMessage("pre-compaction context", Date.now()) as never,
-    );
+    seedSessionTranscript(sessionFile, [assistantMessage("pre-compaction context", Date.now())]);
     const hugePayload = {
       rows: Array.from({ length: 10 }, (_, index) => ({
         id: index,

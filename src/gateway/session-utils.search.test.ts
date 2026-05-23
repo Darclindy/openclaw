@@ -228,7 +228,6 @@ describe("listSessionsFromStore search", () => {
     for (const testCase of cases) {
       const result = listSessionsFromStore({
         cfg,
-        storePath: "/tmp/sessions.json",
         store,
         opts: { search: testCase.search },
       });

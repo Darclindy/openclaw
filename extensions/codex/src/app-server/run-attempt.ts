@@ -1081,7 +1081,7 @@ export async function runCodexAppServerAttempt(
         {
           sessionId: activeSessionId,
           sessionKey: contextSessionKey,
-          sessionFile: activeSessionFile,
+          transcriptScope: activeTranscriptScope(),
           tokenBudget: params.contextTokenBudget,
           force: true,
           ...(overflowTokenCount ? { currentTokenCount: overflowTokenCount } : {}),
@@ -1115,7 +1115,7 @@ export async function runCodexAppServerAttempt(
         contextEngine: activeContextEngine,
         sessionId: activeSessionId,
         sessionKey: contextSessionKey,
-        sessionFile: activeSessionFile,
+        transcriptScope: activeTranscriptScope(),
         reason: "compaction",
         runtimeContext: maintenanceRuntimeContext,
         config: params.config,
@@ -1292,7 +1292,7 @@ export async function runCodexAppServerAttempt(
   };
   const rebuildPromptAfterContextEngineCompaction = async () => {
     historyMessages =
-      (await readMirroredSessionHistoryMessages(activeSessionFile)) ?? historyMessages;
+      (await readMirroredSessionHistoryMessages(activeTranscriptScope())) ?? historyMessages;
     resetCodexPromptInputs();
     try {
       await applyActiveContextEngineProjection(undefined);
@@ -1362,7 +1362,6 @@ export async function runCodexAppServerAttempt(
           DEFAULT_CODEX_PROJECTION_RESERVE_TOKENS,
         ...(contextSessionKey ? { sessionKey: contextSessionKey } : {}),
         ...(activeSessionId ? { sessionId: activeSessionId } : {}),
-        ...(activeSessionFile ? { sessionFile: activeSessionFile } : {}),
       }),
     );
     if (precheck.route === "fits") {
