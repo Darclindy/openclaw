@@ -97,6 +97,47 @@ describe("qa suite transport helpers", () => {
     await expect(pending).rejects.toThrow("Tool read not found");
   });
 
+  it("uses sinceIndex against the full mixed message stream", async () => {
+    const state = createQaBusState();
+    state.addInboundMessage({
+      conversation: { id: "qa-operator", kind: "direct" },
+      senderId: "alice",
+      senderName: "Alice",
+      text: "before",
+    });
+    state.addOutboundMessage({
+      to: "dm:qa-operator",
+      text: "old reply",
+      senderId: "openclaw",
+      senderName: "OpenClaw QA",
+    });
+    state.addInboundMessage({
+      conversation: { id: "qa-operator", kind: "direct" },
+      senderId: "alice",
+      senderName: "Alice",
+      text: "after",
+    });
+    const sinceIndex = state.getSnapshot().messages.length;
+    const pending = waitForOutboundMessage(
+      state,
+      (candidate) =>
+        candidate.conversation.id === "qa-operator" && candidate.text.includes("Protocol note"),
+      5_000,
+      { sinceIndex },
+    );
+
+    state.addOutboundMessage({
+      to: "dm:qa-operator",
+      text: "Protocol note: acknowledged.",
+      senderId: "openclaw",
+      senderName: "OpenClaw QA",
+    });
+
+    await expect(pending).resolves.toMatchObject({
+      text: "Protocol note: acknowledged.",
+    });
+  });
+
   it("fails raw scenario waitForCondition calls when a classified failure reply arrives", async () => {
     const state = createQaBusState();
     const waitForCondition = createScenarioWaitForCondition(state);
