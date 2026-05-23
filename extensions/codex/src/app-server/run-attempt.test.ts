@@ -1276,10 +1276,10 @@ describe("runCodexAppServerAttempt", () => {
       params.disableTools = false;
       params.runtimePlan = createCodexRuntimePlanFixture();
       params.config = createCodexSandboxTestConfig();
-      params.timeoutMs = 60_000;
       const { requests, waitForMethod, completeTurn } = createStartedThreadHarness();
 
       const run = runCodexAppServerAttempt(params, {
+        startupTimeoutFloorMs: 120_000,
         pluginConfig: {
           appServer: {
             mode: "yolo",
@@ -1287,7 +1287,7 @@ describe("runCodexAppServerAttempt", () => {
           },
         },
       });
-      await waitForMethod("turn/start", 60_000);
+      await waitForMethod("turn/start", 120_000);
       await completeTurn({ threadId: "thread-1", turnId: "turn-1" });
       await run;
 
