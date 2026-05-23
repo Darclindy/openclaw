@@ -1,9 +1,9 @@
+import "./test-helpers.mocks.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, vi } from "vitest";
 import { WebSocket } from "ws";
-import "./test-helpers.mocks.js";
 import { parseConfigJson5, resetConfigRuntimeState } from "../config/config.js";
 import {
   deleteSessionEntry,

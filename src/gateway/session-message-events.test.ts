@@ -2,37 +2,138 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
-import {
-  loadSqliteSessionTranscriptEvents,
-  replaceSqliteSessionTranscriptEvents,
-} from "../config/sessions/transcript-store.sqlite.js";
-import { appendAssistantMessageToSessionTranscript } from "../config/sessions/transcript.js";
-import { emitSessionLifecycleEvent } from "../sessions/session-lifecycle-events.js";
-import * as transcriptEvents from "../sessions/transcript-events.js";
-import { emitSessionTranscriptUpdate } from "../sessions/transcript-events.js";
-import { closeOpenClawAgentDatabasesForTest } from "../state/openclaw-agent-db.js";
-import { closeOpenClawStateDatabaseForTest } from "../state/openclaw-state-db.js";
-import {
-  connectOk,
-  createGatewaySuiteHarness,
-  installGatewayTestHooks,
-  onceMessage,
-  rpcReq,
-  seedGatewaySessionEntries,
-} from "./test-helpers.server.js";
 
-installGatewayTestHooks({ scope: "suite" });
+type GatewayHelpers = typeof import("./test-helpers.server.js");
+type GatewayHarness = Awaited<ReturnType<GatewayHelpers["createGatewaySuiteHarness"]>>;
+type GatewayWs = Awaited<ReturnType<GatewayHarness["openWs"]>>;
+
+let gatewayHelpers: GatewayHelpers | undefined;
+
+function helpers(): GatewayHelpers {
+  if (!gatewayHelpers) {
+    throw new Error("gateway helpers are not ready");
+  }
+  return gatewayHelpers;
+}
+
+async function connectOk(...args: Parameters<GatewayHelpers["connectOk"]>) {
+  return await helpers().connectOk(...args);
+}
+
+async function rpcReq(...args: Parameters<GatewayHelpers["rpcReq"]>) {
+  return await helpers().rpcReq(...args);
+}
+
+function onceMessage(...args: Parameters<GatewayHelpers["onceMessage"]>) {
+  return helpers().onceMessage(...args);
+}
+
+async function seedGatewaySessionEntries(
+  ...args: Parameters<GatewayHelpers["seedGatewaySessionEntries"]>
+) {
+  return await helpers().seedGatewaySessionEntries(...args);
+}
 
 const cleanupDirs: string[] = [];
 const SETUP_RPC_TIMEOUT_MS = 30_000;
 let previousStateDir: string | undefined;
 let previousStateDirCaptured = false;
-let harness: Awaited<ReturnType<typeof createGatewaySuiteHarness>>;
-let subscribedOperatorWs:
-  | Awaited<ReturnType<Awaited<ReturnType<typeof createGatewaySuiteHarness>>["openWs"]>>
-  | undefined;
+let suiteHomeDir = "";
+let suiteConfigRoot = "";
+let previousEnv: Map<string, string | undefined> | undefined;
+let harness: GatewayHarness;
+let subscribedOperatorWs: GatewayWs | undefined;
+
+const GATEWAY_TEST_ENV_KEYS = [
+  "HOME",
+  "USERPROFILE",
+  "OPENCLAW_STATE_DIR",
+  "OPENCLAW_CONFIG_PATH",
+  "OPENCLAW_AGENT_DIR",
+  "PI_CODING_AGENT_DIR",
+  "OPENCLAW_GATEWAY_TOKEN",
+  "OPENCLAW_SKIP_BROWSER_CONTROL_SERVER",
+  "OPENCLAW_SKIP_GMAIL_WATCHER",
+  "OPENCLAW_SKIP_CANVAS_HOST",
+  "OPENCLAW_BUNDLED_PLUGINS_DIR",
+  "OPENCLAW_DISABLE_BUNDLED_PLUGINS",
+  "OPENCLAW_SKIP_CHANNELS",
+  "OPENCLAW_SKIP_PROVIDERS",
+  "OPENCLAW_SKIP_CRON",
+  "OPENCLAW_TEST_MINIMAL_GATEWAY",
+] as const;
+
+async function setupGatewaySuiteState() {
+  previousEnv = new Map(GATEWAY_TEST_ENV_KEYS.map((key) => [key, process.env[key]] as const));
+  suiteHomeDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-session-message-home-"));
+  suiteConfigRoot = path.join(suiteHomeDir, ".openclaw-test");
+  const stateDir = path.join(suiteHomeDir, ".openclaw");
+  await fs.mkdir(suiteConfigRoot, { recursive: true });
+  await fs.mkdir(stateDir, { recursive: true });
+
+  process.env.HOME = suiteHomeDir;
+  process.env.USERPROFILE = suiteHomeDir;
+  process.env.OPENCLAW_STATE_DIR = stateDir;
+  delete process.env.OPENCLAW_CONFIG_PATH;
+  delete process.env.OPENCLAW_AGENT_DIR;
+  delete process.env.PI_CODING_AGENT_DIR;
+  delete process.env.OPENCLAW_GATEWAY_TOKEN;
+  process.env.OPENCLAW_SKIP_BROWSER_CONTROL_SERVER = "1";
+  process.env.OPENCLAW_SKIP_GMAIL_WATCHER = "1";
+  process.env.OPENCLAW_SKIP_CANVAS_HOST = "1";
+  process.env.OPENCLAW_SKIP_CHANNELS = "1";
+  process.env.OPENCLAW_SKIP_PROVIDERS = "1";
+  process.env.OPENCLAW_SKIP_CRON = "1";
+  process.env.OPENCLAW_TEST_MINIMAL_GATEWAY = "1";
+  process.env.OPENCLAW_DISABLE_BUNDLED_PLUGINS = "1";
+  process.env.OPENCLAW_BUNDLED_PLUGINS_DIR = path.join(
+    suiteHomeDir,
+    "openclaw-test-no-bundled-extensions",
+  );
+
+  const { setTestConfigRoot, sessionStoreSaveDelayMs, testState } =
+    await import("./test-helpers.runtime-state.js");
+  setTestConfigRoot(suiteConfigRoot);
+  sessionStoreSaveDelayMs.value = 0;
+  testState.gatewayAuth = { mode: "token", token: "test-gateway-token-1234567890" };
+  testState.gatewayControlUi = undefined;
+  testState.allowFrom = undefined;
+
+  const { resetConfigRuntimeState } = await import("../config/config.js");
+  const { resetTestPluginRegistry } = await import("./test-helpers.plugin-registry.js");
+  const { clearGatewaySubagentRuntime } = await import("../plugins/runtime/gateway-bindings.js");
+  const { closeOpenClawAgentDatabasesForTest } = await import("../state/openclaw-agent-db.js");
+  const { closeOpenClawStateDatabaseForTest } = await import("../state/openclaw-state-db.js");
+  resetConfigRuntimeState();
+  resetTestPluginRegistry();
+  clearGatewaySubagentRuntime();
+  closeOpenClawAgentDatabasesForTest();
+  closeOpenClawStateDatabaseForTest();
+}
+
+async function cleanupGatewaySuiteState() {
+  if (previousEnv) {
+    for (const [key, value] of previousEnv) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+    previousEnv = undefined;
+  }
+  if (suiteHomeDir) {
+    await fs.rm(suiteHomeDir, { recursive: true, force: true });
+    suiteHomeDir = "";
+    suiteConfigRoot = "";
+  }
+}
 
 beforeAll(async () => {
+  await setupGatewaySuiteState();
+  await import("./test-helpers.mocks.js");
+  gatewayHelpers = await import("./test-helpers.server.js");
+  const { createGatewaySuiteHarness } = helpers();
   harness = await createGatewaySuiteHarness();
   subscribedOperatorWs = await harness.openWs();
   await connectOk(subscribedOperatorWs, {
@@ -47,6 +148,7 @@ afterAll(async () => {
   if (harness) {
     await harness.close();
   }
+  await cleanupGatewaySuiteState();
 });
 
 afterEach(async () => {
@@ -70,11 +172,43 @@ async function setupTranscriptFixtureState(): Promise<void> {
     previousStateDirCaptured = true;
   }
   process.env.OPENCLAW_STATE_DIR = dir;
+  const { closeOpenClawAgentDatabasesForTest } = await import("../state/openclaw-agent-db.js");
+  const { closeOpenClawStateDatabaseForTest } = await import("../state/openclaw-state-db.js");
   closeOpenClawAgentDatabasesForTest();
   closeOpenClawStateDatabaseForTest();
 }
 
-function replaceTranscriptEvents(params: { sessionId: string; events: unknown[] }) {
+async function appendAssistantMessageToTranscript(
+  params: Parameters<
+    typeof import("../config/sessions/transcript.js").appendAssistantMessageToSessionTranscript
+  >[0],
+) {
+  const { appendAssistantMessageToSessionTranscript } =
+    await import("../config/sessions/transcript.js");
+  return await appendAssistantMessageToSessionTranscript(params);
+}
+
+async function emitLifecycleEvent(
+  params: Parameters<
+    typeof import("../sessions/session-lifecycle-events.js").emitSessionLifecycleEvent
+  >[0],
+) {
+  const { emitSessionLifecycleEvent } = await import("../sessions/session-lifecycle-events.js");
+  emitSessionLifecycleEvent(params);
+}
+
+async function emitTranscriptUpdate(
+  params: Parameters<
+    typeof import("../sessions/transcript-events.js").emitSessionTranscriptUpdate
+  >[0],
+) {
+  const { emitSessionTranscriptUpdate } = await import("../sessions/transcript-events.js");
+  emitSessionTranscriptUpdate(params);
+}
+
+async function replaceTranscriptEvents(params: { sessionId: string; events: unknown[] }) {
+  const { replaceSqliteSessionTranscriptEvents } =
+    await import("../config/sessions/transcript-store.sqlite.js");
   replaceSqliteSessionTranscriptEvents({
     agentId: "main",
     sessionId: params.sessionId,
@@ -91,10 +225,7 @@ async function withOperatorSessionSubscriber<T>(
   return await run(subscribedOperatorWs);
 }
 
-function waitForSessionMessageEvent(
-  ws: Awaited<ReturnType<Awaited<ReturnType<typeof createGatewaySuiteHarness>>["openWs"]>>,
-  sessionKey: string,
-) {
+function waitForSessionMessageEvent(ws: GatewayWs, sessionKey: string) {
   return onceMessage(
     ws,
     (message) =>
@@ -104,10 +235,7 @@ function waitForSessionMessageEvent(
   );
 }
 
-function waitForSessionsChangedMessagePhase(
-  ws: Awaited<ReturnType<Awaited<ReturnType<typeof createGatewaySuiteHarness>>["openWs"]>>,
-  sessionKey: string,
-) {
+function waitForSessionsChangedMessagePhase(ws: GatewayWs, sessionKey: string) {
   return onceMessage(
     ws,
     (message) =>
@@ -120,7 +248,7 @@ function waitForSessionsChangedMessagePhase(
 }
 
 async function emitTranscriptUpdateAndCollectEvents(params: {
-  ws: Awaited<ReturnType<Awaited<ReturnType<typeof createGatewaySuiteHarness>>["openWs"]>>;
+  ws: GatewayWs;
   sessionKey: string;
   sessionId: string;
   message: Record<string, unknown>;
@@ -130,7 +258,7 @@ async function emitTranscriptUpdateAndCollectEvents(params: {
   const messageEventPromise = waitForSessionMessageEvent(params.ws, params.sessionKey);
   const changedEventPromise = waitForSessionsChangedMessagePhase(params.ws, params.sessionKey);
 
-  emitSessionTranscriptUpdate({
+  await emitTranscriptUpdate({
     agentId: "main",
     sessionId: params.sessionId,
     sessionKey: params.sessionKey,
@@ -203,7 +331,7 @@ describe("session.message websocket events", () => {
             "agent:main:child",
       );
 
-      emitSessionLifecycleEvent({
+      await emitLifecycleEvent({
         sessionKey: "agent:main:child",
         reason: "reactivated",
       });
@@ -251,7 +379,7 @@ describe("session.message websocket events", () => {
           (message.payload as { sessionKey?: string } | undefined)?.sessionKey ===
             "agent:main:main",
       );
-      const appended = await appendAssistantMessageToSessionTranscript({
+      const appended = await appendAssistantMessageToTranscript({
         sessionKey: "agent:main:main",
         text: "subscribed only",
       });
@@ -295,9 +423,10 @@ describe("session.message websocket events", () => {
       },
     });
 
+    const transcriptEvents = await import("../sessions/transcript-events.js");
     const emitSpy = vi.spyOn(transcriptEvents, "emitSessionTranscriptUpdate");
     try {
-      const appended = await appendAssistantMessageToSessionTranscript({
+      const appended = await appendAssistantMessageToTranscript({
         sessionKey: "agent:main:main",
         text: "live websocket message",
       });
@@ -315,6 +444,8 @@ describe("session.message websocket events", () => {
           }),
         }),
       );
+      const { loadSqliteSessionTranscriptEvents } =
+        await import("../config/sessions/transcript-store.sqlite.js");
       const transcript = loadSqliteSessionTranscriptEvents({
         agentId: "main",
         sessionId: "sess-main",
@@ -341,7 +472,7 @@ describe("session.message websocket events", () => {
         },
       },
     });
-    replaceTranscriptEvents({
+    await replaceTranscriptEvents({
       sessionId: "sess-main",
       events: [{ type: "session", version: 1, id: "sess-main" }],
     });
@@ -385,7 +516,7 @@ describe("session.message websocket events", () => {
 
     await withOperatorSessionSubscriber(async (ws) => {
       const messageEventPromise = waitForSessionMessageEvent(ws, "agent:main:main");
-      emitSessionTranscriptUpdate({
+      await emitTranscriptUpdate({
         agentId: "main",
         sessionId: "sess-main",
         sessionKey: "agent:main:main",
@@ -446,8 +577,8 @@ describe("session.message websocket events", () => {
                 "agent:main:hidden-runtime",
             timeoutMs,
           ),
-        action: () => {
-          emitSessionTranscriptUpdate({
+        action: async () => {
+          await emitTranscriptUpdate({
             agentId: "main",
             sessionId: "sess-hidden-runtime",
             sessionKey: "agent:main:hidden-runtime",
@@ -500,7 +631,7 @@ describe("session.message websocket events", () => {
       },
       timestamp: Date.now(),
     };
-    replaceTranscriptEvents({
+    await replaceTranscriptEvents({
       sessionId: "sess-main",
       events: [
         { type: "session", version: 1, id: "sess-main" },
@@ -606,7 +737,7 @@ describe("session.message websocket events", () => {
       content: [{ type: "text", text: "spawn metadata snapshot" }],
       timestamp: Date.now(),
     };
-    replaceTranscriptEvents({
+    await replaceTranscriptEvents({
       sessionId: "sess-child",
       events: [
         { type: "session", version: 1, id: "sess-child" },
@@ -638,7 +769,7 @@ describe("session.message websocket events", () => {
             "agent:main:child",
       );
 
-      emitSessionTranscriptUpdate({
+      await emitTranscriptUpdate({
         agentId: "main",
         sessionId: "sess-child",
         sessionKey: "agent:main:child",
@@ -698,7 +829,7 @@ describe("session.message websocket events", () => {
       content: [{ type: "text", text: "thread route snapshot" }],
       timestamp: Date.now(),
     };
-    replaceTranscriptEvents({
+    await replaceTranscriptEvents({
       sessionId: "sess-thread",
       events: [
         { type: "session", version: 1, id: "sess-thread" },
@@ -720,6 +851,7 @@ describe("session.message websocket events", () => {
           channel: "telegram",
           to: "-100123",
           accountId: "acct-1",
+          chatType: "direct",
           threadId: "42",
         },
       });
@@ -730,6 +862,7 @@ describe("session.message websocket events", () => {
           channel: "telegram",
           to: "-100123",
           accountId: "acct-1",
+          chatType: "direct",
           threadId: "42",
         },
       });
@@ -763,7 +896,7 @@ describe("session.message websocket events", () => {
 
       const mainEvent = waitForSessionMessageEvent(ws, "agent:main:main");
       const [mainAppend] = await Promise.all([
-        appendAssistantMessageToSessionTranscript({
+        appendAssistantMessageToTranscript({
           sessionKey: "agent:main:main",
           text: "main only",
         }),
@@ -783,7 +916,7 @@ describe("session.message websocket events", () => {
             timeoutMs,
           ),
         action: async () => {
-          const workerAppend = await appendAssistantMessageToSessionTranscript({
+          const workerAppend = await appendAssistantMessageToTranscript({
             sessionKey: "agent:main:worker",
             text: "worker hidden",
           });
@@ -809,7 +942,7 @@ describe("session.message websocket events", () => {
             timeoutMs,
           ),
         action: async () => {
-          const hiddenAppend = await appendAssistantMessageToSessionTranscript({
+          const hiddenAppend = await appendAssistantMessageToTranscript({
             sessionKey: "agent:main:main",
             text: "hidden after unsubscribe",
           });

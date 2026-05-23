@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { testOnlyResolveAuthTokenForSignature } from "./test-helpers.server.js";
+
+async function getTestOnlyResolveAuthTokenForSignature() {
+  await import("./test-helpers.runtime-state.js");
+  await import("./test-helpers.mocks.js");
+  const { testOnlyResolveAuthTokenForSignature } = await import("./test-helpers.server.js");
+  return testOnlyResolveAuthTokenForSignature;
+}
 
 describe("testOnlyResolveAuthTokenForSignature", () => {
-  it("matches connect auth precedence for bootstrap tokens", () => {
+  it("matches connect auth precedence for bootstrap tokens", async () => {
+    const testOnlyResolveAuthTokenForSignature = await getTestOnlyResolveAuthTokenForSignature();
     expect(
       testOnlyResolveAuthTokenForSignature({
         token: undefined,
@@ -12,7 +19,8 @@ describe("testOnlyResolveAuthTokenForSignature", () => {
     ).toBe("bootstrap-token");
   });
 
-  it("still prefers the shared token when present", () => {
+  it("still prefers the shared token when present", async () => {
+    const testOnlyResolveAuthTokenForSignature = await getTestOnlyResolveAuthTokenForSignature();
     expect(
       testOnlyResolveAuthTokenForSignature({
         token: "shared-token",
