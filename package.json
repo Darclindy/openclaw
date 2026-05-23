@@ -81,6 +81,7 @@
     "docs/",
     "!docs/.generated/**",
     "!docs/channels/qa-channel.md",
+    "src/agents/templates/",
     "scripts/crabbox-wrapper.mjs",
     "patches/",
     "skills/",
