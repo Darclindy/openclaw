@@ -18,6 +18,7 @@ import type { HealthCheck, HealthFinding } from "./health-checks.js";
 const BROWSER_CLAWD_PROFILE_RESIDUE_CHECK_ID = "core/doctor/browser-clawd-profile-residue";
 const FINAL_CONFIG_VALIDATION_CHECK_ID = "core/doctor/final-config-validation";
 const SHELL_COMPLETION_CHECK_ID = "core/doctor/shell-completion";
+const UI_PROTOCOL_FRESHNESS_CHECK_ID = "core/doctor/ui-protocol-freshness";
 
 type CoreDoctorRuntimeContext = {
   readonly doctor?: {
@@ -25,6 +26,14 @@ type CoreDoctorRuntimeContext = {
       readonly nonInteractive?: boolean;
     };
     readonly confirm?: (params: { message: string; initialValue?: boolean }) => Promise<boolean>;
+    readonly confirmAutoFix?: (params: {
+      message: string;
+      initialValue?: boolean;
+    }) => Promise<boolean>;
+    readonly confirmAggressiveAutoFix?: (params: {
+      message: string;
+      initialValue?: boolean;
+    }) => Promise<boolean>;
   };
 };
 
@@ -528,6 +537,58 @@ const shellCompletionCheck: HealthCheck = {
   },
 };
 
+const uiProtocolFreshnessCheck: HealthCheck = {
+  id: UI_PROTOCOL_FRESHNESS_CHECK_ID,
+  kind: "core",
+  description: "Control UI assets are present and current with the gateway protocol schema.",
+  source: "doctor",
+  async detect() {
+    const { detectUiProtocolFreshnessIssues, formatUiProtocolFreshnessIssue } =
+      await import("../commands/doctor-ui.js");
+    return (await detectUiProtocolFreshnessIssues()).map((issue) => ({
+      checkId: UI_PROTOCOL_FRESHNESS_CHECK_ID,
+      severity: "warning" as const,
+      message: formatUiProtocolFreshnessIssue(issue),
+      path: issue.uiIndexPath,
+      fixHint: issue.canBuild
+        ? "Run `openclaw doctor --fix` to build Control UI assets."
+        : "Install OpenClaw from a source checkout with ui/ sources, then run `pnpm ui:build`.",
+    }));
+  },
+  async repair(ctx) {
+    const { detectUiProtocolFreshnessIssues, repairUiProtocolFreshnessIssue } =
+      await import("../commands/doctor-ui.js");
+    const runtimeCtx = coreDoctorRuntimeContext(ctx);
+    const changes: string[] = [];
+    const warnings: string[] = [];
+    let repaired = false;
+    let failed = false;
+    for (const issue of await detectUiProtocolFreshnessIssues()) {
+      const result = await repairUiProtocolFreshnessIssue(issue, {
+        confirmAutoFix: runtimeCtx.doctor?.confirmAutoFix ?? (async () => ctx.mode === "fix"),
+        confirmAggressiveAutoFix:
+          runtimeCtx.doctor?.confirmAggressiveAutoFix ?? (async () => ctx.mode === "fix"),
+      });
+      if (result.status === "failed") {
+        failed = true;
+        warnings.push(...result.notes);
+        continue;
+      }
+      if (result.status === "skipped") {
+        warnings.push(...result.notes);
+        continue;
+      }
+      changes.push(...result.notes);
+      repaired = true;
+    }
+    return {
+      status: failed ? "failed" : repaired ? "repaired" : "skipped",
+      changes,
+      warnings,
+    };
+  },
+};
+
 const gatewayPlatformNotesCheck: HealthCheck = {
   id: "core/doctor/gateway-services/platform-notes",
   kind: "core",
@@ -778,6 +839,7 @@ function createConvertedWorkflowChecks(deps: CoreHealthCheckDeps): readonly Heal
     legacyStateCheck,
     legacyWhatsAppCrontabCheck,
     shellCompletionCheck,
+    uiProtocolFreshnessCheck,
     gatewayPlatformNotesCheck,
     createSecurityCheck(deps),
     browserCheck,

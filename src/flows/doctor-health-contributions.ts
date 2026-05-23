@@ -50,7 +50,10 @@ type DoctorHealthContribution = FlowContribution & {
   run: (ctx: DoctorHealthFlowContext) => Promise<void>;
 };
 
-const POSITIONAL_STRUCTURED_REPAIR_CHECK_IDS = new Set(["core/doctor/shell-completion"]);
+const POSITIONAL_STRUCTURED_REPAIR_CHECK_IDS = new Set([
+  "core/doctor/shell-completion",
+  "core/doctor/ui-protocol-freshness",
+]);
 
 function isUpdateDoctorRun(env: NodeJS.ProcessEnv | Record<string, string | undefined>): boolean {
   const value = env.OPENCLAW_UPDATE_IN_PROGRESS;
@@ -237,6 +240,62 @@ async function runGatewayAuthHealth(ctx: DoctorHealthFlowContext): Promise<void>
 async function runCommandOwnerHealth(ctx: DoctorHealthFlowContext): Promise<void> {
   const { noteCommandOwnerHealth } = await import("../commands/doctor-command-owner.js");
   noteCommandOwnerHealth(ctx.cfg);
+}
+
+async function runUiProtocolFreshnessHealth(ctx: DoctorHealthFlowContext): Promise<void> {
+  const { registerCoreHealthChecks } = await import("./doctor-core-checks.js");
+  const { listHealthChecks } = await import("./health-check-registry.js");
+  const { runDoctorHealthRepairs } = await import("./doctor-repair-flow.js");
+  const { note } = await import("../terminal/note.js");
+  registerCoreHealthChecks();
+  const check = listHealthChecks().find(
+    (entry) => entry.id === "core/doctor/ui-protocol-freshness",
+  );
+  if (!check) {
+    return;
+  }
+  if (!ctx.prompter.shouldRepair) {
+    const {
+      detectUiProtocolFreshnessIssues,
+      formatUiProtocolFreshnessIssue,
+      uiProtocolFreshnessIssueTitle,
+    } = await import("../commands/doctor-ui.js");
+    for (const issue of await detectUiProtocolFreshnessIssues()) {
+      note(formatUiProtocolFreshnessIssue(issue), uiProtocolFreshnessIssueTitle(issue));
+    }
+    return;
+  }
+  const result = await runDoctorHealthRepairs(
+    {
+      mode: "fix",
+      runtime: ctx.runtime,
+      cfg: ctx.cfg,
+      configPath: ctx.configPath,
+      doctor: {
+        confirmAutoFix: (params: Parameters<DoctorPrompter["confirmAutoFix"]>[0]) =>
+          ctx.prompter.confirmAutoFix(params),
+        confirmAggressiveAutoFix: (
+          params: Parameters<DoctorPrompter["confirmAggressiveAutoFix"]>[0],
+        ) => ctx.prompter.confirmAggressiveAutoFix(params),
+      },
+    } as Parameters<typeof runDoctorHealthRepairs>[0] & {
+      doctor: {
+        confirmAutoFix: (
+          params: Parameters<DoctorPrompter["confirmAutoFix"]>[0],
+        ) => Promise<boolean>;
+        confirmAggressiveAutoFix: (
+          params: Parameters<DoctorPrompter["confirmAggressiveAutoFix"]>[0],
+        ) => Promise<boolean>;
+      };
+    },
+    { checks: [check] },
+  );
+  if (result.changes.length > 0) {
+    note(result.changes.join("\n"), "Doctor changes");
+  }
+  if (result.warnings.length > 0) {
+    note(result.warnings.join("\n"), "Doctor warnings");
+  }
 }
 
 async function runStructuredHealthRepairs(ctx: DoctorHealthFlowContext): Promise<void> {
@@ -818,6 +877,12 @@ export function resolveDoctorHealthContributions(): DoctorHealthContribution[] {
       label: "Command owner",
       healthCheckIds: ["core/doctor/command-owner"],
       run: runCommandOwnerHealth,
+    }),
+    createDoctorHealthContribution({
+      id: "doctor:ui-protocol-freshness",
+      label: "UI freshness",
+      healthCheckIds: ["core/doctor/ui-protocol-freshness"],
+      run: runUiProtocolFreshnessHealth,
     }),
     createDoctorHealthContribution({
       id: "doctor:structured-health-repairs",

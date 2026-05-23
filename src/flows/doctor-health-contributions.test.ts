@@ -140,6 +140,7 @@ describe("doctor health contributions", () => {
     mocks.listHealthChecks.mockReset();
     mocks.listHealthChecks.mockReturnValue([
       { id: "core/doctor/shell-completion" },
+      { id: "core/doctor/ui-protocol-freshness" },
       { id: "core/doctor/unrelated" },
     ]);
     mocks.resolveAgentWorkspaceDir.mockReset();
@@ -252,6 +253,17 @@ describe("doctor health contributions", () => {
     expect(ids.indexOf("doctor:command-owner")).toBeLessThan(ids.indexOf("doctor:write-config"));
   });
 
+  it("runs UI freshness after command owner and before broad structured repairs", () => {
+    const ids = resolveDoctorHealthContributions().map((entry) => entry.id);
+
+    expect(ids.indexOf("doctor:ui-protocol-freshness")).toBeGreaterThan(
+      ids.indexOf("doctor:command-owner"),
+    );
+    expect(ids.indexOf("doctor:ui-protocol-freshness")).toBeLessThan(
+      ids.indexOf("doctor:structured-health-repairs"),
+    );
+  });
+
   it("checks skill readiness before final config writes", () => {
     const ids = resolveDoctorHealthContributions().map((entry) => entry.id);
 
@@ -271,7 +283,7 @@ describe("doctor health contributions", () => {
     );
   });
 
-  it("keeps positional shell completion out of the broad structured repair pass", async () => {
+  it("keeps positional repairs out of the broad structured repair pass", async () => {
     const contribution = requireDoctorContribution("doctor:structured-health-repairs");
     const ctx = {
       cfg: {},
@@ -295,6 +307,56 @@ describe("doctor health contributions", () => {
         checks: [{ id: "core/doctor/unrelated" }],
       },
     );
+  });
+
+  it("runs UI freshness through the structured repair runner in repair mode", async () => {
+    mocks.runDoctorHealthRepairs.mockResolvedValueOnce({
+      config: {},
+      findings: [
+        {
+          checkId: "core/doctor/ui-protocol-freshness",
+          severity: "warning",
+          message: "Control UI assets are missing.",
+        },
+      ],
+      remainingFindings: [],
+      changes: ["UI build complete."],
+      warnings: [],
+      diffs: [],
+      effects: [],
+      checksRun: 1,
+      checksRepaired: 1,
+      checksValidated: 1,
+    });
+    const contribution = requireDoctorContribution("doctor:ui-protocol-freshness");
+    const ctx = {
+      cfg: {},
+      configResult: { cfg: {} },
+      sourceConfigValid: true,
+      prompter: buildDoctorPrompter(true),
+      runtime: { log: vi.fn(), error: vi.fn(), exit: vi.fn() },
+      options: {},
+      cfgForPersistence: {},
+      configPath: "/tmp/fake-openclaw.json",
+      env: {},
+    } as Parameters<(typeof contribution)["run"]>[0];
+
+    await contribution.run(ctx);
+
+    expect(mocks.runDoctorHealthRepairs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cfg: {},
+        configPath: "/tmp/fake-openclaw.json",
+        doctor: expect.objectContaining({
+          confirmAutoFix: expect.any(Function),
+          confirmAggressiveAutoFix: expect.any(Function),
+        }),
+      }),
+      {
+        checks: [{ id: "core/doctor/ui-protocol-freshness" }],
+      },
+    );
+    expect(mocks.note).toHaveBeenCalledWith("UI build complete.", "Doctor changes");
   });
 
   it("runs shell completion through the structured repair runner in repair mode", async () => {

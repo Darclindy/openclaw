@@ -52,6 +52,12 @@ export const doctorHealthConversionRules = [
     rule: "Keep as config-only owner finding.",
   },
   {
+    contributionId: "doctor:ui-protocol-freshness",
+    conversion: "interactive-maintenance",
+    target: ["core/doctor/ui-protocol-freshness"],
+    rule: "Detect missing or stale Control UI assets; repair may build assets through the existing UI script when doctor repair prompts allow it.",
+  },
+  {
     contributionId: "doctor:structured-health-repairs",
     conversion: "terminal-side-effect",
     target: ["doctor-health-repair-runner"],

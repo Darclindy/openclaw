@@ -69,7 +69,10 @@ vi.mock("./doctor-state-integrity.js", () => ({
 }));
 
 vi.mock("./doctor-ui.js", () => ({
+  detectUiProtocolFreshnessIssues: vi.fn().mockResolvedValue([]),
+  formatUiProtocolFreshnessIssue: vi.fn(() => ""),
   maybeRepairUiProtocolFreshness: vi.fn().mockResolvedValue(undefined),
+  uiProtocolFreshnessIssueTitle: vi.fn(() => "UI"),
 }));
 
 vi.mock("./doctor-workspace-status.js", () => ({
