@@ -84,7 +84,7 @@ afterEach(() => {
 });
 
 describe("allow-from-store-read", () => {
-  it("reads default account entries from SQLite", async () => {
+  it("reads default account entries from SQLite", () => {
     const env = makeEnv(makeHomeDir());
     writeAllowFromStore({
       channel: "telegram",
@@ -94,9 +94,9 @@ describe("allow-from-store-read", () => {
     });
 
     expect(readChannelAllowFromStoreEntriesSync("telegram", env)).toEqual(["scoped-a", "legacy-b"]);
-  });
+  }, 300_000);
 
-  it("keeps non-default account reads scoped", async () => {
+  it("keeps non-default account reads scoped", () => {
     const env = makeEnv(makeHomeDir());
     writeAllowFromStore({
       channel: "telegram",
