@@ -6,7 +6,11 @@ import type { OpenClawConfig } from "../config/config.js";
 import { buildSystemPromptParams } from "./system-prompt-params.js";
 
 async function makeTempDir(label: string): Promise<string> {
-  return fs.mkdtemp(path.join(os.tmpdir(), `openclaw-${label}-`));
+  const tempRoot = await fs
+    .stat("/var/tmp")
+    .then((stat) => (stat.isDirectory() ? "/var/tmp" : os.tmpdir()))
+    .catch(() => os.tmpdir());
+  return fs.mkdtemp(path.join(tempRoot, `openclaw-${label}-`));
 }
 
 async function makeRepoRoot(root: string): Promise<void> {

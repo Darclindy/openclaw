@@ -256,9 +256,35 @@ vi.mock("../routing/session-key.js", async () => {
   );
   return {
     ...actual,
+    classifySessionKeyShape: (key?: string | null) => {
+      const raw = key?.trim() ?? "";
+      if (!raw) {
+        return "missing";
+      }
+      return raw.startsWith("agent:") ? "agent" : "legacy_or_alias";
+    },
     isSubagentSessionKey: () => false,
     normalizeAgentId: (id: string) => id,
     normalizeMainKey: (key?: string | null) => key?.trim() || "main",
+    scopeLegacySessionKeyToAgent: ({
+      agentId,
+      sessionKey,
+      mainKey,
+    }: {
+      agentId?: string;
+      sessionKey?: string;
+      mainKey?: string;
+    }) => {
+      const raw = sessionKey?.trim();
+      if (!raw) {
+        return undefined;
+      }
+      if (!agentId || raw.startsWith("agent:")) {
+        return raw;
+      }
+      const requestKey = raw === "main" ? mainKey?.trim() || "main" : raw;
+      return `agent:${agentId}:${requestKey}`;
+    },
   };
 });
 

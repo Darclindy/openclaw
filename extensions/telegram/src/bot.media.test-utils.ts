@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import path from "node:path";
 import * as ssrf from "openclaw/plugin-sdk/ssrf-runtime";
 import { afterEach, beforeAll, beforeEach, expect, vi, type Mock } from "vitest";
 import * as harness from "./bot.media.e2e-harness.js";
@@ -24,6 +26,7 @@ let sendChatActionSpyRef: Mock;
 let readRemoteMediaBufferSpyRef: Mock;
 let undiciFetchSpyRef: Mock;
 let resetReadRemoteMediaBufferMockRef: () => void;
+let testStorePathCounter = 0;
 
 type FetchMockHandle = Mock & { mockRestore: () => void };
 
@@ -143,6 +146,13 @@ beforeEach(() => {
   onSpyRef.mockClear();
   replySpyRef.mockClear();
   sendChatActionSpyRef.mockClear();
+  const sessionStorePath = path.join(
+    tmpdir(),
+    `openclaw-telegram-media-sessions-${process.pid}-${testStorePathCounter++}.json`,
+  );
+  (harness.telegramBotDepsForTest.resolveStorePath as Mock).mockImplementation(
+    (storePath?: string) => storePath ?? sessionStorePath,
+  );
   vi.useRealTimers();
   lookupMock.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
   resolvePinnedHostnameSpy = vi

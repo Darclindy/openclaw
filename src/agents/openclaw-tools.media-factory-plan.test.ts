@@ -882,7 +882,7 @@ describe("optional media tool factory planning", () => {
 
   it("does not register the image tool without cheap vision availability evidence", async () => {
     const config: OpenClawConfig = {};
-    const workspaceDir = "/tmp/openclaw-workspace";
+    const workspaceDir = "/workspace/media-tool-factory-no-vision";
     vi.stubEnv("MEDIA_OWNER_API_KEY", "");
     installSnapshot(
       config,

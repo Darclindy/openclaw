@@ -121,6 +121,7 @@ const agentSpy = vi.fn(async (_req: AgentCallRequest) => visibleAgentResponse())
 const sendSpy = vi.fn(async (_req: AgentCallRequest) => ({ runId: "send-main", status: "ok" }));
 const sessionsDeleteSpy = vi.fn((_req: AgentCallRequest) => undefined);
 const loadSessionStoreSpy = vi.spyOn(configSessions, "loadSessionStore");
+const readSessionEntrySpy = vi.spyOn(configSessions, "readSessionEntry");
 const resolveAgentIdFromSessionKeySpy = vi.spyOn(configSessions, "resolveAgentIdFromSessionKey");
 const resolveStorePathSpy = vi.spyOn(configSessions, "resolveStorePath");
 const resolveMainSessionKeySpy = vi.spyOn(configSessions, "resolveMainSessionKey");
@@ -407,6 +408,9 @@ describe("subagent announce formatting", () => {
       resolveStorePath: () => "/tmp/sessions.json",
     });
     loadSessionStoreSpy.mockReset().mockImplementation(() => loadSessionStoreFixture());
+    readSessionEntrySpy
+      .mockReset()
+      .mockImplementation((_storePath, sessionKey) => loadSessionStoreFixture()[sessionKey]);
     resolveAgentIdFromSessionKeySpy.mockReset().mockImplementation(() => "main");
     resolveStorePathSpy.mockReset().mockImplementation(() => "/tmp/sessions.json");
     resolveMainSessionKeySpy.mockReset().mockImplementation(() => "agent:main:main");

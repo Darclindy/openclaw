@@ -74,7 +74,11 @@ function resolveModelForTest(
   agentDir?: string,
   cfg?: OpenClawConfig,
 ) {
+  const resolvedAgentDir = agentDir ?? "/tmp/agent";
+  const authStorage = { mocked: true } as never;
   return resolveModel(provider, modelId, agentDir, cfg, {
+    authStorage,
+    modelRegistry: discoverModels(authStorage, resolvedAgentDir),
     runtimeHooks: createRuntimeHooks(),
   });
 }
