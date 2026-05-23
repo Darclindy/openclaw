@@ -283,6 +283,10 @@ describe("config plugin validation", () => {
       );
       expect(res.warnings.filter((warning) => warning.path.startsWith("plugins."))).toEqual([
         {
+          path: "plugins.load.paths",
+          message: `plugin: plugin path not found: ${missingPath}`,
+        },
+        {
           path: "plugins.entries.missing-plugin",
           message:
             "plugin not found: missing-plugin (stale config entry ignored; remove it from plugins config)",
@@ -315,6 +319,24 @@ describe("config plugin validation", () => {
         path: "plugins.deny",
         message:
           "plugin not found: missing-deny (stale config entry ignored; remove it from plugins config)",
+      });
+    }
+  });
+
+  it("warns instead of failing for missing configured plugin load paths", () => {
+    const missingPath = path.join(suiteHome, "missing-plugin-dir");
+    const res = validateInSuite({
+      agents: { list: [{ id: "pi" }] },
+      plugins: {
+        load: { paths: [missingPath] },
+      },
+    });
+
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.warnings).toContainEqual({
+        path: "plugins.load.paths",
+        message: `plugin: plugin path not found: ${missingPath}`,
       });
     }
   });

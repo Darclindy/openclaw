@@ -1110,7 +1110,13 @@ function validateConfigObjectWithPluginsBase(
       }
       const pluginLabel = diag.pluginId ? `plugin ${diag.pluginId}` : "plugin";
       const message = `${pluginLabel}: ${diag.message}`;
-      if (diag.level === "error" && (explicitPath || !diag.pluginId)) {
+      const missingConfiguredPluginPath =
+        path === "plugins.load.paths" && diag.message.startsWith("plugin path not found:");
+      if (
+        diag.level === "error" &&
+        (explicitPath || !diag.pluginId) &&
+        !missingConfiguredPluginPath
+      ) {
         issues.push({ path, message });
       } else {
         warnings.push({ path, message });

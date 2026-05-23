@@ -575,6 +575,33 @@ describe("backup commands", () => {
     });
   });
 
+  it("treats missing configured plugin load paths as warnings during backup planning", async () => {
+    const stateDir = path.join(tempHome.home, ".openclaw");
+    const configPath = path.join(tempHome.home, "custom-config.json");
+    process.env.OPENCLAW_CONFIG_PATH = configPath;
+    await fs.writeFile(path.join(stateDir, "state.txt"), "state\n", "utf8");
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        agents: { list: [{ id: "main" }] },
+        plugins: {
+          load: { paths: [path.join(tempHome.home, "missing-plugin")] },
+        },
+      }),
+      "utf8",
+    );
+
+    try {
+      const result = await backupCreateCommand(createBackupTestRuntime(), { dryRun: true });
+
+      expect(result.dryRun).toBe(true);
+      expect(result.assets.map((asset) => asset.kind)).toContain("state");
+      expect(result.assets.map((asset) => asset.kind)).toContain("config");
+    } finally {
+      delete process.env.OPENCLAW_CONFIG_PATH;
+    }
+  });
+
   it("backs up only the active config file when --only-config is requested", async () => {
     const stateDir = path.join(tempHome.home, ".openclaw");
     const configPath = path.join(stateDir, "openclaw.json");
