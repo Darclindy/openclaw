@@ -493,6 +493,7 @@ export async function runTui(opts: RunTuiOptions): Promise<TuiResult> {
   let activeChatRunId: string | null = null;
   let pendingOptimisticUserMessage = false;
   let pendingChatRunId: string | null = null;
+  let pendingSubmitDraft: { runId: string; text: string } | null = null;
   let historyLoaded = false;
   let isConnected = false;
   let wasDisconnected = false;
@@ -580,6 +581,12 @@ export async function runTui(opts: RunTuiOptions): Promise<TuiResult> {
     },
     set pendingChatRunId(value) {
       pendingChatRunId = value ?? null;
+    },
+    get pendingSubmitDraft() {
+      return pendingSubmitDraft;
+    },
+    set pendingSubmitDraft(value) {
+      pendingSubmitDraft = value ?? null;
     },
     get historyLoaded() {
       return historyLoaded;
@@ -1341,7 +1348,16 @@ export async function runTui(opts: RunTuiOptions): Promise<TuiResult> {
       tui.requestRender();
       return;
     }
-    void abortActive();
+    void abortActive().then((result) => {
+      const draft = state.pendingSubmitDraft;
+      if (!result.aborted || !result.runId || !draft || draft.runId !== result.runId) {
+        return;
+      }
+      chatLog.dropPendingUser(draft.runId);
+      state.pendingSubmitDraft = null;
+      editor.setText(draft.text);
+      tui.requestRender();
+    });
   };
   const handleCtrlC = () => {
     const now = Date.now();

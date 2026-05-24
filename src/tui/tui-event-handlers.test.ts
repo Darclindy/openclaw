@@ -725,6 +725,10 @@ describe("tui-event-handlers: handleAgentEvent", () => {
         activeChatRunId: null,
         pendingOptimisticUserMessage: true,
         pendingChatRunId: "run-pending",
+        pendingSubmitDraft: {
+          runId: "run-pending",
+          text: "hello",
+        },
       },
     });
 
@@ -736,6 +740,7 @@ describe("tui-event-handlers: handleAgentEvent", () => {
     });
 
     expect(state.pendingChatRunId).toBeNull();
+    expect(state.pendingSubmitDraft).toBeNull();
     expect(state.activeChatRunId).toBe("run-pending");
   });
 

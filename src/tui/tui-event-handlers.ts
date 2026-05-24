@@ -179,6 +179,7 @@ export function createEventHandlers(context: EventHandlerContext) {
     pendingHistoryRefresh = false;
     state.pendingOptimisticUserMessage = false;
     state.pendingChatRunId = null;
+    state.pendingSubmitDraft = null;
     reconnectPendingRunId = null;
     clearLocalRunIds?.();
     clearLocalBtwRunIds?.();
@@ -229,6 +230,12 @@ export function createEventHandlers(context: EventHandlerContext) {
   const noteSessionRun = (runId: string) => {
     sessionRuns.set(runId, Date.now());
     pruneRunMap(sessionRuns);
+  };
+
+  const markSubmittedRunRegistered = (runId: string) => {
+    if (state.pendingSubmitDraft?.runId === runId) {
+      state.pendingSubmitDraft = null;
+    }
   };
 
   const noteFinalizedRun = (runId: string, opts?: { displayedFinal?: boolean }) => {
@@ -451,6 +458,7 @@ export function createEventHandlers(context: EventHandlerContext) {
     }
     chatLog.dismissPendingSystem(evt.runId);
     noteSessionRun(evt.runId);
+    markSubmittedRunRegistered(evt.runId);
     if (!state.activeChatRunId && !isLocalBtwRunId?.(evt.runId)) {
       state.activeChatRunId = evt.runId;
       if (state.pendingOptimisticUserMessage) {
@@ -615,6 +623,7 @@ export function createEventHandlers(context: EventHandlerContext) {
     if (evt.stream === "lifecycle") {
       if (isPendingRun) {
         noteSessionRun(evt.runId);
+        markSubmittedRunRegistered(evt.runId);
         state.activeChatRunId = evt.runId;
         state.pendingChatRunId = null;
         if (state.pendingOptimisticUserMessage) {

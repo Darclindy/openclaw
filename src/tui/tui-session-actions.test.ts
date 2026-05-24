@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { ChatLog } from "./components/chat-log.js";
 import type { TuiBackend } from "./tui-backend.js";
 import { createSessionActions } from "./tui-session-actions.js";
 import { TUI_SESSION_LOOKUP_LIMIT } from "./tui-session-list-policy.js";
@@ -9,6 +10,20 @@ describe("tui session actions", () => {
     clear: vi.fn(),
     showResult: vi.fn(),
   });
+
+  const createChatLog = (overrides: Record<string, unknown> = {}) =>
+    ({
+      addSystem: vi.fn(),
+      addUser: vi.fn(),
+      clearAll: vi.fn(),
+      clearPendingUsers: vi.fn(),
+      countPendingUsers: vi.fn(() => 0),
+      reconcilePendingUsers: vi.fn(() => []),
+      restorePendingUsers: vi.fn(),
+      startTool: vi.fn(),
+      finalizeAssistant: vi.fn(),
+      ...overrides,
+    }) as unknown as import("./components/chat-log.js").ChatLog;
 
   const createBaseState = (overrides: Partial<TuiStateAccess> = {}): TuiStateAccess => ({
     agentDefaultId: "main",
@@ -38,10 +53,7 @@ describe("tui session actions", () => {
   ) =>
     createSessionActions({
       client: { listSessions: vi.fn() } as unknown as TuiBackend,
-      chatLog: {
-        addSystem: vi.fn(),
-        clearAll: vi.fn(),
-      } as unknown as import("./components/chat-log.js").ChatLog,
+      chatLog: createChatLog(),
       btw: createBtwPresenter(),
       tui: { requestRender: vi.fn() } as unknown as import("@earendil-works/pi-tui").TUI,
       opts: {},
@@ -327,6 +339,8 @@ describe("tui session actions", () => {
 
     const state = createBaseState({
       activeChatRunId: "run-1",
+      pendingChatRunId: "run-pending",
+      pendingOptimisticUserMessage: true,
       historyLoaded: true,
       activityStatus: "streaming",
     });
@@ -344,6 +358,74 @@ describe("tui session actions", () => {
 
     expect(setActivityStatus).toHaveBeenCalledWith("idle");
     expect(state.activeChatRunId).toBeNull();
+    expect(state.pendingChatRunId).toBeNull();
+    expect(state.pendingOptimisticUserMessage).toBe(false);
+  });
+
+  it("preserves pending user messages across same-session history reloads", async () => {
+    const chatLog = new ChatLog(40);
+    chatLog.addPendingUser("run-pending", "keep this prompt visible", 2_000);
+    const loadHistoryResponse = {
+      sessionId: "session-main",
+      messages: [],
+    };
+    const loadHistory = vi.fn().mockResolvedValue(loadHistoryResponse);
+    const listSessions = vi.fn().mockResolvedValue({
+      ts: Date.now(),
+      path: "/tmp/sessions.json",
+      count: 0,
+      defaults: {},
+      sessions: [],
+    });
+
+    const { loadHistory: reloadHistory } = createTestSessionActions({
+      client: {
+        listSessions,
+        loadHistory,
+      } as unknown as TuiBackend,
+      chatLog,
+    });
+
+    await reloadHistory();
+
+    expect(chatLog.render(120).join("\n")).toContain("keep this prompt visible");
+    expect(chatLog.countPendingUsers()).toBe(1);
+  });
+
+  it("reconciles pending user messages once history contains the submitted prompt", async () => {
+    const chatLog = new ChatLog(40);
+    chatLog.addPendingUser("run-pending", "already committed", 2_000);
+    const loadHistory = vi.fn().mockResolvedValue({
+      sessionId: "session-main",
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "already committed" }],
+          timestamp: 2_500,
+        },
+      ],
+    });
+    const listSessions = vi.fn().mockResolvedValue({
+      ts: Date.now(),
+      path: "/tmp/sessions.json",
+      count: 0,
+      defaults: {},
+      sessions: [],
+    });
+
+    const { loadHistory: reloadHistory } = createTestSessionActions({
+      client: {
+        listSessions,
+        loadHistory,
+      } as unknown as TuiBackend,
+      chatLog,
+    });
+
+    await reloadHistory();
+
+    const rendered = chatLog.render(120).join("\n");
+    expect(rendered.match(/already committed/g)).toHaveLength(1);
+    expect(chatLog.countPendingUsers()).toBe(0);
   });
 
   it("aborts the in-flight runId when only pendingChatRunId is set", async () => {
@@ -375,15 +457,39 @@ describe("tui session actions", () => {
       setActivityStatus,
     });
 
+    const result = await abortActive();
+
+    expect(abortChat).toHaveBeenCalledWith({
+      sessionKey: "agent:main:main",
+      runId: "run-pending",
+    });
+    expect(result).toEqual({ aborted: true, runId: "run-pending" });
+    expect(addSystem).not.toHaveBeenCalledWith("no active run");
+    expect(state.pendingChatRunId).toBeNull();
+    expect(setActivityStatus).toHaveBeenCalledWith("aborted");
+  });
+
+  it("clears optimistic submit state after aborting a pending run", async () => {
+    const abortChat = vi.fn().mockResolvedValue({ ok: true, aborted: true });
+    const state = createBaseState({
+      activeChatRunId: null,
+      pendingChatRunId: "run-pending",
+      pendingOptimisticUserMessage: true,
+    });
+
+    const { abortActive } = createTestSessionActions({
+      client: { listSessions: vi.fn(), abortChat } as unknown as TuiBackend,
+      state,
+    });
+
     await abortActive();
 
     expect(abortChat).toHaveBeenCalledWith({
       sessionKey: "agent:main:main",
       runId: "run-pending",
     });
-    expect(addSystem).not.toHaveBeenCalledWith("no active run");
     expect(state.pendingChatRunId).toBeNull();
-    expect(setActivityStatus).toHaveBeenCalledWith("aborted");
+    expect(state.pendingOptimisticUserMessage).toBe(false);
   });
 
   it("coalesces repeated no-active-run abort notices", async () => {
@@ -398,11 +504,12 @@ describe("tui session actions", () => {
       tui: { requestRender } as unknown as import("@earendil-works/pi-tui").TUI,
     });
 
-    await abortActive();
+    const result = await abortActive();
 
     expect(addSystem).toHaveBeenCalledWith("no active run", {
       coalesceConsecutive: true,
     });
+    expect(result).toEqual({ aborted: false, runId: null });
     expect(requestRender).toHaveBeenCalledOnce();
   });
 

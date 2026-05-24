@@ -23,6 +23,11 @@ export type TuiResult = {
   crestodianMessage?: string;
 };
 
+export type TuiAbortActiveResult = {
+  aborted: boolean;
+  runId: string | null;
+};
+
 export type ChatEvent = {
   runId: string;
   sessionKey: string;
@@ -133,6 +138,7 @@ export type TuiStateAccess = {
   activeChatRunId: string | null;
   pendingOptimisticUserMessage?: boolean;
   pendingChatRunId?: string | null;
+  pendingSubmitDraft?: { runId: string; text: string } | null;
   queuedMessages?: QueuedMessage[];
   historyLoaded: boolean;
   sessionInfo: SessionInfo;

@@ -27,6 +27,7 @@ import { formatStatusSummary } from "./tui-status-summary.js";
 import type {
   AgentSummary,
   GatewayStatusSummary,
+  TuiAbortActiveResult,
   TuiResult,
   TuiOptions,
   TuiStateAccess,
@@ -45,7 +46,7 @@ type CommandHandlerContext = {
   loadHistory: () => Promise<void>;
   setSession: (key: string) => Promise<void>;
   refreshAgents: () => Promise<void>;
-  abortActive: () => Promise<void>;
+  abortActive: () => Promise<TuiAbortActiveResult>;
   setActivityStatus: (text: string) => void;
   formatSessionKey: (key: string) => string;
   applySessionInfoFromPatch: (result: SessionsPatchResult) => void;
@@ -648,7 +649,8 @@ export function createCommandHandlers(context: CommandHandlerContext) {
     const runId = randomUUID();
     try {
       if (!isBtw) {
-        chatLog.addUser(text);
+        state.pendingSubmitDraft = { runId, text };
+        chatLog.addPendingUser(runId, text);
         state.pendingOptimisticUserMessage = true;
         setActivityStatus("sending");
       } else {
@@ -677,6 +679,10 @@ export function createCommandHandlers(context: CommandHandlerContext) {
         forgetLocalRunId?.(state.activeChatRunId);
       }
       if (!isBtw) {
+        chatLog.commitPendingUser(runId);
+        if (state.pendingSubmitDraft?.runId === runId) {
+          state.pendingSubmitDraft = null;
+        }
         state.pendingOptimisticUserMessage = false;
         state.pendingChatRunId = null;
         state.activeChatRunId = null;
