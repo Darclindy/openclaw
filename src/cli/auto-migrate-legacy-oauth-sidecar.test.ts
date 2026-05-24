@@ -458,6 +458,38 @@ describe("maybeAutoMigrateLegacyOAuthSidecarOnInteractiveCli", () => {
     expect(fs.existsSync(sidecarPath)).toBe(true);
   });
 
+  it("writes the decline marker when the user accepts but decryption fails (e.g. Keychain denied)", async () => {
+    const { state, sidecarPath } = await makeStateWithLegacyOauthRef("legacy-oauth-seed");
+    // Corrupt the sidecar ciphertext so decryption fails regardless of which
+    // seed source the loader tries — same observable outcome as the user
+    // hitting "Deny" on the macOS Keychain prompt after accepting the
+    // migration confirm.
+    const sidecar = JSON.parse(fs.readFileSync(sidecarPath, "utf8")) as {
+      encrypted: { ciphertext: string };
+    };
+    sidecar.encrypted.ciphertext = Buffer.from("not-the-real-ciphertext").toString("base64url");
+    fs.writeFileSync(sidecarPath, JSON.stringify(sidecar), "utf8");
+
+    const confirm = vi.fn(async () => true);
+    await maybeAutoMigrateLegacyOAuthSidecarOnInteractiveCli({
+      argv: ["node", "openclaw", "status"],
+      env: state.env,
+      isInteractiveTty: () => true,
+      prompter: { confirm },
+    });
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(fs.existsSync(declineMarkerPath(state))).toBe(true);
+
+    const confirmAgain = vi.fn();
+    await maybeAutoMigrateLegacyOAuthSidecarOnInteractiveCli({
+      argv: ["node", "openclaw", "status"],
+      env: state.env,
+      isInteractiveTty: () => true,
+      prompter: { confirm: confirmAgain },
+    });
+    expect(confirmAgain).not.toHaveBeenCalled();
+  });
+
   it("writes a permanent decline marker on decline and honors it on later runs", async () => {
     const { state } = await makeStateWithLegacyOauthRef("legacy-oauth-seed");
     const confirm = vi.fn(async () => false);

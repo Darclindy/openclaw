@@ -103,7 +103,6 @@ export async function maybeAutoMigrateLegacyOAuthSidecarOnInteractiveCli(params:
   ]);
   const prompter = params.prompter ?? { confirm: (p) => clack.confirm(p) };
 
-  let declined = false;
   try {
     const cfg = await readBestEffortConfig();
     if (!hasMigratableLegacyOAuthSidecarStores({ cfg, env })) {
@@ -119,7 +118,6 @@ export async function maybeAutoMigrateLegacyOAuthSidecarOnInteractiveCli(params:
             initialValue: p.initialValue ?? true,
           });
           if (clack.isCancel(answer) || !answer) {
-            declined = true;
             return false;
           }
           return answer;
@@ -127,7 +125,11 @@ export async function maybeAutoMigrateLegacyOAuthSidecarOnInteractiveCli(params:
       },
     });
 
-    if (declined && result.detected.length > 0) {
+    // Write the marker for any outcome that left credentials un-migrated:
+    // explicit decline, Ctrl+C cancel, or accepted-but-decryption-failed
+    // (Keychain "Deny", wrong seed, partial migration error). Doctor remains
+    // the explicit retry path so this is not a one-way door.
+    if (result.changes.length === 0) {
       const markerPath = resolveDeclineMarkerPath(env);
       fs.mkdirSync(path.dirname(markerPath), { recursive: true });
       fs.writeFileSync(markerPath, `${new Date().toISOString()}\n`, "utf8");
