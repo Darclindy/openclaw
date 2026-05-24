@@ -30,6 +30,17 @@ import {
 } from "./talk-shared.js";
 import type { GatewayRequestHandlers } from "./types.js";
 
+const DEFAULT_TALK_CONSULT_THINKING_LEVEL = "low";
+const DEFAULT_TALK_CONSULT_FAST_MODE = true;
+
+function logTalkTimeline(
+  request: Pick<Parameters<GatewayRequestHandlers[string]>[0], "context">,
+  level: "info" | "warn",
+  message: string,
+) {
+  request.context.logGateway?.[level]?.(`[talk.timeline] ${message}`);
+}
+
 async function startRealtimeToolCallAgentConsult(params: {
   sessionKey: string;
   callId: string;
@@ -40,14 +51,33 @@ async function startRealtimeToolCallAgentConsult(params: {
 }): Promise<
   { ok: true; runId: string; idempotencyKey: string } | { ok: false; error: ErrorShape }
 > {
+  const startedAt = Date.now();
+  logTalkTimeline(
+    params.request,
+    "info",
+    `toolCall start sessionKey=${params.sessionKey} callId=${params.callId}`,
+  );
   let message: string;
   try {
     message = buildRealtimeVoiceAgentConsultChatMessage(params.args);
   } catch (err) {
+    logTalkTimeline(
+      params.request,
+      "warn",
+      `toolCall invalid args callId=${params.callId} elapsedMs=${Date.now() - startedAt}: ${formatForLog(err)}`,
+    );
     return { ok: false, error: errorShape(ErrorCodes.INVALID_REQUEST, formatForLog(err)) };
   }
   const idempotencyKey = `talk-${params.callId}-${randomUUID()}`;
   const normalizedTalk = normalizeTalkSection(params.request.context.getRuntimeConfig().talk);
+  const thinking = normalizedTalk?.consultThinkingLevel ?? DEFAULT_TALK_CONSULT_THINKING_LEVEL;
+  const fastMode = normalizedTalk?.consultFastMode ?? DEFAULT_TALK_CONSULT_FAST_MODE;
+  logTalkTimeline(
+    params.request,
+    "info",
+    `toolCall chat.send start callId=${params.callId} messageChars=${message.length} thinking=${thinking} fastMode=${fastMode}`,
+  );
+  const chatStartedAt = Date.now();
   let chatResponse: { ok: true; result: unknown } | { ok: false; error: ErrorShape } | undefined;
   await chatHandlers["chat.send"]({
     ...params.request,
@@ -60,12 +90,8 @@ async function startRealtimeToolCallAgentConsult(params: {
       sessionKey: params.sessionKey,
       message,
       idempotencyKey,
-      ...(normalizedTalk?.consultThinkingLevel
-        ? { thinking: normalizedTalk.consultThinkingLevel }
-        : {}),
-      ...(typeof normalizedTalk?.consultFastMode === "boolean"
-        ? { fastMode: normalizedTalk.consultFastMode }
-        : {}),
+      thinking,
+      fastMode,
     },
     respond: (ok: boolean, result?: unknown, error?: ErrorShape) => {
       chatResponse = ok
@@ -78,15 +104,30 @@ async function startRealtimeToolCallAgentConsult(params: {
   } as never);
 
   if (!chatResponse) {
+    logTalkTimeline(
+      params.request,
+      "warn",
+      `toolCall chat.send missing response callId=${params.callId} elapsedMs=${Date.now() - chatStartedAt}`,
+    );
     return {
       ok: false,
       error: errorShape(ErrorCodes.UNAVAILABLE, "chat.send did not return a realtime tool result"),
     };
   }
   if (!chatResponse.ok) {
+    logTalkTimeline(
+      params.request,
+      "warn",
+      `toolCall chat.send failed callId=${params.callId} elapsedMs=${Date.now() - chatStartedAt}: ${chatResponse.error.message}`,
+    );
     return { ok: false, error: chatResponse.error };
   }
   const runId = normalizeOptionalString(asRecord(chatResponse.result)?.runId) ?? idempotencyKey;
+  logTalkTimeline(
+    params.request,
+    "info",
+    `toolCall chat.send accepted callId=${params.callId} runId=${runId} elapsedMs=${Date.now() - chatStartedAt} totalMs=${Date.now() - startedAt}`,
+  );
   if (params.relaySessionId && params.connId) {
     registerTalkRealtimeRelayAgentRun({
       relaySessionId: params.relaySessionId,
@@ -95,11 +136,17 @@ async function startRealtimeToolCallAgentConsult(params: {
       runId,
     });
   }
+  logTalkTimeline(
+    params.request,
+    "info",
+    `toolCall done callId=${params.callId} runId=${runId} totalMs=${Date.now() - startedAt}`,
+  );
   return { ok: true, runId, idempotencyKey };
 }
 
 export const talkClientHandlers: GatewayRequestHandlers = {
   "talk.client.create": async ({ params, respond, context }) => {
+    const startedAt = Date.now();
     if (!validateTalkClientCreateParams(params)) {
       respond(
         false,
@@ -124,6 +171,11 @@ export const talkClientHandlers: GatewayRequestHandlers = {
       brain?: string;
     };
     try {
+      logTalkTimeline(
+        { context },
+        "info",
+        `client.create start provider=${typedParams.provider ?? "default"} model=${typedParams.model ?? "default"} voice=${typedParams.voice ?? "default"} transport=${typedParams.transport ?? "default"}`,
+      );
       const runtimeConfig = context.getRuntimeConfig();
       const realtimeConfig = buildTalkRealtimeConfig(runtimeConfig, typedParams.provider);
       const mode =
@@ -189,7 +241,13 @@ export const talkClientHandlers: GatewayRequestHandlers = {
         requested: typedParams,
         defaults: realtimeConfig,
       });
+      logTalkTimeline(
+        { context },
+        "info",
+        `client.create resolved provider=${resolution.provider.id} transport=${transport ?? "default"} elapsedMs=${Date.now() - startedAt}`,
+      );
       if (resolution.provider.createBrowserSession && transport !== "gateway-relay") {
+        const providerStartedAt = Date.now();
         const session = await resolution.provider.createBrowserSession({
           cfg: runtimeConfig,
           providerConfig: resolution.providerConfig,
@@ -201,9 +259,19 @@ export const talkClientHandlers: GatewayRequestHandlers = {
           !isUnsupportedBrowserWebRtcSession(session) &&
           (!transport || session.transport === transport)
         ) {
+          logTalkTimeline(
+            { context },
+            "info",
+            `client.create provider session ok provider=${session.provider} transport=${session.transport} model=${session.model ?? "unknown"} elapsedMs=${Date.now() - providerStartedAt} totalMs=${Date.now() - startedAt}`,
+          );
           respond(true, session, undefined);
           return;
         }
+        logTalkTimeline(
+          { context },
+          "warn",
+          `client.create provider unsupported provider=${resolution.provider.id} returnedTransport=${session.transport} requestedTransport=${transport ?? "default"} elapsedMs=${Date.now() - providerStartedAt}`,
+        );
         if (transport) {
           respond(
             false,
@@ -225,10 +293,16 @@ export const talkClientHandlers: GatewayRequestHandlers = {
         ),
       );
     } catch (err) {
+      logTalkTimeline(
+        { context },
+        "warn",
+        `client.create failed elapsedMs=${Date.now() - startedAt}: ${formatForLog(err)}`,
+      );
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, formatForLog(err)));
     }
   },
   "talk.client.toolCall": async (request) => {
+    const startedAt = Date.now();
     const { params, respond } = request;
     if (!validateTalkClientToolCallParams(params)) {
       respond(
@@ -250,6 +324,11 @@ export const talkClientHandlers: GatewayRequestHandlers = {
       return;
     }
 
+    logTalkTimeline(
+      request,
+      "info",
+      `client.toolCall start sessionKey=${params.sessionKey} callId=${params.callId} name=${params.name}`,
+    );
     const result = await startRealtimeToolCallAgentConsult({
       sessionKey: params.sessionKey,
       callId: params.callId,
@@ -259,9 +338,19 @@ export const talkClientHandlers: GatewayRequestHandlers = {
       request,
     });
     if (!result.ok) {
+      logTalkTimeline(
+        request,
+        "warn",
+        `client.toolCall failed callId=${params.callId} elapsedMs=${Date.now() - startedAt}: ${result.error.message}`,
+      );
       respond(false, undefined, result.error);
       return;
     }
+    logTalkTimeline(
+      request,
+      "info",
+      `client.toolCall accepted callId=${params.callId} runId=${result.runId} elapsedMs=${Date.now() - startedAt}`,
+    );
     respond(
       true,
       {

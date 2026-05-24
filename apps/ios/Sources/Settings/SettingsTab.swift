@@ -358,6 +358,9 @@ struct SettingsTab: View {
                                                 : "Not configured")
                                         : "Not loaded")
                                 LabeledContent(
+                                    "Permission",
+                                    value: self.appModel.talkMode.gatewayTalkPermissionState.statusLabel)
+                                LabeledContent(
                                     "Default Model",
                                     value: self.appModel.talkMode.gatewayTalkDefaultModelId ?? "eleven_v3 (fallback)")
                                 LabeledContent(
@@ -366,6 +369,10 @@ struct SettingsTab: View {
                                 Text("Configured on gateway via talk.apiKey, talk.modelId, and talk.voiceId.")
                                     .font(.footnote)
                                     .foregroundStyle(.secondary)
+                                if self.appModel.talkMode.gatewayTalkPermissionState.requiresTalkPermissionAction {
+                                    TalkPermissionPromptView(style: .settings)
+                                        .padding(.top, 4)
+                                }
                             }
                             self.featureToggle(
                                 "Show Talk Control",

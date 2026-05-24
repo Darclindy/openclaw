@@ -26,7 +26,7 @@ export const REALTIME_VOICE_AGENT_CONSULT_TOOL: RealtimeVoiceTool = {
   type: "function",
   name: REALTIME_VOICE_AGENT_CONSULT_TOOL_NAME,
   description:
-    "Delegate the caller's request to the configured OpenClaw agent for normal tool-backed work, context, memory, or reasoning before speaking.",
+    "Ask the configured OpenClaw agent only when the caller needs OpenClaw-specific context, workspace/repository state, user memory, current external information, or tool-backed actions. Do not use this for greetings, simple conversation, latency tests, or questions you can answer directly in realtime.",
   parameters: {
     type: "object",
     properties: {

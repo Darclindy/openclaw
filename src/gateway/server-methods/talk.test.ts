@@ -537,6 +537,9 @@ describe("talk.session unified handlers", () => {
     expect(relayCreateInput.instructions).toContain(
       "Additional realtime instructions:\nSpeak warmly.",
     );
+    expect(relayCreateInput.instructions).toContain(
+      "Prioritize low-latency spoken conversation: answer directly whenever you can.",
+    );
     expectRespondOk(createRespond, {
       sessionId: "relay-unified-1",
       relaySessionId: "relay-unified-1",
@@ -1096,6 +1099,10 @@ describe("talk.client.toolCall handler", () => {
     expectRecordFields(chatInput.params, { sessionKey: "main" });
     expect(chatInput.params?.message).toContain("What is in this repo?");
     expect(chatInput.params?.idempotencyKey).toMatch(/^talk-call-1-/);
+    expectRecordFields(chatInput.params, {
+      thinking: "low",
+      fastMode: true,
+    });
     const response = expectRespondOk(respond, { runId: "run-voice-1" }) as Record<string, unknown>;
     expect(response.idempotencyKey).toMatch(/^talk-call-1-/);
   });
@@ -1118,8 +1125,8 @@ describe("talk.client.toolCall handler", () => {
         getRuntimeConfig: () =>
           ({
             talk: {
-              consultThinkingLevel: "low",
-              consultFastMode: true,
+              consultThinkingLevel: "medium",
+              consultFastMode: false,
             },
           }) as OpenClawConfig,
       } as never,
@@ -1127,8 +1134,8 @@ describe("talk.client.toolCall handler", () => {
 
     const chatInput = mockCallArg(mocks.chatSend) as { params?: Record<string, unknown> };
     expectRecordFields(chatInput.params, {
-      thinking: "low",
-      fastMode: true,
+      thinking: "medium",
+      fastMode: false,
     });
     expectRespondOk(respond, { runId: "run-voice-1" });
   });
@@ -1255,6 +1262,9 @@ describe("talk.client.create handler", () => {
       prefixPaddingMs: 250,
       reasoningEffort: "low",
     });
+    expect(createInput.instructions).toContain(
+      "Do not call openclaw_agent_consult for greetings, simple conversation, latency tests, or general questions you can answer directly.",
+    );
     expect(createInput.instructions).toContain("Additional realtime instructions:\nSpeak warmly.");
     expect(createInput).not.toHaveProperty("provider");
     expect(createInput).not.toHaveProperty("providers");

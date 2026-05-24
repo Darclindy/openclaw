@@ -148,6 +148,7 @@ final class NodeAppModel {
     private let operatorGateway = GatewayNodeSession()
     private var nodeGatewayTask: Task<Void, Never>?
     private var operatorGatewayTask: Task<Void, Never>?
+    private var forceOperatorTalkPermissionUpgradeRequest = false
     private var voiceWakeSyncTask: Task<Void, Never>?
     @ObservationIgnored private var cameraHUDDismissTask: Task<Void, Never>?
     @ObservationIgnored private lazy var capabilityRouter: NodeCapabilityRouter = self.buildCapabilityRouter()
@@ -594,6 +595,39 @@ final class NodeAppModel {
             await self?.pushTalkModeToGateway(
                 enabled: enabled,
                 phase: enabled ? "enabled" : "disabled")
+        }
+    }
+
+    func requestTalkPermissionUpgrade() {
+        guard let config = self.activeGatewayConnectConfig else {
+            self.talkMode.gatewayTalkPermissionState = .requestFailed("Gateway is not connected")
+            self.talkMode.statusText = "Gateway not connected"
+            return
+        }
+        GatewayDiagnostics.log("talk permission upgrade requested")
+        self.talkMode.gatewayTalkPermissionState = .requestingUpgrade
+        self.talkMode.statusText = "Requesting Talk approval"
+        self.forceOperatorTalkPermissionUpgradeRequest = true
+        self.gatewayAutoReconnectEnabled = true
+        self.gatewayPairingPaused = false
+        self.gatewayPairingRequestId = nil
+        self.lastGatewayProblem = nil
+        self.operatorGatewayTask?.cancel()
+        self.operatorGatewayTask = nil
+        let sessionBox = config.tls.map { WebSocketSessionBox(session: GatewayTLSPinningSession(params: $0)) }
+        Task { [weak self] in
+            guard let self else { return }
+            await self.operatorGateway.disconnect()
+            await MainActor.run {
+                self.startOperatorGatewayLoop(
+                    url: config.url,
+                    stableID: config.stableID,
+                    token: config.token,
+                    bootstrapToken: config.bootstrapToken,
+                    password: config.password,
+                    nodeOptions: config.nodeOptions,
+                    sessionBox: sessionBox)
+            }
         }
     }
 
@@ -2095,7 +2129,8 @@ extension NodeAppModel {
                     displayName: nodeOptions.clientDisplayName,
                     includeApprovalScope: self.shouldRequestOperatorApprovalScope(
                         token: reconnectAuth.token,
-                        password: reconnectAuth.password))
+                        password: reconnectAuth.password),
+                    forceExplicitScopes: self.forceOperatorTalkPermissionUpgradeRequest)
 
                 do {
                     try await self.operatorGateway.connect(
@@ -2109,6 +2144,7 @@ extension NodeAppModel {
                             guard let self else { return }
                             await MainActor.run {
                                 self.operatorConnected = true
+                                self.forceOperatorTalkPermissionUpgradeRequest = false
                                 self.talkMode.updateGatewayConnected(true)
                             }
                             GatewayDiagnostics.log(
@@ -2146,6 +2182,29 @@ extension NodeAppModel {
                 } catch {
                     attempt += 1
                     GatewayDiagnostics.log("operator gateway connect error: \(error.localizedDescription)")
+                    let problem = await MainActor.run {
+                        let nextProblem = GatewayConnectionProblemMapper.map(error: error)
+                        if let nextProblem {
+                            if nextProblem.kind == .pairingScopeUpgradeRequired {
+                                self.gatewayPairingPaused = true
+                                self.gatewayPairingRequestId = nextProblem.requestId
+                                self.talkMode.markTalkPermissionUpgradeRequested(requestId: nextProblem.requestId)
+                            }
+                        }
+                        return nextProblem
+                    }
+                    if problem?.needsPairingApproval == true {
+                        self.operatorGatewayTask?.cancel()
+                        self.operatorGatewayTask = nil
+                        await self.operatorGateway.disconnect()
+                        break
+                    }
+                    if problem?.pauseReconnect == true {
+                        self.operatorGatewayTask?.cancel()
+                        self.operatorGatewayTask = nil
+                        await self.operatorGateway.disconnect()
+                        break
+                    }
                     let sleepSeconds = min(8.0, 0.5 * pow(1.7, Double(attempt)))
                     try? await Task.sleep(nanoseconds: UInt64(sleepSeconds * 1_000_000_000))
                 }
@@ -2408,7 +2467,8 @@ extension NodeAppModel {
     private func makeOperatorConnectOptions(
         clientId: String,
         displayName: String?,
-        includeApprovalScope: Bool) -> GatewayConnectOptions
+        includeApprovalScope: Bool,
+        forceExplicitScopes: Bool = false) -> GatewayConnectOptions
     {
         var scopes = ["operator.read", "operator.write", "operator.talk.secrets"]
         // Preserve reconnect compatibility for older paired operator tokens that were
@@ -2419,6 +2479,7 @@ extension NodeAppModel {
         return GatewayConnectOptions(
             role: "operator",
             scopes: scopes,
+            scopesAreExplicit: forceExplicitScopes,
             caps: [],
             commands: [],
             permissions: [:],
@@ -4271,12 +4332,14 @@ extension NodeAppModel {
     func _test_makeOperatorConnectOptions(
         clientId: String,
         displayName: String?,
-        includeApprovalScope: Bool) -> GatewayConnectOptions
+        includeApprovalScope: Bool,
+        forceExplicitScopes: Bool = false) -> GatewayConnectOptions
     {
         self.makeOperatorConnectOptions(
             clientId: clientId,
             displayName: displayName,
-            includeApprovalScope: includeApprovalScope)
+            includeApprovalScope: includeApprovalScope,
+            forceExplicitScopes: forceExplicitScopes)
     }
 
     func _test_presentExecApprovalPrompt(_ prompt: ExecApprovalPrompt) {
