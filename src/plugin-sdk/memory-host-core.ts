@@ -3,18 +3,13 @@ import path from "node:path";
 import type { OpenClawConfig } from "../config/config.js";
 import type { MemoryPluginPublicArtifact } from "../plugins/memory-state.js";
 import { resolveMemoryDreamingWorkspaces } from "./memory-core-host-status.js";
-import { resolveMemoryHostEventLogPath } from "./memory-host-events.js";
+import { readMemoryHostEvents } from "./memory-host-events.js";
 
 export * from "./memory-core-host-runtime-core.js";
 
-async function pathExists(filePath: string): Promise<boolean> {
-  try {
-    await fs.access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
+const MEMORY_HOST_EVENT_LOG_RELATIVE_PATH = "memory/events/memory-host-events.json";
+const MEMORY_HOST_EVENT_LOG_SQLITE_LABEL =
+  "sqlite:plugin_state_entries/memory-core/memory-host.events";
 
 async function listMarkdownFilesRecursive(rootDir: string): Promise<string[]> {
   const entries = await fs.readdir(rootDir, { withFileTypes: true }).catch(() => []);
@@ -68,15 +63,24 @@ export async function listMemoryWorkspacePublicArtifacts(params: {
     });
   }
 
-  const eventLogPath = resolveMemoryHostEventLogPath(params.workspaceDir);
-  if (await pathExists(eventLogPath)) {
+  const events = await readMemoryHostEvents({ workspaceDir: params.workspaceDir });
+  if (events.length > 0) {
+    const eventContent = JSON.stringify(events, null, 2);
+    const lastEvent = events.at(-1);
+    const updatedAtMs =
+      typeof lastEvent?.timestamp === "string" && Number.isFinite(Date.parse(lastEvent.timestamp))
+        ? Date.parse(lastEvent.timestamp)
+        : Date.now();
     artifacts.push({
       kind: "event-log",
       workspaceDir: params.workspaceDir,
-      relativePath: path.relative(params.workspaceDir, eventLogPath).replace(/\\/g, "/"),
-      absolutePath: eventLogPath,
+      relativePath: MEMORY_HOST_EVENT_LOG_RELATIVE_PATH,
+      absolutePath: MEMORY_HOST_EVENT_LOG_SQLITE_LABEL,
       agentIds: [...params.agentIds],
       contentType: "json",
+      content: eventContent,
+      updatedAtMs,
+      sizeBytes: Buffer.byteLength(eventContent),
     });
   }
 

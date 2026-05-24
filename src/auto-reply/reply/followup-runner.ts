@@ -424,16 +424,6 @@ export function createFollowupRunner(params: {
         effectiveQueued = { ...effectiveQueued, run };
       }
       const resolveCurrentVerboseLevel = () => {
-        if (replySessionKey && storePath) {
-          try {
-            const level = readSessionEntry(storePath, replySessionKey)?.verboseLevel;
-            if (typeof level === "string" && level.trim()) {
-              return level;
-            }
-          } catch {
-            // Keep queued delivery resilient to transient session-store reads.
-          }
-        }
         const liveEntryLevel = replySessionKey
           ? sessionStore?.[replySessionKey]?.verboseLevel
           : undefined;

@@ -3,6 +3,11 @@ import type { ChannelOutboundTargetMode } from "../../channels/plugins/types.pub
 import type { SessionEntry } from "../../config/sessions.js";
 import { channelRouteTargetsShareConversation } from "../../plugin-sdk/channel-route.js";
 import {
+  normalizeLowercaseStringOrEmpty,
+  normalizeOptionalString,
+  normalizeOptionalThreadValue,
+} from "../../shared/string-coerce.js";
+import {
   deliveryContextFromSession,
   normalizeDeliveryContext,
 } from "../../utils/delivery-context.shared.js";

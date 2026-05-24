@@ -13,7 +13,7 @@ import {
   listMemoryHostPublicArtifacts,
   listActiveMemoryPublicArtifacts,
 } from "./memory-host-core.js";
-import { appendMemoryHostEvent, resolveMemoryHostEventLogPath } from "./memory-host-events.js";
+import { appendMemoryHostEvent } from "./memory-host-events.js";
 
 describe("memory-host-core helpers", () => {
   afterEach(() => {
@@ -125,10 +125,13 @@ describe("memory-host-core helpers", () => {
         {
           kind: "event-log",
           workspaceDir,
-          relativePath: "memory/.dreams/events.jsonl",
-          absolutePath: resolveMemoryHostEventLogPath(workspaceDir),
+          relativePath: "memory/events/memory-host-events.json",
+          absolutePath: "sqlite:plugin_state_entries/memory-core/memory-host.events",
           agentIds: ["main"],
           contentType: "json",
+          content: expect.stringContaining('"type": "memory.recall.recorded"'),
+          sizeBytes: expect.any(Number),
+          updatedAtMs: Date.parse("2026-05-18T12:00:00.000Z"),
         },
       ]);
     } finally {

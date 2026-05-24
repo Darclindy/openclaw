@@ -29,7 +29,7 @@ import {
 } from "../plugins/types.js";
 import { createLazyRuntimeSurface } from "../shared/lazy-runtime.js";
 import { isPlainObject } from "../utils.js";
-import { copyChannelAgentToolMeta } from "./channel-tools.js";
+import { copyChannelAgentToolMeta, getChannelAgentToolMeta } from "./channel-tools.js";
 import type { AgentToolArtifactStore } from "./filesystem/agent-filesystem.js";
 import { adjustedParamsByToolCallId } from "./pi-tools.before-tool-call.state.js";
 import type { SandboxFsBridge } from "./sandbox/fs-bridge.js";
@@ -67,10 +67,18 @@ export type HookContext = {
   trace?: DiagnosticTraceContext;
   channelId?: string;
   cwd?: string;
+  workspaceDir?: string;
   sandbox?: { root: string; bridge: SandboxFsBridge };
   loopDetection?: ToolLoopDetectionConfig;
   onToolOutcome?: ToolOutcomeObserver;
   artifactStore?: AgentToolArtifactStore;
+  skillCommand?: {
+    commandName?: string;
+    skillName: string;
+    skillSource?: SkillTelemetrySource;
+    toolName?: string;
+  };
+  skillsSnapshot?: SkillSnapshot;
 };
 
 type HookBlockedKind = "veto" | "failure";
@@ -981,7 +989,7 @@ export function wrapToolWithBeforeToolCallHook(
         });
         const skillMatch = findSkillUsageMatch({
           toolName: normalizedToolName,
-          toolParams: executeParams,
+          toolParams: outcome.params,
           ctx,
         });
         if (diagnosticOptions.emitDiagnostics) {

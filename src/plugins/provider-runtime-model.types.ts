@@ -1,5 +1,5 @@
-import type { ModelCompatConfig } from "../config/types.models.js";
 import type { Api, Model } from "../agents/pi-ai-contract.js";
+import type { ModelCompatConfig, ModelMediaInputConfig } from "../config/types.models.js";
 
 /**
  * Fully-resolved runtime model shape used after provider/plugin-owned
