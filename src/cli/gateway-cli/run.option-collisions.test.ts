@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { Command } from "commander";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -220,6 +221,11 @@ describe("gateway run option collisions", () => {
   });
 
   beforeEach(() => {
+    try {
+      fs.unlinkSync(path.join("/tmp", "moltbot.json"));
+    } catch {
+      // best-effort cleanup for the mocked state dir
+    }
     resetRuntimeCapture();
     configState.cfg = {};
     configState.snapshot = { exists: false };
@@ -501,6 +507,28 @@ describe("gateway run option collisions", () => {
     );
     expect(startGatewayServer).not.toHaveBeenCalled();
     expect(readBestEffortConfig).not.toHaveBeenCalled();
+  });
+
+  it("points missing gateway.mode users at sibling moltbot config recovery", async () => {
+    fs.writeFileSync(path.join("/tmp", "moltbot.json"), '{"gateway":{"mode":"local"}}\n');
+    configState.cfg = {
+      gateway: {
+        mode: "local",
+      },
+    };
+    configState.snapshot = {
+      exists: true,
+      valid: true,
+      config: {},
+      parsed: {},
+    };
+
+    await expect(runGatewayCli(["gateway", "run"])).rejects.toThrow("__exit__:78");
+
+    expect(runtimeErrors).toContain(
+      "Gateway start blocked: existing config is missing gateway.mode. Treat this as suspicious or clobbered config. Found legacy sibling config at /tmp/moltbot.json. Run `openclaw doctor --fix` to recover it into openclaw.json if this was an upgrade from moltbot.json. Re-run `openclaw onboard --mode local` or `openclaw setup`, set gateway.mode=local manually, or pass --allow-unconfigured.",
+    );
+    expect(startGatewayServer).not.toHaveBeenCalled();
   });
 
   it("blocks invalid startup config without automatic recovery", async () => {

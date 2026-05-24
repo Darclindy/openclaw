@@ -14,23 +14,100 @@ import { resolveHomeDir } from "../utils.js";
 import { noteIncludeConfinementWarning } from "./doctor-config-analysis.js";
 import { findDoctorLegacyConfigIssues } from "./doctor/shared/legacy-config-issues.js";
 
-async function maybeMigrateLegacyConfig(): Promise<string[]> {
+const SKELETAL_CONFIG_TOP_LEVEL_KEYS = new Set(["$schema", "_meta", "meta", "update"]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isSkeletalOpenClawConfig(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return Object.keys(value).every((key) => SKELETAL_CONFIG_TOP_LEVEL_KEYS.has(key));
+}
+
+async function shouldReplaceWithSiblingMoltbotConfig(targetPath: string): Promise<boolean> {
+  try {
+    const raw = await fs.readFile(targetPath, "utf-8");
+    return isSkeletalOpenClawConfig(JSON.parse(raw));
+  } catch {
+    return false;
+  }
+}
+
+function legacyConfigBackupPath(targetPath: string): string {
+  const stamp = new Date().toISOString().replace(/[:.]/gu, "-");
+  return `${targetPath}.pre-moltbot-migration.${stamp}`;
+}
+
+function legacyConfigTempPath(targetPath: string): string {
+  const stamp = new Date().toISOString().replace(/[:.]/gu, "-");
+  return `${targetPath}.moltbot-migration.${stamp}.tmp`;
+}
+
+async function copyLegacyConfigIntoPlace(params: {
+  backupPath?: string;
+  legacyPath: string;
+  targetPath: string;
+}): Promise<void> {
+  const tempPath = legacyConfigTempPath(params.targetPath);
+  let backedUp = false;
+  await fs.copyFile(params.legacyPath, tempPath);
+  await fs.chmod(tempPath, 0o600).catch(() => {});
+  try {
+    if (params.backupPath) {
+      await fs.rename(params.targetPath, params.backupPath);
+      backedUp = true;
+    }
+    await fs.rename(tempPath, params.targetPath);
+  } catch (error) {
+    await fs.unlink(tempPath).catch(() => {});
+    if (backedUp && params.backupPath) {
+      await fs.rename(params.backupPath, params.targetPath).catch(() => {});
+    }
+    throw error;
+  }
+}
+
+async function maybeMigrateLegacyConfig(options: {
+  allowSkeletalReplacement: boolean;
+}): Promise<{ changes: string[]; warnings: string[] }> {
   const changes: string[] = [];
+  const warnings: string[] = [];
   const home = resolveHomeDir();
   if (!home) {
-    return changes;
+    return { changes, warnings };
   }
 
   const targetDir = path.join(home, ".openclaw");
   const targetPath = path.join(targetDir, "openclaw.json");
+  const siblingMoltbotPath = path.join(targetDir, "moltbot.json");
+  let targetExists = false;
   try {
     await fs.access(targetPath);
-    return changes;
+    targetExists = true;
   } catch {
     // missing config
   }
 
-  const legacyCandidates = [path.join(home, ".clawdbot", "clawdbot.json")];
+  const targetIsSkeletal =
+    targetExists && (await shouldReplaceWithSiblingMoltbotConfig(targetPath));
+  if (targetIsSkeletal && !options.allowSkeletalReplacement) {
+    try {
+      await fs.access(siblingMoltbotPath);
+      warnings.push(
+        `Found legacy sibling config at ${siblingMoltbotPath}; run openclaw doctor --fix to recover it into ${targetPath}.`,
+      );
+    } catch {
+      // no sibling config to recover
+    }
+  }
+
+  const legacyCandidates = [
+    ...(targetIsSkeletal && options.allowSkeletalReplacement ? [siblingMoltbotPath] : []),
+    ...(!targetExists ? [siblingMoltbotPath, path.join(home, ".clawdbot", "clawdbot.json")] : []),
+  ];
 
   let legacyPath: string | null = null;
   for (const candidate of legacyCandidates) {
@@ -43,18 +120,31 @@ async function maybeMigrateLegacyConfig(): Promise<string[]> {
     }
   }
   if (!legacyPath) {
-    return changes;
+    return { changes, warnings };
   }
 
   await fs.mkdir(targetDir, { recursive: true });
+  let backupPath: string | undefined;
+  if (targetExists) {
+    backupPath = legacyConfigBackupPath(targetPath);
+  }
   try {
-    await fs.copyFile(legacyPath, targetPath, fs.constants.COPYFILE_EXCL);
+    await copyLegacyConfigIntoPlace({
+      backupPath,
+      legacyPath,
+      targetPath,
+    });
+    if (backupPath) {
+      changes.push(`Backed up skeletal config: ${targetPath} -> ${backupPath}`);
+    }
     changes.push(`Migrated legacy config: ${legacyPath} -> ${targetPath}`);
   } catch {
-    // If it already exists, skip silently.
+    if (targetExists) {
+      warnings.push(`Skipped legacy config migration after copy failed: ${legacyPath}`);
+    }
   }
 
-  return changes;
+  return { changes, warnings };
 }
 
 export type DoctorConfigPreflightResult = {
@@ -109,9 +199,14 @@ export async function runDoctorConfigPreflight(
   }
 
   if (options.migrateLegacyConfig !== false) {
-    const legacyConfigChanges = await maybeMigrateLegacyConfig();
-    if (legacyConfigChanges.length > 0) {
-      note(legacyConfigChanges.map((entry) => `- ${entry}`).join("\n"), "Doctor changes");
+    const legacyConfigResult = await maybeMigrateLegacyConfig({
+      allowSkeletalReplacement: options.repairPrefixedConfig === true,
+    });
+    if (legacyConfigResult.changes.length > 0) {
+      note(legacyConfigResult.changes.map((entry) => `- ${entry}`).join("\n"), "Doctor changes");
+    }
+    if (legacyConfigResult.warnings.length > 0) {
+      note(legacyConfigResult.warnings.map((entry) => `- ${entry}`).join("\n"), "Config warnings");
     }
   }
 
