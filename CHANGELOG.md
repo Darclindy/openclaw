@@ -6,6 +6,8 @@ Docs: https://docs.openclaw.ai
 
 ### Changes
 
+- Diagnostics: add gated OpenTelemetry LLM prompt, output, and tool-definition details for Codex and Pi model-call spans. Thanks @amknight.
+
 ### Fixes
 
 - Config: keep benign legacy metadata write anomalies out of default doctor and config command output while preserving explicit anomaly logging for diagnostics.
