@@ -2150,6 +2150,7 @@ extension NodeAppModel {
                             GatewayDiagnostics.log(
                                 "operator gateway connected host=\(url.host ?? "?") scheme=\(url.scheme ?? "?")")
                             await self.talkMode.reloadConfig()
+                            await self.talkMode.prefetchRealtimeSessionIfReady(reason: "operator_connected")
                             await self.refreshBrandingFromGateway()
                             await self.refreshAgentsFromGateway()
                             await self.refreshShareRouteFromGateway()
@@ -2610,7 +2611,9 @@ extension NodeAppModel {
 
     func reloadTalkConfig() {
         Task { [weak self] in
-            await self?.talkMode.reloadConfig()
+            guard let self else { return }
+            await self.talkMode.reloadConfig()
+            await self.talkMode.prefetchRealtimeSessionIfReady(reason: "config_reload")
         }
     }
 
