@@ -45,11 +45,13 @@ import { loadDevices, type DevicesState } from "./controllers/devices.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import {
   addExecApproval,
+  clearResolvedExecApprovalPrompt,
   parseExecApprovalRequested,
   parseExecApprovalResolved,
   parsePluginApprovalRequested,
   pruneExecApprovalQueue,
   removeExecApproval,
+  showExecApprovalPrompt,
 } from "./controllers/exec-approval.ts";
 import { loadHealthState, type HealthState } from "./controllers/health.ts";
 import {
@@ -115,6 +117,8 @@ type GatewayHost = {
   refreshSessionsAfterChat: Set<string>;
   sessionsLoading?: boolean;
   execApprovalQueue: ExecApprovalRequest[];
+  execApprovalDismissedIds: Set<string>;
+  execApprovalBusy: boolean;
   execApprovalError: string | null;
   updateAvailable: UpdateAvailable | null;
   reconcileWebPushState?: () => Promise<void> | void;
@@ -151,17 +155,26 @@ function enqueueApprovalRequest(host: GatewayHost, entry: ExecApprovalRequest | 
     return;
   }
   host.execApprovalQueue = addExecApproval(host.execApprovalQueue, entry);
+  showExecApprovalPrompt(host, entry.id);
   host.execApprovalError = null;
   const delay = Math.max(0, entry.expiresAtMs - Date.now() + 500);
   window.setTimeout(() => {
     host.execApprovalQueue = removeExecApproval(host.execApprovalQueue, entry.id);
+    showExecApprovalPrompt(host, entry.id);
   }, delay);
+}
+
+function syncDismissedApprovalIds(host: GatewayHost) {
+  const pendingIds = new Set(host.execApprovalQueue.map((entry) => entry.id));
+  host.execApprovalDismissedIds = new Set(
+    [...host.execApprovalDismissedIds].filter((id) => pendingIds.has(id)),
+  );
 }
 
 function removeResolvedApprovalRequest(host: GatewayHost, payload: unknown) {
   const resolved = parseExecApprovalResolved(payload);
   if (resolved) {
-    host.execApprovalQueue = removeExecApproval(host.execApprovalQueue, resolved.id);
+    clearResolvedExecApprovalPrompt(host, resolved.id);
   }
 }
 
@@ -505,6 +518,7 @@ export function connectGateway(host: GatewayHost, options?: ConnectGatewayOption
   host.connected = false;
   if (reconnectReason === "seq-gap") {
     host.execApprovalQueue = pruneExecApprovalQueue(host.execApprovalQueue);
+    syncDismissedApprovalIds(host);
     clearPendingQueueItemsForRun(
       host as unknown as Parameters<typeof clearPendingQueueItemsForRun>[0],
       host.chatRunId ?? undefined,
@@ -512,6 +526,7 @@ export function connectGateway(host: GatewayHost, options?: ConnectGatewayOption
     shutdownHost.resumeChatQueueAfterReconnect = true;
   } else {
     host.execApprovalQueue = pruneExecApprovalQueue(host.execApprovalQueue);
+    syncDismissedApprovalIds(host);
   }
   host.execApprovalError = null;
 

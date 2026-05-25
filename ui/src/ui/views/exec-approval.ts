@@ -7,6 +7,7 @@ import type {
   ExecApprovalRequest,
   ExecApprovalRequestPayload,
 } from "../controllers/exec-approval.ts";
+import { getVisibleExecApprovalQueue } from "../controllers/exec-approval.ts";
 
 function formatRemaining(ms: number): string {
   const remaining = Math.max(0, ms);
@@ -108,7 +109,8 @@ ${active.pluginDescription}</pre
 }
 
 export function renderExecApprovalPrompt(state: AppViewState) {
-  const active = state.execApprovalQueue[0];
+  const visibleQueue = getVisibleExecApprovalQueue(state);
+  const active = visibleQueue[0];
   if (!active) {
     return nothing;
   }
@@ -118,7 +120,7 @@ export function renderExecApprovalPrompt(state: AppViewState) {
     remainingMs > 0
       ? t("execApproval.expiresIn", { time: formatRemaining(remainingMs) })
       : t("execApproval.expired");
-  const queueCount = state.execApprovalQueue.length;
+  const queueCount = visibleQueue.length;
   const isPlugin = active.kind === "plugin";
   const title = isPlugin
     ? (active.pluginTitle ?? t("execApproval.pluginApprovalNeeded"))
@@ -126,9 +128,7 @@ export function renderExecApprovalPrompt(state: AppViewState) {
   const titleId = "exec-approval-title";
   const descriptionId = "exec-approval-description";
   const handleCancel = () => {
-    if (!state.execApprovalBusy) {
-      void state.handleExecApprovalDecision("deny");
-    }
+    state.handleExecApprovalDismiss();
   };
   return html`
     <openclaw-modal-dialog label=${title} description=${remaining} @modal-cancel=${handleCancel}>
@@ -149,6 +149,9 @@ export function renderExecApprovalPrompt(state: AppViewState) {
           ? html`<div class="exec-approval-error">${state.execApprovalError}</div>`
           : nothing}
         <div class="exec-approval-actions">
+          <button class="btn" @click=${() => state.handleExecApprovalDismiss()}>
+            ${t("common.dismiss")}
+          </button>
           <button
             class="btn primary"
             ?disabled=${state.execApprovalBusy}
