@@ -13,7 +13,6 @@ import { resolveControlUiAuthToken } from "./control-ui-auth.ts";
 import { ChatState, loadChatHistory } from "./controllers/chat.ts";
 import {
   createSessionAndRefresh,
-  loadSessions,
   syncSelectedSessionMessageSubscription,
 } from "./controllers/sessions.ts";
 import { icons } from "./icons.ts";
@@ -647,12 +646,21 @@ export function switchChatSession(state: AppViewState, nextSessionKey: string) {
   if (previousSessionKey !== nextSessionKey) {
     state.announceSessionSwitch?.(nextSessionKey, nextSessionLabel);
   }
-  void state.loadAssistantIdentity();
-  void refreshChatAvatar(state);
-  void refreshSlashCommands({
-    client: state.client,
-    agentId: parseAgentSessionKey(nextSessionKey)?.agentId,
-  });
+  // Agent identity, avatar, and slash commands are per-agent and
+  // process-stable — they don't change between sessions of the same agent, so
+  // only refetch them when the agent actually changes (switching among
+  // `agent:main:*` sessions otherwise refires these slow RPCs every time).
+  const nextAgentId = parseAgentSessionKey(nextSessionKey)?.agentId;
+  const previousAgentId = parseAgentSessionKey(previousSessionKey)?.agentId;
+  const agentChanged = !previousSessionKey || previousAgentId !== nextAgentId;
+  if (agentChanged) {
+    void state.loadAssistantIdentity();
+    void refreshChatAvatar(state);
+    void refreshSlashCommands({
+      client: state.client,
+      agentId: nextAgentId,
+    });
+  }
   syncUrlWithSessionKey(
     state as unknown as Parameters<typeof syncUrlWithSessionKey>[0],
     nextSessionKey,
@@ -661,8 +669,12 @@ export function switchChatSession(state: AppViewState, nextSessionKey: string) {
   void syncSelectedSessionMessageSubscription(
     state as unknown as AppViewState & { chatSessionMessageSubscriptionKey?: string | null },
   );
+  // A switch only needs the target session's transcript. The session list is
+  // unchanged by a switch — it refreshes on connect and on `sessions.changed`
+  // gateway events — so we no longer re-scan it here. That scan reads every
+  // session file and synchronously blocked the gateway event loop, delaying the
+  // transcript (chat.history) on every switch.
   void loadChatHistory(state as unknown as ChatState);
-  void refreshSessionOptions(state);
 }
 
 export function dismissChatError(state: AppViewState) {
@@ -734,12 +746,6 @@ export async function createChatSession(state: AppViewState): Promise<boolean> {
   state.chatMessage = preservedDraft;
   state.chatAttachments = preservedAttachments;
   return true;
-}
-
-async function refreshSessionOptions(state: AppViewState) {
-  await loadSessions(state as unknown as Parameters<typeof loadSessions>[0], {
-    ...createChatSessionsLoadOverrides(state),
-  });
 }
 
 /** Count cron sessions hidden by the active agent-scoped chat filter. */

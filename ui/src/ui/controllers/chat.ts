@@ -302,7 +302,45 @@ function maybeResetToolStream(state: ChatState) {
   }
 }
 
-export async function loadChatHistory(state: ChatState) {
+const inFlightChatHistoryLoads = new WeakMap<object, Map<string, Promise<void>>>();
+
+/**
+ * Coalesce concurrent history loads for the same session. A single session
+ * switch fans out into two `loadChatHistory` calls — one direct, one from the
+ * subscription's initial event ~100ms later — and the gateway is often slow, so
+ * firing the request twice doubled the visible wait. Callers that arrive while a
+ * load for the same session is in flight share that one request instead.
+ */
+export async function loadChatHistory(
+  state: ChatState,
+  options: { clearError?: boolean } = {},
+): Promise<void> {
+  if (!state.client || !state.connected) {
+    return;
+  }
+  const stateKey = state as object;
+  let bySession = inFlightChatHistoryLoads.get(stateKey);
+  if (!bySession) {
+    bySession = new Map();
+    inFlightChatHistoryLoads.set(stateKey, bySession);
+  }
+  const sessions = bySession;
+  const sessionKey = state.sessionKey;
+  const existing = sessions.get(sessionKey);
+  if (existing) {
+    return existing;
+  }
+  const run = runChatHistoryLoad(state, options);
+  sessions.set(sessionKey, run);
+  void run.then(() => {
+    if (sessions.get(sessionKey) === run) {
+      sessions.delete(sessionKey);
+    }
+  });
+  return run;
+}
+
+async function runChatHistoryLoad(state: ChatState, options: { clearError?: boolean } = {}) {
   if (!state.client || !state.connected) {
     return;
   }
@@ -313,7 +351,9 @@ export async function loadChatHistory(state: ChatState) {
   // Any pending input-history snapshot becomes invalid once we start reloading transcript state.
   state.resetChatInputHistoryNavigation?.();
   state.chatLoading = true;
-  state.lastError = null;
+  if (options.clearError !== false) {
+    state.lastError = null;
+  }
   try {
     let res: { messages?: Array<unknown>; sessionId?: string; thinkingLevel?: string };
     for (;;) {

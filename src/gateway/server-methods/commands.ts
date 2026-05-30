@@ -203,6 +203,15 @@ function buildPluginCommandEntries(params: {
   return entries;
 }
 
+// Building the command list scans and parses every skill file in the agent
+// workspace synchronously, which blocks the gateway event loop (~2s with many
+// skills) and stalls unrelated requests (e.g. chat.history) on every switch.
+// The runtime config is a pinned process snapshot (a new object only on
+// explicit reload), so caching keyed by the cfg object identity is safe: it
+// hits across requests, auto-invalidates on reload (new object), and never
+// collides across distinct configs (e.g. in tests).
+const commandsListCacheByConfig = new WeakMap<object, Map<string, CommandsListResult>>();
+
 export function buildCommandsListResult(params: {
   cfg: OpenClawConfig;
   agentId: string;
@@ -214,6 +223,13 @@ export function buildCommandsListResult(params: {
   const scopeFilter = params.scope ?? "both";
   const nameSurface: CommandNameSurface = scopeFilter === "text" ? "text" : "native";
   const provider = normalizeOptionalLowercaseString(params.provider);
+
+  const cacheKey = `${params.agentId}\t${scopeFilter}\t${provider ?? ""}\t${includeArgs ? 1 : 0}`;
+  const cacheForConfig = commandsListCacheByConfig.get(params.cfg as object);
+  const cachedResult = cacheForConfig?.get(cacheKey);
+  if (cachedResult) {
+    return cachedResult;
+  }
 
   const skillCommands = listSkillCommandsForAgents({ cfg: params.cfg, agentIds: [params.agentId] });
   const chatCommands = listChatCommandsForConfig(params.cfg, { skillCommands });
@@ -238,7 +254,13 @@ export function buildCommandsListResult(params: {
 
   commands.push(...buildPluginCommandEntries({ provider, nameSurface, cfg: params.cfg }));
 
-  return { commands: commands.slice(0, COMMAND_LIST_MAX_ITEMS) };
+  const result = { commands: commands.slice(0, COMMAND_LIST_MAX_ITEMS) };
+  if (cacheForConfig) {
+    cacheForConfig.set(cacheKey, result);
+  } else {
+    commandsListCacheByConfig.set(params.cfg as object, new Map([[cacheKey, result]]));
+  }
+  return result;
 }
 
 export const commandsHandlers: GatewayRequestHandlers = {

@@ -673,7 +673,17 @@ function applyTabSelection(
     host as unknown as Parameters<typeof startDebugPolling>[0],
   );
 
-  if (options.refreshPolicy === "always" || host.connected) {
+  // Only re-run the tab's full data refresh when the tab ACTUALLY changes.
+  // Re-selecting the current tab — e.g. switching chat sessions, which calls
+  // setTab("chat") (refreshPolicy "always") while already on chat — must not
+  // refire the tab's bootstrap burst. For chat that burst is
+  // models.authStatus + sessions.list + models.list + commands.list + avatar;
+  // it serializes on the single-threaded gateway and delayed the transcript on
+  // every switch. The selected session's own transcript load is handled by
+  // switchChatSession (chat.history). Initial/return loads still refresh because
+  // the tab genuinely changes; the connect flow refreshes via its own path.
+  const tabChanged = prev !== next;
+  if (tabChanged && (options.refreshPolicy === "always" || host.connected)) {
     void refreshActiveTab(host);
   }
 
