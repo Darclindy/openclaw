@@ -1343,6 +1343,26 @@ function renderAssistantAttachments(
   `;
 }
 
+/**
+ * Collapsible reasoning/thinking block. Starts open while reasoning is the only
+ * output (`open=true`) and collapses once the answer text arrives so it stays
+ * out of the way. Styled by `.chat-thinking-collapse` in chat/text.css.
+ */
+function renderThinkingBlock(reasoningMarkdown: string, open: boolean) {
+  return html`
+    <details class="chat-thinking-collapse" ?open=${open}>
+      <summary class="chat-thinking-summary">
+        <span class="chat-thinking-summary__icon">${icons.brain}</span>
+        <span>Thinking</span>
+        <span class="chat-thinking-summary__chevron">${icons.chevronDown}</span>
+      </summary>
+      <div class="chat-thinking" dir="${detectTextDirection(reasoningMarkdown)}">
+        ${unsafeHTML(toSanitizedMarkdownHtml(reasoningMarkdown))}
+      </div>
+    </details>
+  `;
+}
+
 function renderInlineToolCards(
   toolCards: ToolCard[],
   opts: {
@@ -1498,6 +1518,9 @@ function renderGroupedMessage(
   const markdownBase = extractedText?.trim() ? extractedText : null;
   const reasoningMarkdown = extractedThinking ? formatReasoningMarkdown(extractedThinking) : null;
   const markdown = markdownBase;
+  // Keep reasoning open while it's the only thing produced (thinking in progress);
+  // collapse it once the answer text appears so it stays out of the way.
+  const thinkingOpen = !markdownBase;
   const canCopyMarkdown = role === "assistant" && Boolean(markdown?.trim());
   const canExpand = role === "assistant" && Boolean(onOpenSidebar && markdown?.trim());
   const hasActions = canCopyMarkdown || canExpand;
@@ -1608,9 +1631,7 @@ function renderGroupedMessage(
                         opts.onRequestUpdate,
                       )}
                       ${reasoningMarkdown
-                        ? html`<div class="chat-thinking">
-                            ${unsafeHTML(toSanitizedMarkdownHtml(reasoningMarkdown))}
-                          </div>`
+                        ? renderThinkingBlock(reasoningMarkdown, thinkingOpen)
                         : nothing}
                       ${jsonResult
                         ? html`<details
@@ -1663,11 +1684,7 @@ function renderGroupedMessage(
               opts.assistantAttachmentAuthToken,
               opts.onRequestUpdate,
             )}
-            ${reasoningMarkdown
-              ? html`<div class="chat-thinking">
-                  ${unsafeHTML(toSanitizedMarkdownHtml(reasoningMarkdown))}
-                </div>`
-              : nothing}
+            ${reasoningMarkdown ? renderThinkingBlock(reasoningMarkdown, thinkingOpen) : nothing}
             ${normalizedRole === "assistant" && assistantViewBlocks.length > 0
               ? html`${assistantViewBlocks.map(
                   (block) => html`${renderToolPreview(block.preview, "chat_message", {
