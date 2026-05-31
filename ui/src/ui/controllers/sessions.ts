@@ -762,6 +762,7 @@ export async function createSessionAndRefresh(
   state: SessionsState,
   params: CreateSessionParams = {},
   refreshOverrides?: LoadSessionsOverrides,
+  options?: { deferRefresh?: boolean },
 ): Promise<string | null> {
   if (!state.client || !state.connected || state.sessionsLoading) {
     return null;
@@ -776,11 +777,19 @@ export async function createSessionAndRefresh(
         throw new Error("sessions.create returned no key");
       }
       createdKey = key;
-      await loadSessions(state, refreshOverrides);
+      // The full sessions-list reload can be slow; when the caller will switch
+      // straight into the new session, refresh the sidebar list in the
+      // background instead of blocking the switch on it.
+      if (!options?.deferRefresh) {
+        await loadSessions(state, refreshOverrides);
+      }
     });
   } catch (err) {
     state.sessionsError = String(err);
     return null;
+  }
+  if (options?.deferRefresh && createdKey) {
+    void loadSessions(state, refreshOverrides).then(() => state.requestUpdate?.());
   }
   return createdKey;
 }
@@ -788,6 +797,7 @@ export async function createSessionAndRefresh(
 export async function deleteSessionsAndRefresh(
   state: SessionsState,
   keys: string[],
+  options?: { skipConfirm?: boolean },
 ): Promise<string[]> {
   if (!state.client || !state.connected || keys.length === 0) {
     return [];
@@ -796,9 +806,13 @@ export async function deleteSessionsAndRefresh(
   if (state.sessionsLoading) {
     return [];
   }
-  const confirmed = window.confirm(
-    `Delete ${keys.length} ${keys.length === 1 ? "session" : "sessions"}?\n\nThis will delete the session entries and archive their transcripts.`,
-  );
+  // `window.confirm` is a no-op in the Tauri desktop WebView; callers that show
+  // their own confirmation pass `skipConfirm` so deletion isn't silently dropped.
+  const confirmed =
+    options?.skipConfirm ||
+    window.confirm(
+      `Delete ${keys.length} ${keys.length === 1 ? "session" : "sessions"}?\n\nThis will delete the session entries and archive their transcripts.`,
+    );
   if (!confirmed) {
     return [];
   }

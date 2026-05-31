@@ -175,6 +175,16 @@ export class OpenClawApp extends LitElement {
   @state() loginShowGatewayPassword = false;
   @state() tab: Tab = "chat";
   @state() onboarding = resolveOnboardingMode();
+  // Right-click menu anchored at the cursor for a recent-session sidebar item.
+  // `mode` toggles between the action list and the inline rename input.
+  @state() sessionContextMenu: {
+    key: string;
+    label: string;
+    x: number;
+    y: number;
+    mode: "menu" | "rename" | "confirm-delete";
+    draft: string;
+  } | null = null;
   @state() connected = false;
   @state() theme: ThemeName = this.settings.theme ?? "claw";
   @state() themeMode: ThemeMode = this.settings.themeMode ?? "system";

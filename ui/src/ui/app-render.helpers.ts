@@ -724,6 +724,9 @@ export async function createChatSession(state: AppViewState): Promise<boolean> {
     {
       ...createChatSessionsLoadOverrides(state),
     },
+    // Open the new session immediately; let the sidebar list catch up in the
+    // background rather than blocking the switch on a full sessions reload.
+    { deferRefresh: true },
   );
   if (
     !nextSessionKey ||

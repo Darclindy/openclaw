@@ -320,6 +320,19 @@ function renderSidebarRecentSession(state: AppViewState, row: GatewaySessionRow)
       href=${href}
       class="sidebar-recent-session ${active ? "sidebar-recent-session--active" : ""}"
       title=${`${label} · ${row.key}`}
+      @contextmenu=${(event: MouseEvent) => {
+        // Replace the WebView's native link menu with our own session actions.
+        event.preventDefault();
+        event.stopPropagation();
+        state.sessionContextMenu = {
+          key: row.key,
+          label,
+          x: event.clientX,
+          y: event.clientY,
+          mode: "menu",
+          draft: label,
+        };
+      }}
       @click=${(event: MouseEvent) => {
         if (
           event.defaultPrevented ||
@@ -350,6 +363,148 @@ function renderSidebarRecentSession(state: AppViewState, row: GatewaySessionRow)
           ></span>`
         : nothing}
     </a>
+  `;
+}
+
+function renderSessionContextMenu(state: AppViewState) {
+  const menu = state.sessionContextMenu;
+  if (!menu) {
+    return nothing;
+  }
+  const close = () => {
+    state.sessionContextMenu = null;
+  };
+  return html`
+    <div class="session-context-menu-layer">
+      <button
+        type="button"
+        class="session-context-menu-backdrop"
+        aria-label=${t("common.dismiss")}
+        @click=${close}
+        @contextmenu=${(event: Event) => {
+          event.preventDefault();
+          close();
+        }}
+      ></button>
+      <div
+        class="session-context-menu"
+        role="menu"
+        style=${styleMap({ left: `${menu.x}px`, top: `${menu.y}px` })}
+      >
+        ${menu.mode === "rename"
+          ? renderSessionRenameForm(state, menu, close)
+          : menu.mode === "confirm-delete"
+            ? renderSessionDeleteConfirm(state, menu, close)
+            : html`
+                <div class="session-context-menu__title" title=${menu.label}>${menu.label}</div>
+                <button
+                  type="button"
+                  class="session-context-menu__item"
+                  role="menuitem"
+                  @click=${() => {
+                    state.sessionContextMenu = { ...menu, mode: "rename", draft: menu.label };
+                  }}
+                >
+                  <span class="session-context-menu__icon">${icons.edit}</span>
+                  <span>${t("common.rename")}</span>
+                </button>
+                <button
+                  type="button"
+                  class="session-context-menu__item session-context-menu__item--danger"
+                  role="menuitem"
+                  @click=${() => {
+                    state.sessionContextMenu = { ...menu, mode: "confirm-delete" };
+                  }}
+                >
+                  <span class="session-context-menu__icon">${icons.trash}</span>
+                  <span>${t("common.delete")}</span>
+                </button>
+              `}
+      </div>
+    </div>
+  `;
+}
+
+function renderSessionRenameForm(
+  state: AppViewState,
+  menu: NonNullable<AppViewState["sessionContextMenu"]>,
+  close: () => void,
+) {
+  const submit = async () => {
+    const next = menu.draft.trim();
+    close();
+    if (next !== menu.label.trim()) {
+      await patchSession(state, menu.key, { label: next.length > 0 ? next : null });
+    }
+  };
+  return html`
+    <form
+      class="session-context-menu__rename"
+      @submit=${(event: Event) => {
+        event.preventDefault();
+        void submit();
+      }}
+    >
+      <input
+        class="session-context-menu__rename-input"
+        type="text"
+        .value=${menu.draft}
+        aria-label=${t("common.rename")}
+        autofocus
+        @keydown=${(event: KeyboardEvent) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            close();
+          }
+        }}
+        @input=${(event: Event) => {
+          state.sessionContextMenu = {
+            ...menu,
+            draft: (event.target as HTMLInputElement).value,
+          };
+        }}
+      />
+      <div class="session-context-menu__rename-actions">
+        <button type="button" class="session-context-menu__rename-btn" @click=${close}>
+          ${t("common.cancel")}
+        </button>
+        <button
+          type="submit"
+          class="session-context-menu__rename-btn session-context-menu__rename-btn--primary"
+        >
+          ${t("common.confirm")}
+        </button>
+      </div>
+    </form>
+  `;
+}
+
+function renderSessionDeleteConfirm(
+  state: AppViewState,
+  menu: NonNullable<AppViewState["sessionContextMenu"]>,
+  close: () => void,
+) {
+  const confirmDelete = async () => {
+    close();
+    // Our own confirmation already ran; skip the WebView's no-op window.confirm.
+    await deleteSessionsAndRefresh(state, [menu.key], { skipConfirm: true });
+  };
+  return html`
+    <div class="session-context-menu__confirm">
+      <div class="session-context-menu__confirm-text">${t("common.deleteSessionConfirm")}</div>
+      <div class="session-context-menu__rename-actions">
+        <button type="button" class="session-context-menu__rename-btn" @click=${close}>
+          ${t("common.cancel")}
+        </button>
+        <button
+          type="button"
+          class="session-context-menu__rename-btn session-context-menu__rename-btn--danger"
+          @click=${confirmDelete}
+        >
+          ${t("common.delete")}
+        </button>
+      </div>
+    </div>
   `;
 }
 
@@ -1662,6 +1817,7 @@ export function renderApp(state: AppViewState) {
         state.handleChatDraftChange(cmd.endsWith(" ") ? cmd : `${cmd} `);
       },
     })}
+    ${renderSessionContextMenu(state)}
     <div
       class="shell ${isChat ? "shell--chat" : ""} ${chatFocus
         ? "shell--chat-focus"

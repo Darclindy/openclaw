@@ -89,6 +89,14 @@ export type AppViewState = {
   allowExternalEmbedUrls: boolean;
   chatMessageMaxWidth?: string | null;
   sessionKey: string;
+  sessionContextMenu: {
+    key: string;
+    label: string;
+    x: number;
+    y: number;
+    mode: "menu" | "rename" | "confirm-delete";
+    draft: string;
+  } | null;
   chatSessionMessageSubscriptionKey?: string | null;
   chatSessionMessageSubscriptionRequestedKey?: string | null;
   chatLoading: boolean;

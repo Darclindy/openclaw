@@ -765,6 +765,175 @@
   display: none;
 }
 
+/* Right-click menu for a recent-session sidebar item. */
+.session-context-menu-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+}
+
+.session-context-menu-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.session-context-menu {
+  position: absolute;
+  min-width: 180px;
+  max-width: 260px;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow:
+    0 10px 30px color-mix(in srgb, var(--shadow-color, #000) 30%, transparent),
+    0 1px 0 var(--card-highlight);
+}
+
+.session-context-menu__title {
+  padding: 6px 10px 4px;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-context-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--control-ui-text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.session-context-menu__item:hover,
+.session-context-menu__item:focus-visible {
+  background: color-mix(in srgb, var(--secondary) 40%, transparent);
+  outline: none;
+}
+
+.session-context-menu__item--danger {
+  color: var(--danger);
+}
+
+.session-context-menu__item--danger:hover,
+.session-context-menu__item--danger:focus-visible {
+  background: var(--danger-subtle);
+}
+
+.session-context-menu__icon {
+  display: inline-flex;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+.session-context-menu__icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.session-context-menu__rename {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px;
+  min-width: 220px;
+}
+
+.session-context-menu__rename-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--control-ui-text-sm);
+}
+
+.session-context-menu__rename-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.session-context-menu__rename-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.session-context-menu__rename-btn {
+  padding: 5px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--control-ui-text-sm);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+.session-context-menu__rename-btn:hover {
+  background: color-mix(in srgb, var(--secondary) 40%, transparent);
+}
+
+.session-context-menu__rename-btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-foreground, #fff);
+}
+
+.session-context-menu__rename-btn--primary:hover {
+  background: color-mix(in srgb, var(--accent) 88%, #000);
+}
+
+.session-context-menu__rename-btn--danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+.session-context-menu__rename-btn--danger:hover {
+  background: color-mix(in srgb, var(--danger) 88%, #000);
+}
+
+.session-context-menu__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px;
+  max-width: 240px;
+}
+
+.session-context-menu__confirm-text {
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.4;
+  color: var(--text);
+}
+
 .nav-collapse-toggle {
   width: 36px;
   height: 36px;
