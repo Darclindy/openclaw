@@ -1,6 +1,7 @@
 import { html, nothing } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { until } from "lit/directives/until.js";
+import { t } from "../../i18n/index.ts";
 import { getSafeLocalStorage } from "../../local-storage.ts";
 import type { AssistantIdentity } from "../assistant-identity.ts";
 import type { EmbedSandboxMode } from "../embed-sandbox.ts";
@@ -445,30 +446,7 @@ export function renderMessageGroup(
         opts.assistantAttachmentAuthToken,
       )}
       <div class="chat-group-messages">
-        ${group.messages.map((item, index) =>
-          renderGroupedMessage(
-            item.message,
-            item.key,
-            {
-              isStreaming: group.isStreaming && index === group.messages.length - 1,
-              duplicateCount: item.duplicateCount ?? 1,
-              showReasoning: opts.showReasoning,
-              showToolCalls: opts.showToolCalls ?? true,
-              autoExpandToolCalls: opts.autoExpandToolCalls ?? false,
-              isToolMessageExpanded: opts.isToolMessageExpanded,
-              onToggleToolMessageExpanded: opts.onToggleToolMessageExpanded,
-              isToolExpanded: opts.isToolExpanded,
-              onToggleToolExpanded: opts.onToggleToolExpanded,
-              onRequestUpdate: opts.onRequestUpdate,
-              canvasPluginSurfaceUrl: opts.canvasPluginSurfaceUrl,
-              basePath: opts.basePath,
-              localMediaPreviewRoots: opts.localMediaPreviewRoots,
-              assistantAttachmentAuthToken: opts.assistantAttachmentAuthToken,
-              embedSandboxMode: opts.embedSandboxMode,
-            },
-            opts.onOpenSidebar,
-          ),
-        )}
+        ${renderGroupMessageUnits(group, opts)}
         <div class="chat-group-footer">
           <span class="chat-sender-name">${who}</span>
           ${renderChatTimestamp(group.timestamp)} ${renderMessageMeta(meta)}
@@ -479,6 +457,138 @@ export function renderMessageGroup(
       </div>
     </div>
   `;
+}
+
+type GroupMessageEntry = MessageGroup["messages"][number];
+type RenderOne = (entry: GroupMessageEntry, index: number) => unknown;
+
+/**
+ * A turn often contains many consecutive tool-call / tool-output messages the
+ * user doesn't care about. Each renders as its own row, so a single turn can
+ * fill the screen. Fold consecutive tool messages into one collapsed
+ * disclosure ("N tool steps") so they stay out of the way; expanding reveals
+ * the per-step rows (each still individually expandable). Non-tool messages
+ * (assistant text) render inline as before.
+ */
+function isToolShellMessage(message: unknown): boolean {
+  const m = message as Record<string, unknown>;
+  const role = typeof m.role === "string" ? m.role : "";
+  const isToolResult =
+    isToolResultMessage(message) ||
+    role.toLowerCase() === "toolresult" ||
+    role.toLowerCase() === "tool_result" ||
+    typeof m.toolCallId === "string" ||
+    typeof m.tool_call_id === "string";
+  return normalizeRoleForGrouping(role) === "tool" || isToolResult;
+}
+
+function collectToolRunNames(entries: Array<{ entry: GroupMessageEntry }>): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const { entry } of entries) {
+    for (const card of extractToolCards(entry.message, entry.key)) {
+      const name = typeof card.name === "string" ? card.name.trim() : "";
+      if (name && !seen.has(name)) {
+        seen.add(name);
+        names.push(name);
+      }
+    }
+  }
+  return names;
+}
+
+function formatToolRunNames(names: string[]): string {
+  if (names.length === 0) {
+    return "";
+  }
+  if (names.length <= 3) {
+    return names.join(", ");
+  }
+  return `${names.slice(0, 2).join(", ")} +${names.length - 2} more`;
+}
+
+function renderToolRun(
+  entries: Array<{ entry: GroupMessageEntry; index: number }>,
+  renderOne: RenderOne,
+) {
+  const namesHint = formatToolRunNames(collectToolRunNames(entries));
+  return html`
+    <details class="chat-tool-run">
+      <summary class="chat-tool-run__summary">
+        <span class="chat-tool-run__icon">${icons.wrench}</span>
+        <span class="chat-tool-run__count">${entries.length} tool steps</span>
+        ${namesHint ? html`<span class="chat-tool-run__names">${namesHint}</span>` : nothing}
+        <span class="chat-tool-run__chevron">${icons.chevronDown}</span>
+      </summary>
+      <div class="chat-tool-run__steps">
+        ${entries.map(({ entry, index }) => renderOne(entry, index))}
+      </div>
+    </details>
+  `;
+}
+
+function renderGroupMessageUnits(
+  group: MessageGroup,
+  opts: Parameters<typeof renderMessageGroup>[1],
+) {
+  const total = group.messages.length;
+  const renderOne: RenderOne = (entry, index) =>
+    renderGroupedMessage(
+      entry.message,
+      entry.key,
+      {
+        isStreaming: group.isStreaming && index === total - 1,
+        duplicateCount: entry.duplicateCount ?? 1,
+        showReasoning: opts.showReasoning,
+        showToolCalls: opts.showToolCalls ?? true,
+        autoExpandToolCalls: opts.autoExpandToolCalls ?? false,
+        isToolMessageExpanded: opts.isToolMessageExpanded,
+        onToggleToolMessageExpanded: opts.onToggleToolMessageExpanded,
+        isToolExpanded: opts.isToolExpanded,
+        onToggleToolExpanded: opts.onToggleToolExpanded,
+        onRequestUpdate: opts.onRequestUpdate,
+        canvasPluginSurfaceUrl: opts.canvasPluginSurfaceUrl,
+        basePath: opts.basePath,
+        localMediaPreviewRoots: opts.localMediaPreviewRoots,
+        assistantAttachmentAuthToken: opts.assistantAttachmentAuthToken,
+        embedSandboxMode: opts.embedSandboxMode,
+      },
+      opts.onOpenSidebar,
+    );
+
+  const foldToolRuns = opts.showToolCalls !== false;
+  const nodes: unknown[] = [];
+  let runStart = -1;
+  const flushRun = (endExclusive: number) => {
+    if (runStart < 0) {
+      return;
+    }
+    const entries: Array<{ entry: GroupMessageEntry; index: number }> = [];
+    for (let j = runStart; j < endExclusive; j++) {
+      entries.push({ entry: group.messages[j], index: j });
+    }
+    // A lone tool step is already a single compact row — only fold runs of 2+.
+    if (entries.length >= 2) {
+      nodes.push(renderToolRun(entries, renderOne));
+    } else {
+      for (const single of entries) {
+        nodes.push(renderOne(single.entry, single.index));
+      }
+    }
+    runStart = -1;
+  };
+  group.messages.forEach((entry, index) => {
+    if (foldToolRuns && isToolShellMessage(entry.message)) {
+      if (runStart < 0) {
+        runStart = index;
+      }
+      return;
+    }
+    flushRun(index);
+    nodes.push(renderOne(entry, index));
+  });
+  flushRun(total);
+  return nodes;
 }
 
 // ── Per-message metadata (tokens, cost, model, context %) ──
@@ -1353,7 +1463,7 @@ function renderThinkingBlock(reasoningMarkdown: string, open: boolean) {
     <details class="chat-thinking-collapse" ?open=${open}>
       <summary class="chat-thinking-summary">
         <span class="chat-thinking-summary__icon">${icons.brain}</span>
-        <span>Thinking</span>
+        <span>${t("common.thinking")}</span>
         <span class="chat-thinking-summary__chevron">${icons.chevronDown}</span>
       </summary>
       <div class="chat-thinking" dir="${detectTextDirection(reasoningMarkdown)}">

@@ -20,6 +20,12 @@ export type BuildChatItemsProps = {
   showToolCalls: boolean;
   searchOpen?: boolean;
   searchQuery?: string;
+  /**
+   * True while a run is in progress. Used to keep a "working" indicator visible
+   * during the gap between streamed text being committed (`stream` becomes null)
+   * and the next tool/output arriving, so the assistant area never blanks out.
+   */
+  runActive?: boolean;
 };
 
 function appendCanvasBlockToAssistantMessage(
@@ -600,6 +606,10 @@ export function buildChatItems(props: BuildChatItemsProps): Array<ChatItem | Mes
     } else if (props.stream.trim().length === 0) {
       items.push({ kind: "reading-indicator", key });
     }
+  } else if (props.runActive) {
+    // Stream text was committed (stream === null) but the run is still working
+    // (e.g. executing tools). Keep a working indicator so the area never blanks.
+    items.push({ kind: "reading-indicator", key: `working:${props.sessionKey}` });
   }
 
   return groupMessages(collapseSequentialDuplicateMessages(sortChatItemsByVisibleTime(items)));

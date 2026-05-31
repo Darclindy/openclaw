@@ -1118,6 +1118,8 @@ export function renderChat(props: ChatProps) {
     showToolCalls: props.showToolCalls,
     searchOpen: vs.searchOpen,
     searchQuery: vs.searchQuery,
+    runActive:
+      Boolean(props.sending) || (props.runStatus != null && !hasTerminalRunStatus(props.runStatus)),
   });
   syncToolCardExpansionState(props.sessionKey, chatItems, Boolean(props.autoExpandToolCalls));
   const expandedToolCards = getExpandedToolCards(props.sessionKey);
