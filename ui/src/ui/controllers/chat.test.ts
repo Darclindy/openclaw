@@ -896,6 +896,22 @@ describe("loadChatHistory filtering", () => {
     expect(state.chatLoading).toBe(false);
   });
 
+  it("can preserve an existing visible error while reloading history", async () => {
+    const mockClient = {
+      request: vi.fn().mockResolvedValue({ messages: [] }),
+    };
+    const state = createState({
+      client: mockClient as unknown as ChatState["client"],
+      connected: true,
+      lastError: "LLM request failed: network connection error.",
+    });
+
+    await loadChatHistory(state, { clearError: false });
+
+    expect(state.lastError).toBe("LLM request failed: network connection error.");
+    expect(state.chatLoading).toBe(false);
+  });
+
   it("keeps assistant message when text field has real content but content is NO_REPLY", async () => {
     const messages = [{ role: "assistant", text: "real reply", content: "NO_REPLY" }];
     const mockClient = {

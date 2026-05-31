@@ -1,7 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { ErrorCodes } from "../protocol/index.js";
 import { modelsHandlers } from "./models.js";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -243,5 +247,120 @@ describe("models.list", () => {
     expect(call?.[1]).toBeUndefined();
     expect(call?.[2]?.code).toBe(ErrorCodes.UNAVAILABLE);
     expect(call?.[2]?.message).toBe("Error: catalog failed");
+  });
+});
+
+describe("models.probe", () => {
+  it("calls configured OpenAI-compatible providers with the selected model", async () => {
+    const respond = vi.fn();
+    const fetchMock = vi.fn(
+      async (_url: string, _init: RequestInit) =>
+        new Response("{}", {
+          status: 200,
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await modelsHandlers["models.probe"]({
+      req: {
+        type: "req",
+        id: "req-models-probe",
+        method: "models.probe",
+        params: { provider: "xinflo", model: "openai/gpt-5.5" },
+      },
+      params: { provider: "xinflo", model: "openai/gpt-5.5" },
+      respond,
+      client: null,
+      isWebchatConnect: () => false,
+      context: {
+        getRuntimeConfig: () =>
+          ({
+            models: {
+              providers: {
+                xinflo: {
+                  api: "openai-completions",
+                  baseUrl: "https://models.example.com/v1",
+                  apiKey: "test-api-key",
+                  models: [{ id: "openai/gpt-5.5", name: "GPT 5.5" }],
+                },
+              },
+            },
+          }) as unknown as OpenClawConfig,
+      } as never,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://models.example.com/v1/chat/completions",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          authorization: "Bearer test-api-key",
+        }),
+        body: JSON.stringify({
+          model: "openai/gpt-5.5",
+          messages: [{ role: "user", content: "Reply with OK." }],
+          max_tokens: 8,
+          stream: false,
+        }),
+      }),
+    );
+    expect(respond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({
+        provider: "xinflo",
+        model: "openai/gpt-5.5",
+        ok: true,
+        status: 200,
+      }),
+      undefined,
+    );
+  });
+
+  it("returns probe failures as data instead of failing the RPC", async () => {
+    const respond = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("no access to model", { status: 403 })),
+    );
+
+    await modelsHandlers["models.probe"]({
+      req: {
+        type: "req",
+        id: "req-models-probe-failed",
+        method: "models.probe",
+        params: { provider: "xinflo", model: "gpt-5.5" },
+      },
+      params: { provider: "xinflo", model: "gpt-5.5" },
+      respond,
+      client: null,
+      isWebchatConnect: () => false,
+      context: {
+        getRuntimeConfig: () =>
+          ({
+            models: {
+              providers: {
+                xinflo: {
+                  api: "openai-completions",
+                  baseUrl: "https://models.example.com/v1",
+                  apiKey: "test-api-key",
+                  models: [{ id: "gpt-5.5", name: "GPT 5.5" }],
+                },
+              },
+            },
+          }) as unknown as OpenClawConfig,
+      } as never,
+    });
+
+    expect(respond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({
+        provider: "xinflo",
+        model: "gpt-5.5",
+        ok: false,
+        status: 403,
+        message: "no access to model",
+      }),
+      undefined,
+    );
   });
 });

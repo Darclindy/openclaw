@@ -461,6 +461,41 @@ describe("message-normalizer", () => {
       expect(result.content).toStrictEqual([]);
     });
 
+    it("renders assistant error messages when the transcript has no content blocks", () => {
+      const result = normalizeMessage({
+        role: "assistant",
+        content: [],
+        stopReason: "error",
+        provider: "local-openai",
+        model: "openai/gpt-5-5",
+        errorMessage:
+          "403 This token has no access to model openai/gpt-5-5 (request id: req-1)",
+      });
+
+      expect(result.content).toEqual([
+        {
+          type: "text",
+          text:
+            "Assistant failed (local-openai/openai/gpt-5-5): 403 This token has no access to model openai/gpt-5-5 (request id: req-1)",
+        },
+      ]);
+    });
+
+    it("redacts obvious bearer secrets from fallback assistant errors", () => {
+      const result = normalizeMessage({
+        role: "assistant",
+        stopReason: "error",
+        errorMessage: "request failed with Bearer abcdefghijklmnop",
+      });
+
+      expect(result.content).toEqual([
+        {
+          type: "text",
+          text: "Assistant failed: request failed with Bearer [redacted]",
+        },
+      ]);
+    });
+
     it("uses current timestamp when not provided", () => {
       const result = normalizeMessage({ role: "user", content: "Test" });
       expect(result.timestamp).toBe(Date.now());

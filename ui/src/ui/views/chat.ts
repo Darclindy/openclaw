@@ -48,9 +48,14 @@ import {
   renderCompactionIndicator,
   renderFallbackIndicator,
 } from "../chat/status-indicators.ts";
-import { getExpandedToolCards, syncToolCardExpansionState } from "../chat/tool-expansion-state.ts";
+import {
+  getExpandedToolCards,
+  markToolCardManuallyToggled,
+  syncToolCardExpansionState,
+} from "../chat/tool-expansion-state.ts";
 import type { EmbedSandboxMode } from "../embed-sandbox.ts";
 import { icons } from "../icons.ts";
+import { profilePhase } from "../perf/render-phase-profiler.ts";
 import type { SidebarContent } from "../sidebar-content.ts";
 import { detectTextDirection } from "../text-direction.ts";
 import type { SessionsListResult } from "../types.ts";
@@ -1108,23 +1113,27 @@ export function renderChat(props: ChatProps) {
     );
   };
 
-  const chatItems = buildChatItems({
-    sessionKey: props.sessionKey,
-    messages: props.messages,
-    toolMessages: props.toolMessages,
-    streamSegments: props.streamSegments,
-    stream: displayStream,
-    streamStartedAt: props.streamStartedAt,
-    showToolCalls: props.showToolCalls,
-    searchOpen: vs.searchOpen,
-    searchQuery: vs.searchQuery,
-    runActive:
-      Boolean(props.sending) || (props.runStatus != null && !hasTerminalRunStatus(props.runStatus)),
-  });
+  const chatItems = profilePhase("buildChatItems", () =>
+    buildChatItems({
+      sessionKey: props.sessionKey,
+      messages: props.messages,
+      toolMessages: props.toolMessages,
+      streamSegments: props.streamSegments,
+      stream: displayStream,
+      streamStartedAt: props.streamStartedAt,
+      showToolCalls: props.showToolCalls,
+      searchOpen: vs.searchOpen,
+      searchQuery: vs.searchQuery,
+      runActive:
+        Boolean(props.sending) ||
+        (props.runStatus != null && !hasTerminalRunStatus(props.runStatus)),
+    }),
+  );
   syncToolCardExpansionState(props.sessionKey, chatItems, Boolean(props.autoExpandToolCalls));
   const expandedToolCards = getExpandedToolCards(props.sessionKey);
   const toggleToolCardExpanded = (toolCardId: string) => {
     expandedToolCards.set(toolCardId, !expandedToolCards.get(toolCardId));
+    markToolCardManuallyToggled(props.sessionKey, toolCardId);
     requestUpdate();
   };
   const hasRealtimeTalkConversation = (props.realtimeTalkConversation?.length ?? 0) > 0;
@@ -1251,6 +1260,7 @@ export function renderChat(props: ChatProps) {
                   expandedToolCards.get(messageId) ?? false,
                 onToggleToolMessageExpanded: (messageId: string) => {
                   expandedToolCards.set(messageId, !expandedToolCards.get(messageId));
+                  markToolCardManuallyToggled(props.sessionKey, messageId);
                   requestUpdate();
                 },
                 isToolExpanded: (toolCardId: string) => expandedToolCards.get(toolCardId) ?? false,

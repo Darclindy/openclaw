@@ -110,6 +110,7 @@ type ConnectFrame = {
   method?: string;
   params?: {
     auth?: { token?: string; password?: string; deviceToken?: string };
+    device?: { nonce?: string };
     maxProtocol?: number;
     minProtocol?: number;
     scopes?: string[];
@@ -574,6 +575,27 @@ describe("GatewayBrowserClient", () => {
       token: "shared-auth-token",
       nonce: "nonce-1",
     });
+  });
+
+  it("falls back to token-only connect when the gateway challenge has not arrived yet", async () => {
+    const client = new GatewayBrowserClient({
+      url: "ws://127.0.0.1:18789",
+      token: "shared-auth-token",
+    });
+
+    client.start();
+    const ws = getLatestWebSocket();
+    ws.emitOpen();
+
+    await vi.waitFor(() => {
+      expect(ws.sent.length).toBeGreaterThan(0);
+    });
+
+    const connectFrame = parseLatestConnectFrame(ws);
+    expect(connectFrame.method).toBe("connect");
+    expect(connectFrame.params?.auth?.token).toBe("shared-auth-token");
+    expect(connectFrame.params?.device).toBeUndefined();
+    expect(signDevicePayloadMock).not.toHaveBeenCalled();
   });
 
   it("sends explicit shared token on insecure first connect without cached device fallback", async () => {

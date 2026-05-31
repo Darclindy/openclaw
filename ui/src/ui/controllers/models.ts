@@ -1,5 +1,5 @@
 import type { GatewayBrowserClient } from "../gateway.ts";
-import type { ModelCatalogEntry } from "../types.ts";
+import type { ModelCatalogEntry, ModelsProbeResult } from "../types.ts";
 
 /**
  * Fetch the model catalog from the gateway.
@@ -17,4 +17,15 @@ export async function loadModels(client: GatewayBrowserClient): Promise<ModelCat
   } catch {
     return [];
   }
+}
+
+export async function probeModelProvider(
+  client: GatewayBrowserClient,
+  params: { provider: string; model: string; timeoutMs?: number },
+): Promise<ModelsProbeResult> {
+  return await client.request<ModelsProbeResult>("models.probe", {
+    provider: params.provider,
+    model: params.model,
+    timeoutMs: params.timeoutMs ?? 20_000,
+  });
 }

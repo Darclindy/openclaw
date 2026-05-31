@@ -134,6 +134,66 @@ describe("config view", () => {
     return button;
   }
 
+  it("renders the packaged desktop app update path", () => {
+    const onDesktopAppUpdate = vi.fn();
+    const { container } = renderConfigView({
+      desktopMode: true,
+      activeSection: "update",
+      desktopGatewayUpdateSupported: false,
+      desktopAppUpdateSupported: false,
+      desktopPackagedRuntimeUpdateSupported: false,
+      desktopRuntime: {
+        packaged_runtime: true,
+        runtime_source: "packaged-runtime",
+        openclaw_version: "2026.5.25",
+        node_version: "22.19.0",
+        desktop_app_update_mode: "manual-release-page",
+        desktop_app_update_url: "https://github.com/openclaw/openclaw/releases",
+      },
+      onDesktopAppUpdate,
+    });
+
+    expect(normalizedText(container)).toContain("Desktop Runtime");
+    expect(normalizedText(container)).toContain("Manual release page");
+    const button = findButtonByText(container, "Open desktop releases");
+    button.click();
+    expect(onDesktopAppUpdate).toHaveBeenCalledOnce();
+  });
+
+  it("renders signed desktop app update checks when configured", () => {
+    const onCheckDesktopAppUpdate = vi.fn();
+    const onInstallDesktopAppUpdate = vi.fn();
+    const { container } = renderConfigView({
+      desktopMode: true,
+      activeSection: "update",
+      desktopGatewayUpdateSupported: false,
+      desktopAppUpdateSupported: true,
+      desktopRuntime: {
+        packaged_runtime: true,
+        runtime_source: "packaged-runtime",
+        openclaw_version: "2026.5.25",
+        node_version: "22.19.0",
+        desktop_app_update_mode: "signed-in-app-updater",
+        desktop_app_update_url: "https://github.com/openclaw/openclaw/releases",
+      },
+      desktopAppUpdateStatus: {
+        configured: true,
+        available: true,
+        current_version: "2026.5.25",
+        version: "2026.5.26",
+      },
+      onCheckDesktopAppUpdate,
+      onInstallDesktopAppUpdate,
+    });
+
+    expect(normalizedText(container)).toContain("Available");
+    expect(normalizedText(container)).toContain("Desktop update 2026.5.26 is available.");
+    findButtonByText(container, "Check app update").click();
+    findButtonByText(container, "Install app update").click();
+    expect(onCheckDesktopAppUpdate).toHaveBeenCalledOnce();
+    expect(onInstallDesktopAppUpdate).toHaveBeenCalledOnce();
+  });
+
   function queryRequired<T extends Element>(
     container: HTMLElement,
     selector: string,

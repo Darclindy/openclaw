@@ -144,6 +144,7 @@ import {
   titleForTab,
   type Tab,
 } from "./navigation.ts";
+import { beginRenderPhases, endRenderPhases } from "./perf/render-phase-profiler.ts";
 import { isPluginEnabledInConfigSnapshot } from "./plugin-activation.ts";
 import "./components/dashboard-header.ts";
 import { isCronSessionKey, resolveSessionDisplayName } from "./session-display.ts";
@@ -175,6 +176,7 @@ import {
   createDefaultDraft,
   draftToCronFormPatch,
 } from "./views/cron-quick-create.ts";
+import { renderDesktopModelSetup } from "./views/desktop-model-setup.ts";
 import { renderDreamingRestartConfirmation } from "./views/dreaming-restart-confirmation.ts";
 import { renderDreaming } from "./views/dreaming.ts";
 import { renderExecApprovalPrompt } from "./views/exec-approval.ts";
@@ -779,9 +781,12 @@ function renderMeasured<T>(
   render: () => T,
 ): T {
   const startedAtMs = controlUiNowMs();
+  beginRenderPhases();
   const result = render();
+  const phases = endRenderPhases();
   recordControlUiRenderTiming(state, surface, {
     ...payload,
+    ...(Object.keys(phases).length > 0 ? { phases } : {}),
     durationMs: roundedControlUiDurationMs(controlUiNowMs() - startedAtMs),
   });
   return result;
@@ -1060,6 +1065,16 @@ export function renderApp(state: AppViewState) {
     return html` ${renderLoginGate(state)} ${renderGatewayUrlConfirmation(state)} `;
   }
 
+  if (
+    state.desktopMode &&
+    !state.desktopModelSetupDismissed &&
+    (!state.desktopModelSetupChecked ||
+      state.desktopModelSetupLoading ||
+      state.desktopModelSetupRequired)
+  ) {
+    return html` ${renderDesktopModelSetup(state)} ${renderGatewayUrlConfirmation(state)} `;
+  }
+
   const presenceCount = state.presenceEntries.length;
   const sessionsCount = state.sessionsResult?.count ?? null;
   const cronNext = state.cronStatus?.nextWakeAtMs ?? null;
@@ -1320,8 +1335,53 @@ export function renderApp(state: AppViewState) {
       state.configRaw = next;
     },
     onRequestUpdate: requestHostUpdate,
+    desktopMode: state.desktopMode,
+    desktopGatewayUpdateSupported:
+      state.desktopStatus?.capabilities?.gateway_update_supported ?? !state.desktopMode,
+    desktopAppUpdateSupported:
+      state.desktopStatus?.capabilities?.desktop_app_update_supported ?? false,
+    desktopPackagedRuntimeUpdateSupported:
+      state.desktopStatus?.capabilities?.packaged_runtime_update_supported ?? false,
+    desktopRuntime: state.desktopStatus?.runtime ?? null,
+    desktopAppUpdateChecking: state.desktopAppUpdateChecking,
+    desktopAppUpdateInstalling: state.desktopAppUpdateInstalling,
+    desktopAppUpdateStatus: state.desktopAppUpdateStatus,
+    desktopAppUpdateMessage: state.desktopAppUpdateMessage,
+    desktopNotifications: state.desktopMode
+      ? {
+          supported: state.desktopStatus?.capabilities?.native_notifications_supported ?? true,
+          permission: state.desktopNotificationPermission,
+          loading: state.desktopNotificationLoading,
+          permissions: state.desktopStatus?.permissions?.entries ?? [],
+        }
+      : undefined,
+    onDesktopNotificationEnable: () => {
+      void state.handleDesktopNotificationEnable?.();
+    },
+    onDesktopNotificationTest: () => {
+      void state.handleDesktopNotificationTest?.();
+    },
+    onOpenDesktopPermissionSettings: (permissionId) => {
+      void state.openDesktopPermissionSettings?.(permissionId);
+    },
+    onDesktopAppUpdate: () => {
+      void state.openDesktopAppUpdatePage?.();
+    },
+    onCheckDesktopAppUpdate: () => {
+      void state.checkDesktopAppUpdate?.();
+    },
+    onInstallDesktopAppUpdate: () => {
+      void state.installDesktopAppUpdate?.();
+    },
     onFormPatch: (path: Array<string | number>, value: unknown) =>
       updateConfigFormValue(state, path, value),
+    onProviderRemove: (providerId: string) =>
+      removeConfigFormValue(state, ["models", "providers", providerId]),
+    onProviderProbe: (providerId: string, modelId: string) => {
+      void state.probeProviderModel?.(providerId, modelId);
+    },
+    providerProbeResults: state.modelProbeResults,
+    providerProbeLoadingKey: state.modelProbeLoadingKey,
     onReload: () => loadConfig(state, { discardPendingChanges: true }),
     onReset: () => resetConfigPendingChanges(state),
     onSave: () => saveConfig(state),
@@ -2780,6 +2840,10 @@ export function renderApp(state: AppViewState) {
                 clawhubDetailError: state.clawhubDetailError,
                 clawhubInstallSlug: state.clawhubInstallSlug,
                 clawhubInstallMessage: state.clawhubInstallMessage,
+                desktopMode: state.desktopMode,
+                desktopPluginSource: state.desktopPluginInstallSource,
+                desktopPluginInstallBusy: state.desktopPluginInstallBusy,
+                desktopPluginInstallMessage: state.desktopPluginInstallMessage,
                 onFilterChange: (next) => (state.skillsFilter = next),
                 onStatusFilterChange: (next) => (state.skillsStatusFilter = next),
                 onRefresh: () => loadSkills(state, { clearMessages: true }),
@@ -2800,6 +2864,13 @@ export function renderApp(state: AppViewState) {
                 onClawHubDetailOpen: (slug) => loadClawHubDetail(state, slug),
                 onClawHubDetailClose: () => closeClawHubDetail(state),
                 onClawHubInstall: (slug) => installFromClawHub(state, slug),
+                onDesktopPluginSourceChange: (next) => {
+                  state.desktopPluginInstallSource = next;
+                  state.desktopPluginInstallMessage = null;
+                },
+                onDesktopPluginInstall: () => {
+                  void state.installDesktopExternalPlugin?.();
+                },
               }),
             )
           : nothing}

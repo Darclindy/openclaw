@@ -1107,9 +1107,38 @@ describe("connectGateway", () => {
 
       expect(host.chatRunId).toBeNull();
       expect(loadChatHistoryMock).toHaveBeenCalledTimes(1);
-      expect(loadChatHistoryMock).toHaveBeenCalledWith(host);
+      if (terminalState === "error") {
+        expect(loadChatHistoryMock).toHaveBeenCalledWith(host, { clearError: false });
+      } else {
+        expect(loadChatHistoryMock).toHaveBeenCalledWith(host);
+      }
     },
   );
+
+  it("preserves visible chat errors while replaying the deferred transcript reload", () => {
+    const { host, client } = connectHostGateway();
+    host.chatRunId = "main-run-error";
+    loadChatHistoryMock.mockClear();
+
+    client.emitEvent({
+      event: "session.message",
+      payload: {
+        sessionKey: "main",
+      },
+    });
+    client.emitEvent({
+      event: "chat",
+      payload: {
+        runId: "main-run-error",
+        sessionKey: "main",
+        state: "error",
+        errorMessage: "LLM request failed: network connection error.",
+      },
+    });
+
+    expect(host.lastError).toBe("LLM request failed: network connection error.");
+    expect(loadChatHistoryMock).toHaveBeenCalledWith(host, { clearError: false });
+  });
 
   it("does not reload chat history after final assistant payload reconciles an active run", () => {
     const { host, client } = connectHostGateway();

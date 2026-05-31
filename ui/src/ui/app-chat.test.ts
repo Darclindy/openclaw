@@ -1590,6 +1590,19 @@ describe("handleAbortChat", () => {
     expect(hasAbortableSessionRun(host)).toBe(false);
   });
 
+  it("ignores stale running status once active-run tracking is cleared", () => {
+    const host = makeHost({
+      chatRunId: null,
+      sessionKey: "agent:main",
+      sessionsResult: createSessionsResult([
+        row("agent:main", { hasActiveRun: false, status: "running" }),
+        row("agent:other", { hasActiveRun: true, status: "running" }),
+      ]),
+    });
+
+    expect(hasAbortableSessionRun(host)).toBe(false);
+  });
+
   it("keeps the draft when disconnected without an active run", async () => {
     const host = makeHost({
       connected: false,

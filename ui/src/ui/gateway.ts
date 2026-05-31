@@ -398,11 +398,11 @@ async function buildGatewayConnectDevice(params: {
   connectNonce: string | null;
 }): Promise<GatewayConnectDevice | undefined> {
   const { deviceIdentity } = params;
-  if (!deviceIdentity) {
+  if (!deviceIdentity || !params.connectNonce) {
     return undefined;
   }
   const signedAtMs = Date.now();
-  const nonce = params.connectNonce ?? "";
+  const nonce = params.connectNonce;
   const payload = buildDeviceAuthPayload({
     deviceId: deviceIdentity.deviceId,
     clientId: params.client.id,

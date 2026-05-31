@@ -88,6 +88,13 @@
     {
       "count": 1,
       "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/app.ts",
+      "text": "Desktop onboarding"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
       "name": "description",
       "path": "ui/src/ui/chat/build-chat-items.ts",
       "text": "Earlier turns are preserved in a compaction checkpoint. Open session checkpoints to branch or restore that pre-compaction view."
@@ -2792,6 +2799,41 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/config.ts",
+      "text": "Desktop app updater"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/config.ts",
+      "text": "Desktop manages the local Gateway as an app runtime. Packaged builds update through the desktop app instead of the in-bundle Gateway updater."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/config.ts",
+      "text": "Desktop Notifications"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/config.ts",
+      "text": "Desktop Runtime"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/config.ts",
+      "text": "Desktop uses native app notifications instead of browser service-worker push."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/config.ts",
       "text": "Don't remind again"
     },
     {
@@ -2807,6 +2849,13 @@
       "name": "text",
       "path": "ui/src/ui/views/config.ts",
       "text": "Gateway"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/config.ts",
+      "text": "Gateway updater"
     },
     {
       "count": 1,
@@ -2841,7 +2890,49 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/config.ts",
+      "text": "macOS Permissions"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/config.ts",
+      "text": "Manage configured upstreams and run a live model call before saving it as the active path."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/config.ts",
+      "text": "Model providers"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/config.ts",
+      "text": "Native support"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/config.ts",
       "text": "No changes"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/config.ts",
+      "text": "No models configured"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/config.ts",
+      "text": "Node"
     },
     {
       "count": 1,
@@ -2855,6 +2946,20 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/config.ts",
+      "text": "Not tested"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/config.ts",
+      "text": "Notification permission"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/config.ts",
       "text": "Notifications are blocked. Update your browser site permissions to allow notifications."
     },
     {
@@ -2862,7 +2967,42 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/config.ts",
+      "text": "Open"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/config.ts",
+      "text": "Open desktop releases"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/config.ts",
+      "text": "Open each system privacy panel and grant access for features you use. Live status is shown where macOS exposes a preflight check."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/config.ts",
       "text": "Open tweakcn.com, choose or create a theme, click Share, then paste the copied theme link here. Share links, editor URLs, registry URLs, theme IDs, and default theme names like amethyst-haze are accepted."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/config.ts",
+      "text": "OpenClaw"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/config.ts",
+      "text": "Packaged runtime updater"
     },
     {
       "count": 1,
@@ -2918,6 +3058,13 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/config.ts",
+      "text": "Runtime source"
+    },
+    {
+      "count": 2,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/config.ts",
       "text": "Send test"
     },
     {
@@ -2954,6 +3101,13 @@
       "name": "text",
       "path": "ui/src/ui/views/config.ts",
       "text": "Theme link or ID"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/config.ts",
+      "text": "This packaged desktop runtime is immutable while the app is running. Install the next desktop app release to update the bundled Gateway."
     },
     {
       "count": 1,
@@ -3468,6 +3622,132 @@
     },
     {
       "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/views/desktop-model-setup.ts",
+      "text": "http://127.0.0.1:1234/v1"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/views/desktop-model-setup.ts",
+      "text": "local-openai"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/views/desktop-model-setup.ts",
+      "text": "OPENCLAW_GATEWAY_TOKEN"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/views/desktop-model-setup.ts",
+      "text": "Optional"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/views/desktop-model-setup.ts",
+      "text": "ws://127.0.0.1:18789"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/desktop-model-setup.ts",
+      "text": "Cancel"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/desktop-model-setup.ts",
+      "text": "CLI helper"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/desktop-model-setup.ts",
+      "text": "Desktop permissions"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/desktop-model-setup.ts",
+      "text": "Gateway connection"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/desktop-model-setup.ts",
+      "text": "Gateway password"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/desktop-model-setup.ts",
+      "text": "Gateway token"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/desktop-model-setup.ts",
+      "text": "Gateway URL"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/desktop-model-setup.ts",
+      "text": "Notifications use the native desktop path. macOS shows live status where the system exposes a preflight check, and each row opens its settings panel when available."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/desktop-model-setup.ts",
+      "text": "Open"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/desktop-model-setup.ts",
+      "text": "Setup wizard"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/desktop-model-setup.ts",
+      "text": "Setup wizard completed."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/desktop-model-setup.ts",
+      "text": "Use the Gateway-owned setup flow for provider auth, model choices, workspace, and plugin-owned onboarding."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/desktop-model-setup.ts",
+      "text": "Use the managed local Gateway, or connect this desktop app to another OpenClaw Gateway."
+    },
+    {
+      "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/dreaming.ts",
@@ -3761,7 +4041,7 @@
       "text": "ws://127.0.0.1:18789"
     },
     {
-      "count": 1,
+      "count": 2,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/login-gate.ts",
@@ -4374,6 +4654,13 @@
       "kind": "html-attribute",
       "name": "placeholder",
       "path": "ui/src/ui/views/skills.ts",
+      "text": "clawhub:owner/plugin, npm:pkg, npm-pack:/path/plugin.tgz"
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/views/skills.ts",
       "text": "Filter installed skills"
     },
     {
@@ -4409,7 +4696,21 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/skills.ts",
+      "text": "Desktop Plugins"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/skills.ts",
       "text": "Get your key:"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/skills.ts",
+      "text": "Install an external OpenClaw plugin into the desktop Gateway runtime."
     },
     {
       "count": 1,

@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   deriveGatewaySessionLifecycleSnapshot,
@@ -111,5 +114,67 @@ describe("session lifecycle state", () => {
       runtimeMs: 500,
       abortedLastRun: false,
     });
+  });
+
+  it("keeps internal webchat sessions done when a successful assistant turn was persisted before a late error", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-lifecycle-webchat-"));
+    try {
+      const sessionFile = path.join(dir, "session.jsonl");
+      fs.writeFileSync(
+        sessionFile,
+        [
+          JSON.stringify({
+            type: "message",
+            message: {
+              role: "user",
+              content: [{ type: "text", text: "hello" }],
+              timestamp: 1_200,
+            },
+          }),
+          JSON.stringify({
+            type: "message",
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: "hi" }],
+              stopReason: "stop",
+              timestamp: 1_500,
+            },
+          }),
+        ].join("\n") + "\n",
+      );
+
+      expect(
+        derivePersistedSessionLifecyclePatch({
+          storePath: path.join(dir, "sessions.json"),
+          entry: {
+            sessionId: "session",
+            sessionFile,
+            route: { channel: "webchat" },
+            updatedAt: 1_000,
+            startedAt: 1_100,
+            status: "running",
+            abortedLastRun: true,
+          },
+          event: {
+            ts: 2_000,
+            data: {
+              phase: "error",
+              startedAt: 1_100,
+              endedAt: 1_900,
+              error: "late abort after assistant persisted",
+            },
+          },
+        }),
+      ).toEqual({
+        updatedAt: 1_900,
+        status: "done",
+        startedAt: 1_100,
+        endedAt: 1_900,
+        runtimeMs: 800,
+        abortedLastRun: false,
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

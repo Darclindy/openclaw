@@ -51,6 +51,7 @@ type DiagnosticsTimelineEvent = {
 type DiagnosticsTimelineSpanOptions = {
   phase?: string;
   parentSpanId?: string;
+  runId?: string;
   attributes?: DiagnosticsTimelineAttributes;
   config?: OpenClawConfig;
   env?: NodeJS.ProcessEnv;
@@ -67,6 +68,7 @@ export type ActiveDiagnosticsTimelineSpan = {
   phase?: string;
   spanId: string;
   parentSpanId?: string;
+  runId?: string;
   attributes?: DiagnosticsTimelineAttributes;
 };
 
@@ -205,6 +207,7 @@ export async function measureDiagnosticsTimelineSpan<T>(
   const spanId = randomUUID();
   const phase = options.phase ?? activeSpan?.phase;
   const parentSpanId = options.parentSpanId ?? activeSpan?.spanId;
+  const runId = options.runId ?? activeSpan?.runId;
   const startedAt = performance.now();
   emitDiagnosticsTimelineEvent(
     {
@@ -213,6 +216,7 @@ export async function measureDiagnosticsTimelineSpan<T>(
       phase,
       spanId,
       parentSpanId,
+      runId,
       attributes: options.attributes,
     },
     { config: options.config, env },
@@ -224,6 +228,7 @@ export async function measureDiagnosticsTimelineSpan<T>(
         ...(phase ? { phase } : {}),
         spanId,
         ...(parentSpanId ? { parentSpanId } : {}),
+        ...(runId ? { runId } : {}),
         ...(options.attributes ? { attributes: options.attributes } : {}),
       },
       () => run(),
@@ -235,6 +240,7 @@ export async function measureDiagnosticsTimelineSpan<T>(
         phase,
         spanId,
         parentSpanId,
+        runId,
         durationMs: performance.now() - startedAt,
         attributes: options.attributes,
       },
@@ -249,6 +255,7 @@ export async function measureDiagnosticsTimelineSpan<T>(
         phase,
         spanId,
         parentSpanId,
+        runId,
         durationMs: performance.now() - startedAt,
         attributes: options.attributes,
         errorName: error instanceof Error ? error.name : typeof error,
@@ -275,6 +282,7 @@ export function measureDiagnosticsTimelineSpanSync<T>(
   const spanId = randomUUID();
   const phase = options.phase ?? activeSpan?.phase;
   const parentSpanId = options.parentSpanId ?? activeSpan?.spanId;
+  const runId = options.runId ?? activeSpan?.runId;
   const startedAt = performance.now();
   emitDiagnosticsTimelineEvent(
     {
@@ -283,6 +291,7 @@ export function measureDiagnosticsTimelineSpanSync<T>(
       phase,
       spanId,
       parentSpanId,
+      runId,
       attributes: options.attributes,
     },
     { config: options.config, env },
@@ -294,6 +303,7 @@ export function measureDiagnosticsTimelineSpanSync<T>(
         ...(phase ? { phase } : {}),
         spanId,
         ...(parentSpanId ? { parentSpanId } : {}),
+        ...(runId ? { runId } : {}),
         ...(options.attributes ? { attributes: options.attributes } : {}),
       },
       run,
@@ -305,6 +315,7 @@ export function measureDiagnosticsTimelineSpanSync<T>(
         phase,
         spanId,
         parentSpanId,
+        runId,
         durationMs: performance.now() - startedAt,
         attributes: options.attributes,
       },
@@ -319,6 +330,7 @@ export function measureDiagnosticsTimelineSpanSync<T>(
         phase,
         spanId,
         parentSpanId,
+        runId,
         durationMs: performance.now() - startedAt,
         attributes: options.attributes,
         errorName: error instanceof Error ? error.name : typeof error,

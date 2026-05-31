@@ -210,6 +210,39 @@ function mergeAdjacentTextItems(items: MessageContentItem[]): MessageContentItem
   return merged.filter((item) => item.type !== "text" || Boolean(item.text?.trim()));
 }
 
+function readTrimmedString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function redactVisibleErrorText(text: string): string {
+  return text
+    .replace(/\bsk-[A-Za-z0-9_-]{10,}\b/g, "sk-[redacted]")
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]{10,}\b/gi, "Bearer [redacted]");
+}
+
+function fallbackAssistantErrorContent(
+  message: Record<string, unknown>,
+  content: MessageContentItem[],
+): MessageContentItem[] {
+  if (content.length > 0) {
+    return content;
+  }
+  if (message.stopReason !== "error" && !readTrimmedString(message.errorMessage)) {
+    return content;
+  }
+  const errorText =
+    readTrimmedString(message.errorMessage) ?? "Assistant turn failed before producing content.";
+  const provider = readTrimmedString(message.provider);
+  const model = readTrimmedString(message.model);
+  const target = provider && model ? ` (${provider}/${model})` : "";
+  return [
+    {
+      type: "text",
+      text: `Assistant failed${target}: ${redactVisibleErrorText(errorText)}`,
+    },
+  ];
+}
+
 export function stripMessageDisplayMetadataText(text: string): string {
   return stripInboundMetadata(text);
 }
@@ -446,6 +479,9 @@ export function normalizeMessage(message: unknown): NormalizedMessage {
     typeof m.senderLabel === "string" && m.senderLabel.trim() ? m.senderLabel.trim() : null;
 
   content = stripMessageDisplayMetadata(content);
+  if (isAssistantMessage) {
+    content = fallbackAssistantErrorContent(m, content);
+  }
 
   return {
     role,

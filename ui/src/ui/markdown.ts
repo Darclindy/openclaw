@@ -19,6 +19,7 @@ import markdownItTaskLists from "markdown-it-task-lists";
 import { stripUnsupportedCitationControlMarkers } from "../../../src/shared/text/citation-control-markers.js";
 import { i18n, t } from "../i18n/index.ts";
 import { truncateText } from "./format.ts";
+import { profilePhase, recordPhase } from "./perf/render-phase-profiler.ts";
 import { normalizeLowercaseStringOrEmpty } from "./string-coerce.ts";
 
 const allowedTags = [
@@ -226,6 +227,10 @@ const autoHighlightLanguages = [
 ];
 
 function highlightCode(text: string, lang: string): string {
+  return profilePhase("highlight", () => highlightCodeImpl(text, lang));
+}
+
+function highlightCodeImpl(text: string, lang: string): string {
   const language = normalizeHighlightLanguage(lang);
   try {
     if (language && hljs.getLanguage(language)) {
@@ -586,6 +591,7 @@ export function toSanitizedMarkdownHtml(markdown: string): string {
   if (input.length <= MARKDOWN_CACHE_MAX_CHARS) {
     const cached = getCachedMarkdown(cacheKey);
     if (cached !== null) {
+      recordPhase("markdown.cacheHit", 0);
       return cached;
     }
   }
@@ -606,14 +612,16 @@ export function toSanitizedMarkdownHtml(markdown: string): string {
   }
   let rendered: string;
   try {
-    rendered = md.render(`${truncated.text}${suffix}`);
+    rendered = profilePhase("markdown.render", () => md.render(`${truncated.text}${suffix}`));
   } catch (err) {
     // Fall back to escaped plain text when md.render() throws (#36213).
     console.warn("[markdown] md.render failed, falling back to plain text:", err);
     const escaped = escapeHtml(`${truncated.text}${suffix}`);
     rendered = `<pre class="code-block">${escaped}</pre>`;
   }
-  const sanitized = DOMPurify.sanitize(rendered, sanitizeOptions);
+  const sanitized = profilePhase("markdown.sanitize", () =>
+    DOMPurify.sanitize(rendered, sanitizeOptions),
+  );
   if (input.length <= MARKDOWN_CACHE_MAX_CHARS) {
     setCachedMarkdown(cacheKey, sanitized);
   }

@@ -1,5 +1,7 @@
 import { updateSessionStoreEntry, type SessionEntry } from "../config/sessions.js";
 import type { AgentEventPayload } from "../infra/agent-events.js";
+import { isInternalMessageChannel } from "../utils/message-channel.js";
+import { readRecentSessionMessages } from "./session-utils.fs.js";
 import { loadSessionEntry } from "./session-utils.js";
 import type { GatewaySessionRow, SessionRunStatus } from "./session-utils.types.js";
 
@@ -22,7 +24,19 @@ type LifecycleSessionShape = Pick<
 
 type PersistedLifecycleSessionShape = Pick<
   SessionEntry,
-  "updatedAt" | "status" | "startedAt" | "endedAt" | "runtimeMs" | "abortedLastRun"
+  | "updatedAt"
+  | "status"
+  | "startedAt"
+  | "endedAt"
+  | "runtimeMs"
+  | "abortedLastRun"
+  | "sessionId"
+  | "sessionFile"
+  | "channel"
+  | "route"
+  | "deliveryContext"
+  | "lastChannel"
+  | "origin"
 >;
 
 type GatewaySessionLifecycleSnapshot = Partial<LifecycleSessionShape>;
@@ -89,6 +103,117 @@ function resolveRuntimeMs(params: {
   return undefined;
 }
 
+function readMessageRole(message: unknown): string | undefined {
+  return message && typeof message === "object" && !Array.isArray(message)
+    ? typeof (message as { role?: unknown }).role === "string"
+      ? (message as { role: string }).role
+      : undefined
+    : undefined;
+}
+
+function readMessageTimestamp(message: unknown): number | undefined {
+  if (!message || typeof message !== "object" || Array.isArray(message)) {
+    return undefined;
+  }
+  const timestamp = (message as { timestamp?: unknown }).timestamp;
+  if (isFiniteTimestamp(timestamp)) {
+    return timestamp;
+  }
+  return undefined;
+}
+
+function readMessageText(message: unknown): string {
+  if (!message || typeof message !== "object" || Array.isArray(message)) {
+    return "";
+  }
+  const record = message as { content?: unknown; text?: unknown };
+  if (typeof record.text === "string") {
+    return record.text;
+  }
+  if (!Array.isArray(record.content)) {
+    return "";
+  }
+  return record.content
+    .map((block) =>
+      block && typeof block === "object" && !Array.isArray(block)
+        ? typeof (block as { text?: unknown }).text === "string"
+          ? (block as { text: string }).text
+          : ""
+        : "",
+    )
+    .join("");
+}
+
+function hasSuccessfulAssistantMessage(params: {
+  entry: Partial<PersistedLifecycleSessionShape>;
+  storePath: string;
+  startedAt?: number;
+  endedAt?: number;
+}): boolean {
+  if (!params.entry.sessionId) {
+    return false;
+  }
+  const messages = readRecentSessionMessages(
+    params.entry.sessionId,
+    params.storePath,
+    params.entry.sessionFile,
+    {
+      maxMessages: 12,
+      maxBytes: 96 * 1024,
+      maxLines: 160,
+    },
+  );
+  const startedAt = params.startedAt;
+  const endedAt = params.endedAt;
+  return messages.some((message) => {
+    if (readMessageRole(message) !== "assistant") {
+      return false;
+    }
+    const text = readMessageText(message).trim();
+    if (!text || text === "[assistant turn failed before producing content]") {
+      return false;
+    }
+    const timestamp = readMessageTimestamp(message);
+    if (isFiniteTimestamp(startedAt) && isFiniteTimestamp(timestamp) && timestamp < startedAt) {
+      return false;
+    }
+    if (isFiniteTimestamp(endedAt) && isFiniteTimestamp(timestamp) && timestamp > endedAt + 5_000) {
+      return false;
+    }
+    const stopReason =
+      message && typeof message === "object" && !Array.isArray(message)
+        ? (message as { stopReason?: unknown }).stopReason
+        : undefined;
+    if (typeof stopReason === "string" && stopReason !== "stop" && stopReason !== "end_turn") {
+      return false;
+    }
+    return true;
+  });
+}
+
+function isInternalSessionEntry(entry: Partial<PersistedLifecycleSessionShape> | undefined) {
+  if (!entry) {
+    return false;
+  }
+  const routeChannel =
+    entry.route && typeof entry.route === "object" && !Array.isArray(entry.route)
+      ? (entry.route as { channel?: unknown }).channel
+      : undefined;
+  const deliveryChannel =
+    entry.deliveryContext &&
+    typeof entry.deliveryContext === "object" &&
+    !Array.isArray(entry.deliveryContext)
+      ? (entry.deliveryContext as { channel?: unknown }).channel
+      : undefined;
+  const originProvider =
+    entry.origin && typeof entry.origin === "object" && !Array.isArray(entry.origin)
+      ? (entry.origin as { provider?: unknown }).provider
+      : undefined;
+  return [entry.channel, routeChannel, deliveryChannel, entry.lastChannel, originProvider].some(
+    (channel) => typeof channel === "string" && isInternalMessageChannel(channel),
+  );
+}
+
 export function deriveGatewaySessionLifecycleSnapshot(params: {
   session?: Partial<LifecycleSessionShape> | null;
   event: LifecycleEventLike;
@@ -132,11 +257,32 @@ export function deriveGatewaySessionLifecycleSnapshot(params: {
 export function derivePersistedSessionLifecyclePatch(params: {
   entry?: Partial<PersistedLifecycleSessionShape> | null;
   event: LifecycleEventLike;
+  storePath?: string;
 }): Partial<PersistedLifecycleSessionShape> {
   const snapshot = deriveGatewaySessionLifecycleSnapshot({
     session: params.entry ?? undefined,
     event: params.event,
   });
+  if (
+    snapshot.status &&
+    snapshot.status !== "done" &&
+    params.entry &&
+    params.storePath &&
+    isInternalSessionEntry(params.entry) &&
+    hasSuccessfulAssistantMessage({
+      entry: params.entry,
+      storePath: params.storePath,
+      startedAt: snapshot.startedAt,
+      endedAt: snapshot.endedAt,
+    })
+  ) {
+    return {
+      ...snapshot,
+      updatedAt: typeof snapshot.updatedAt === "number" ? snapshot.updatedAt : undefined,
+      status: "done",
+      abortedLastRun: false,
+    };
+  }
   return {
     ...snapshot,
     updatedAt: typeof snapshot.updatedAt === "number" ? snapshot.updatedAt : undefined,
@@ -164,6 +310,7 @@ export async function persistGatewaySessionLifecycleEvent(params: {
       derivePersistedSessionLifecyclePatch({
         entry,
         event: params.event,
+        storePath: sessionEntry.storePath,
       }),
   });
 }

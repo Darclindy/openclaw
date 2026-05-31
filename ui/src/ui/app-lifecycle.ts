@@ -1,4 +1,5 @@
 import { connectGateway } from "./app-gateway.ts";
+import { isTauriDesktop } from "./app-native-bridge.ts";
 import {
   startLogsPolling,
   startNodesPolling,
@@ -23,6 +24,7 @@ import {
 import { startControlUiResponsivenessObserver } from "./control-ui-performance.ts";
 import { loadControlUiBootstrapConfig } from "./controllers/control-ui-bootstrap.ts";
 import type { Tab } from "./navigation.ts";
+import { startMainThreadBlockMonitor } from "./perf/main-thread-monitor.ts";
 
 type LifecycleHost = {
   basePath: string;
@@ -66,6 +68,7 @@ type LifecycleHost = {
   sessionsChangedReloadTimer?: number | ReturnType<typeof globalThis.setTimeout> | null;
   controlUiTabPaintSeq?: number;
   controlUiResponsivenessObserver?: { disconnect: () => void } | null;
+  mainThreadBlockMonitor?: { stop: () => void } | null;
   popStateHandler: () => void;
   topbarObserver: ResizeObserver | null;
 };
@@ -95,6 +98,10 @@ export function handleConnected(host: LifecycleHost) {
   }
   host.controlUiResponsivenessObserver ??= startControlUiResponsivenessObserver(
     host as unknown as Parameters<typeof startControlUiResponsivenessObserver>[0],
+  );
+  host.mainThreadBlockMonitor ??= startMainThreadBlockMonitor(
+    host as unknown as Parameters<typeof startMainThreadBlockMonitor>[0],
+    { force: isTauriDesktop() },
   );
 }
 
@@ -154,6 +161,8 @@ export function handleDisconnected(host: LifecycleHost) {
   host.topbarObserver = null;
   host.controlUiResponsivenessObserver?.disconnect();
   host.controlUiResponsivenessObserver = null;
+  host.mainThreadBlockMonitor?.stop();
+  host.mainThreadBlockMonitor = null;
 }
 
 export function handleUpdated(host: LifecycleHost, changed: Map<PropertyKey, unknown>) {
