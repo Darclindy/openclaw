@@ -51,9 +51,7 @@ vi.mock("../plugin-metadata-snapshot.js", () => ({
 vi.mock("../current-plugin-metadata-snapshot.js", () => ({
   clearCurrentPluginMetadataSnapshot: clearCurrentPluginMetadataSnapshotMock,
   getCurrentPluginMetadataSnapshot: getCurrentPluginMetadataSnapshotMock,
-  isReusableCurrentPluginMetadataSnapshot: (
-    snapshot: typeof metadataSnapshot & { registrySource?: "derived" },
-  ) => snapshot.registrySource !== "derived",
+  isReusableCurrentPluginMetadataSnapshot: () => true,
   setCurrentPluginMetadataSnapshot: setCurrentPluginMetadataSnapshotMock,
 }));
 
@@ -142,7 +140,7 @@ describe("resolvePluginRuntimeLoadContext", () => {
     expect(resolveAgentWorkspaceDirMock).toHaveBeenCalledWith(resolvedConfig, "default");
   });
 
-  it("does not store derived metadata as the reusable runtime snapshot", () => {
+  it("stores derived metadata as the reusable runtime snapshot (process-stable)", () => {
     const derivedSnapshot = { ...metadataSnapshot } as typeof metadataSnapshot & {
       registrySource: "derived";
     };
@@ -154,8 +152,10 @@ describe("resolvePluginRuntimeLoadContext", () => {
       env: { HOME: "/tmp/openclaw-home" } as NodeJS.ProcessEnv,
     });
 
-    expect(setCurrentPluginMetadataSnapshotMock).not.toHaveBeenCalled();
-    expect(clearCurrentPluginMetadataSnapshotMock).toHaveBeenCalledOnce();
+    // Derived snapshots are now reusable, so they are stored (not cleared);
+    // install/reload clears the current snapshot to surface new plugins.
+    expect(setCurrentPluginMetadataSnapshotMock).toHaveBeenCalledOnce();
+    expect(clearCurrentPluginMetadataSnapshotMock).not.toHaveBeenCalled();
   });
 
   it("uses the source runtime snapshot for plugin activation source config", () => {
