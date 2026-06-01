@@ -1,6 +1,11 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../config/config.js";
 import {
+  onAgentEvent,
+  resetAgentEventsForTest,
+  type AgentEventPayload,
+} from "../../infra/agent-events.js";
+import {
   hasCommittedMessagingToolDeliveryEvidence,
   hasOutboundDeliveryEvidence,
 } from "./delivery-evidence.js";
@@ -2393,6 +2398,10 @@ describe("runEmbeddedPiAgent incomplete-turn safety", () => {
 
   it("keeps retrying and surfacing clean empty assistant turns without the silence flag", async () => {
     mockedClassifyFailoverReason.mockReturnValue(null);
+    const onAgentEventCallback = vi.fn();
+    const emittedEvents: AgentEventPayload[] = [];
+    resetAgentEventsForTest();
+    const stopAgentEvents = onAgentEvent((event) => emittedEvents.push(event));
     mockedRunEmbeddedAttempt.mockResolvedValue(
       makeAttemptResult({
         assistantTexts: [],
@@ -2411,11 +2420,36 @@ describe("runEmbeddedPiAgent incomplete-turn safety", () => {
       provider: "openai",
       model: "gpt-5.4",
       runId: "run-empty-assistant-error",
+      onAgentEvent: onAgentEventCallback,
     });
+    stopAgentEvents();
 
     expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(2);
     expect(result.payloads?.[0]?.isError).toBe(true);
     expect(result.payloads?.[0]?.text).toContain("couldn't generate a response");
+    expect(onAgentEventCallback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stream: "assistant",
+        data: expect.objectContaining({
+          isError: true,
+          delta: "",
+          replace: true,
+          text: expect.stringContaining("couldn't generate a response"),
+        }),
+      }),
+    );
+    expect(emittedEvents).toContainEqual(
+      expect.objectContaining({
+        runId: "run-empty-assistant-error",
+        stream: "assistant",
+        data: expect.objectContaining({
+          isError: true,
+          delta: "",
+          replace: true,
+          text: expect.stringContaining("couldn't generate a response"),
+        }),
+      }),
+    );
   });
 
   it("detects generic empty Gemini turns without visible text", () => {

@@ -1,4 +1,7 @@
+import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Model } from "@earendil-works/pi-ai";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -25,6 +28,8 @@ type OpenAICompletionsOutput = Parameters<typeof testing.processOpenAICompletion
 type OpenAIResponsesOutput = Parameters<typeof testing.processResponsesStream>[1];
 
 type CapturedStreamEvent = { type?: string; delta?: string };
+
+const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 
 function createDeepSeekCompletionsModel(): Model<"openai-completions"> {
   return {
@@ -126,7 +131,56 @@ function expectRecordFields(record: unknown, expected: Record<string, unknown>) 
   return actual;
 }
 
+function readJsonFixture<T>(relativePath: string): T {
+  return JSON.parse(readFileSync(join(TEST_DIR, relativePath), "utf8")) as T;
+}
+
 describe("openai transport stream", () => {
+  it("parses the live xinflo chat completions stream snapshot into visible text", async () => {
+    const fixture = readJsonFixture<{
+      chunks: unknown[];
+    }>("test-fixtures/xinflo-chat-completions-stream-ok.snapshot.json");
+    const model = {
+      id: "openai/gpt-5.5",
+      name: "GPT-5.5 via xinflo",
+      api: "openai-completions",
+      provider: "xinflo",
+      baseUrl: "https://models.xinflo.com/v1",
+      reasoning: true,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 200_000,
+      maxTokens: 8192,
+    } satisfies Model<"openai-completions">;
+    const output = createAssistantOutput(model);
+    const events: unknown[] = [];
+
+    await testing.processOpenAICompletionsStream(streamChunks(fixture.chunks), output, model, {
+      push(event) {
+        events.push(event);
+      },
+    });
+
+    expect(output.stopReason).toBe("stop");
+    expect(output.content).toStrictEqual([{ type: "text", text: "OK" }]);
+    expectRecordFields(output.usage, {
+      input: 26,
+      output: 17,
+      cacheRead: 0,
+      reasoningTokens: 10,
+      totalTokens: 43,
+    });
+    expect(
+      events
+        .filter((event): event is CapturedStreamEvent => {
+          return Boolean(event && typeof event === "object" && "type" in event);
+        })
+        .filter((event) => event.type === "text_delta")
+        .map((event) => event.delta)
+        .join(""),
+    ).toBe("OK");
+  });
+
   it("fails Azure Responses streams when headers arrive but no first event follows", async () => {
     const model = createAzureResponsesModel();
     await expect(

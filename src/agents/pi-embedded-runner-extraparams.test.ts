@@ -815,6 +815,20 @@ describe("applyExtraParamsToAgent", () => {
     });
   });
 
+  it("removes default completions reasoning effort when thinking is off for proxy providers", () => {
+    const payload = runExtraParamsPayloadCase({
+      provider: "xinflo",
+      modelId: "openai/gpt-5.5",
+      thinkingLevel: "off",
+      payload: {
+        reasoning_effort: "high",
+      },
+    });
+
+    expect(payload).not.toHaveProperty("reasoning");
+    expect(payload).not.toHaveProperty("reasoning_effort");
+  });
+
   it("strips xai Responses reasoning payload fields", () => {
     const payload = runResponsesPayloadMutationCase({
       applyProvider: "xai",

@@ -467,7 +467,10 @@ export function createOpenAIThinkingLevelWrapper(
   return (model, context, options) => {
     if (!shouldApplyOpenAIReasoningCompatibility(model)) {
       if (thinkingLevel === "off") {
-        return underlying(model, context, options);
+        return streamWithPayloadPatch(underlying, model, context, options, (payloadObj) => {
+          delete payloadObj.reasoning;
+          delete payloadObj.reasoning_effort;
+        });
       }
       return streamWithPayloadPatch(underlying, model, context, options, (payloadObj) => {
         raiseMinimalReasoningForResponsesWebSearchPayload({ model, payloadObj });
@@ -478,6 +481,9 @@ export function createOpenAIThinkingLevelWrapper(
       if (thinkingLevel === "off") {
         if (existingReasoning !== undefined) {
           delete payloadObj.reasoning;
+        }
+        if (payloadObj.reasoning_effort !== undefined) {
+          delete payloadObj.reasoning_effort;
         }
         return;
       }

@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeAttemptResult, makeCompactionSuccess } from "./run.overflow-compaction.fixture.js";
 import {
   loadRunOverflowCompactionHarness,
@@ -298,6 +298,7 @@ describe("timeout-triggered compaction", () => {
   });
 
   it("points idle-timeout errors at provider timeout and the agent runtime ceiling", async () => {
+    const onAgentEvent = vi.fn();
     mockedRunEmbeddedAttempt.mockResolvedValueOnce(
       makeAttemptResult({
         timedOut: true,
@@ -308,13 +309,27 @@ describe("timeout-triggered compaction", () => {
       }),
     );
 
-    const result = await runEmbeddedPiAgent(overflowBaseRunParams);
+    const result = await runEmbeddedPiAgent({
+      ...overflowBaseRunParams,
+      onAgentEvent,
+    });
 
     expect(mockedCompactDirect).not.toHaveBeenCalled();
     expect(result.payloads?.[0]?.isError).toBe(true);
     expect(result.payloads?.[0]?.text).toContain("models.providers.<id>.timeoutSeconds");
     expect(result.payloads?.[0]?.text).toContain("agents.defaults.timeoutSeconds");
     expect(result.payloads?.[0]?.text).toContain("provider timeouts cannot extend");
+    expect(onAgentEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stream: "assistant",
+        data: expect.objectContaining({
+          isError: true,
+          delta: "",
+          replace: true,
+          text: expect.stringContaining("models.providers.<id>.timeoutSeconds"),
+        }),
+      }),
+    );
   });
 
   it("retries one silent idle timeout before surfacing an error", async () => {

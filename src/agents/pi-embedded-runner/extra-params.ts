@@ -32,6 +32,7 @@ import {
   createOpenAICompletionsToolsCompatWrapper,
   createOpenAIResponsesContextManagementWrapper,
   createOpenAIStringContentWrapper,
+  createOpenAIThinkingLevelWrapper,
 } from "./openai-stream-wrappers.js";
 import { resolveCacheRetention } from "./prompt-cache-retention.js";
 import { createOpenRouterSystemCacheWrapper } from "./proxy-stream-wrappers.js";
@@ -761,6 +762,7 @@ function applyPostPluginStreamWrappers(
   ctx.agent.streamFn = createOpenAIStringContentWrapper(ctx.agent.streamFn);
   ctx.agent.streamFn = createOpenAICompletionsStrictMessageKeysWrapper(ctx.agent.streamFn);
   ctx.agent.streamFn = createOpenAICompletionsToolsCompatWrapper(ctx.agent.streamFn);
+  ctx.agent.streamFn = createOpenAIThinkingLevelWrapper(ctx.agent.streamFn, ctx.thinkingLevel);
 
   if (!ctx.providerWrapperHandled) {
     ctx.agent.streamFn = createDeepSeekV4OpenAICompatibleThinkingWrapper({

@@ -10,12 +10,18 @@ import {
   createCodexNativeWebSearchWrapper,
 } from "./openai-stream-wrappers.js";
 
-function createPayloadCapture(opts?: { initialReasoning?: unknown }) {
+function createPayloadCapture(opts?: {
+  initialReasoning?: unknown;
+  initialReasoningEffort?: unknown;
+}) {
   const payloads: Array<Record<string, unknown>> = [];
   const baseStreamFn: StreamFn = (model, _context, options) => {
     const payload: Record<string, unknown> = { model: model.id };
     if (opts?.initialReasoning !== undefined) {
       payload.reasoning = structuredClone(opts.initialReasoning);
+    }
+    if (opts?.initialReasoningEffort !== undefined) {
+      payload.reasoning_effort = structuredClone(opts.initialReasoningEffort);
     }
     options?.onPayload?.(payload, model);
     payloads.push(structuredClone(payload));
@@ -354,11 +360,13 @@ describe("createOpenAIThinkingLevelWrapper", () => {
   it("removes reasoning when thinkingLevel is off on reasoning-capable model", () => {
     const { baseStreamFn, payloads } = createPayloadCapture({
       initialReasoning: { effort: "medium" },
+      initialReasoningEffort: "medium",
     });
     const wrapped = createOpenAIThinkingLevelWrapper(baseStreamFn, "off");
     void wrapped(codexModel, { messages: [] }, {});
 
     expect(payloads[0]).not.toHaveProperty("reasoning");
+    expect(payloads[0]).not.toHaveProperty("reasoning_effort");
   });
 
   it("maps adaptive thinkingLevel to medium effort on reasoning-capable model", () => {
@@ -428,6 +436,26 @@ describe("createOpenAIThinkingLevelWrapper", () => {
     );
 
     expect(payloads[0]?.reasoning).toBeUndefined();
+  });
+
+  it("removes reasoning effort when thinking is off for completions proxy routes", () => {
+    const { baseStreamFn, payloads } = createPayloadCapture({
+      initialReasoningEffort: "high",
+    });
+    const wrapped = createOpenAIThinkingLevelWrapper(baseStreamFn, "off");
+    void wrapped(
+      {
+        api: "openai-completions",
+        provider: "xinflo",
+        id: "openai/gpt-5.5",
+        baseUrl: "https://proxy.example.com/v1",
+      } as Model<"openai-completions">,
+      { messages: [] },
+      {},
+    );
+
+    expect(payloads[0]).not.toHaveProperty("reasoning");
+    expect(payloads[0]).not.toHaveProperty("reasoning_effort");
   });
 
   it("does not inject reasoning for proxy routes with custom baseUrl", () => {

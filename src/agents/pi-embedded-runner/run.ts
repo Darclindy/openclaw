@@ -8,7 +8,7 @@ import {
   resolveContextEngine,
   resolveContextEngineOwnerPluginId,
 } from "../../context-engine/registry.js";
-import { emitAgentPlanEvent } from "../../infra/agent-events.js";
+import { emitAgentEvent, emitAgentPlanEvent } from "../../infra/agent-events.js";
 import { sleepWithAbort } from "../../infra/backoff.js";
 import { withCpuProfile } from "../../infra/cpu-profile.js";
 import { freezeDiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
@@ -207,6 +207,33 @@ const MID_TURN_PRECHECK_CONTINUATION_PROMPT =
 const COMPACTION_CONTINUATION_RETRY_INSTRUCTION =
   "The previous attempt compacted the conversation context before producing a final user-visible answer. Continue from the compacted transcript and produce the final answer now. Do not restart from scratch, do not repeat completed work, and do not rerun tools unless the transcript clearly lacks required evidence.";
 type EmbeddedRunAttemptForRunner = Awaited<ReturnType<typeof runEmbeddedAttemptWithBackend>>;
+
+async function emitTerminalErrorAssistantText(params: {
+  onAgentEvent?: RunEmbeddedPiAgentParams["onAgentEvent"];
+  runId: string;
+  sessionKey?: string;
+  text: string;
+}) {
+  const text = params.text.trim();
+  if (!text) {
+    return;
+  }
+  const event = {
+    stream: "assistant",
+    ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
+    data: {
+      text,
+      delta: "",
+      replace: true,
+      isError: true,
+    },
+  } as const;
+  emitAgentEvent({
+    runId: params.runId,
+    ...event,
+  });
+  await params.onAgentEvent?.(event);
+}
 
 function resolveAttemptDispatchApiKey(params: {
   apiKeyInfo: ApiKeyInfo | null;
@@ -2852,6 +2879,12 @@ export async function runEmbeddedPiAgent(
                     timeoutPhase,
                     providerStarted,
                   });
+                  await emitTerminalErrorAssistantText({
+                    onAgentEvent: params.onAgentEvent,
+                    runId: params.runId,
+                    sessionKey: params.sessionKey,
+                    text: timeoutText,
+                  });
                   return {
                     payloads: [
                       ...(hasPartialAssistantTextAfterPromptTimeout
@@ -3121,19 +3154,24 @@ export async function runEmbeddedPiAgent(
                   };
                 }
                 if (reasoningOnlyRetriesExhausted && !finalAssistantVisibleText) {
-                  const replayInvalid = resolveReplayInvalidForAttempt(
-                    "⚠️ Agent couldn't generate a response. Please try again.",
-                  );
+                  const terminalText = "⚠️ Agent couldn't generate a response. Please try again.";
+                  const replayInvalid = resolveReplayInvalidForAttempt(terminalText);
                   const livenessState = resolveRunLivenessState({
                     payloadCount: 0,
                     aborted,
                     timedOut,
                     attempt,
-                    incompleteTurnText: "⚠️ Agent couldn't generate a response. Please try again.",
+                    incompleteTurnText: terminalText,
                   });
                   attempt.setTerminalLifecycleMeta?.({
                     replayInvalid,
                     livenessState,
+                  });
+                  await emitTerminalErrorAssistantText({
+                    onAgentEvent: params.onAgentEvent,
+                    runId: params.runId,
+                    sessionKey: params.sessionKey,
+                    text: terminalText,
                   });
                   if (lastProfileId) {
                     await maybeMarkAuthProfileFailure({
@@ -3144,7 +3182,7 @@ export async function runEmbeddedPiAgent(
                   return {
                     payloads: [
                       {
-                        text: "⚠️ Agent couldn't generate a response. Please try again.",
+                        text: terminalText,
                         isError: true,
                       },
                     ],
@@ -3242,6 +3280,12 @@ export async function runEmbeddedPiAgent(
                   attempt.setTerminalLifecycleMeta?.({
                     replayInvalid,
                     livenessState,
+                  });
+                  await emitTerminalErrorAssistantText({
+                    onAgentEvent: params.onAgentEvent,
+                    runId: params.runId,
+                    sessionKey: params.sessionKey,
+                    text: incompleteTurnText,
                   });
                   const incompleteStopReason = attempt.lastAssistant?.stopReason;
                   log.warn(
