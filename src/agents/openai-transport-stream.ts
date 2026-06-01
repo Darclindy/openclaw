@@ -30,6 +30,7 @@ import { createSubsystemLogger } from "../logging/subsystem.js";
 import type { ProviderRuntimeModel } from "../plugins/provider-runtime-model.types.js";
 import { resolveProviderTransportTurnStateWithPlugin } from "../plugins/provider-runtime.js";
 import { CHARS_PER_TOKEN_ESTIMATE, estimateStringChars } from "../utils/cjk-chars.js";
+import { traceProviderSpan } from "./agent-timeline.js";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./copilot-dynamic-headers.js";
 import { createDeepSeekTextFilter } from "./deepseek-text-filter.js";
 import { resolveMaxTokensParam } from "./model-max-tokens-params.js";
@@ -2196,22 +2197,30 @@ export function createAzureOpenAIResponsesTransportStreamFn(): StreamFn {
             `baseUrl=${formatModelTransportDebugBaseUrl(model.baseUrl)} timeoutMs=${safeDebugValue(requestOptions?.timeout)} ` +
             `apiKey=${apiKey ? "present" : "missing"} ${summarizeResponsesPayload(params)}`,
         );
-        const responseStream = (await client.responses.create(
-          params as never,
-          requestOptions,
-        )) as unknown as AsyncIterable<unknown>;
-        emitModelTransportDebug(
-          log,
-          `[responses] headers provider=${model.provider} api=${model.api} model=${model.id} ` +
-            `elapsedMs=${Date.now() - requestStartedAt}`,
+        await traceProviderSpan(
+          "provider.request",
+          async () => {
+            const responseStream = (await client.responses.create(
+              params as never,
+              requestOptions,
+            )) as unknown as AsyncIterable<unknown>;
+            emitModelTransportDebug(
+              log,
+              `[responses] headers provider=${model.provider} api=${model.api} model=${model.id} ` +
+                `elapsedMs=${Date.now() - requestStartedAt}`,
+            );
+            stream.push({ type: "start", partial: output as never });
+            await processResponsesStream(responseStream, output, stream, model, {
+              firstEventTimeoutMs: AZURE_RESPONSES_FIRST_EVENT_TIMEOUT_MS,
+              signal: options?.signal,
+              authProfileId: responsesOptions?.authProfileId,
+              sessionId: options?.sessionId,
+            });
+          },
+          {
+            attributes: { provider: model.provider, model: model.id, api: String(model.api) },
+          },
         );
-        stream.push({ type: "start", partial: output as never });
-        await processResponsesStream(responseStream, output, stream, model, {
-          firstEventTimeoutMs: AZURE_RESPONSES_FIRST_EVENT_TIMEOUT_MS,
-          signal: options?.signal,
-          authProfileId: responsesOptions?.authProfileId,
-          sessionId: options?.sessionId,
-        });
         if (options?.signal?.aborted) {
           throw new Error("Request was aborted");
         }
@@ -2405,14 +2414,22 @@ export function createOpenAICompletionsTransportStreamFn(): StreamFn {
           enforceCodeModeResponsesToolSurface(params);
           assertCodeModeResponsesToolSurface(params);
         }
-        const responseStream = (await client.chat.completions.create(
-          params as never,
-          buildOpenAISdkRequestOptions(model, options?.signal),
-        )) as unknown as AsyncIterable<ChatCompletionChunk>;
-        stream.push({ type: "start", partial: output as never });
-        await processOpenAICompletionsStream(responseStream, output, model, stream, {
-          signal: options?.signal,
-        });
+        await traceProviderSpan(
+          "provider.request",
+          async () => {
+            const responseStream = (await client.chat.completions.create(
+              params as never,
+              buildOpenAISdkRequestOptions(model, options?.signal),
+            )) as unknown as AsyncIterable<ChatCompletionChunk>;
+            stream.push({ type: "start", partial: output as never });
+            await processOpenAICompletionsStream(responseStream, output, model, stream, {
+              signal: options?.signal,
+            });
+          },
+          {
+            attributes: { provider: model.provider, model: model.id, api: String(model.api) },
+          },
+        );
         if (options?.signal?.aborted) {
           throw new Error("Request was aborted");
         }

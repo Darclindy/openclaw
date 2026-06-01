@@ -11,6 +11,7 @@ import { extractText } from "../chat/message-extract.ts";
 import { reconcileChatRunLifecycle } from "../chat/run-lifecycle.ts";
 import { formatConnectError } from "../connect-error.ts";
 import { GatewayRequestError, type GatewayBrowserClient } from "../gateway.ts";
+import { clientTrace } from "../perf/trace-client.ts";
 import { areUiSessionKeysEquivalent } from "../session-key.ts";
 import { normalizeLowercaseStringOrEmpty } from "../string-coerce.ts";
 import type { ChatAttachment } from "../ui-types.ts";
@@ -605,6 +606,7 @@ export async function sendChatMessage(
   state.chatRunId = runId;
   state.chatStream = "";
   state.chatStreamStartedAt = now;
+  clientTrace.startChatSend(runId);
 
   try {
     await requestChatSend(state, { message: msg, attachments, runId });
@@ -731,11 +733,14 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     return null;
   }
 
+  clientTrace.markFirstEvent(state.chatRunId);
   const terminalRunId = payload.runId ?? state.chatRunId;
   const reconcileTerminalRun = (
     outcome: "done" | "interrupted",
     sessionStatus: "done" | "failed" | "killed",
-  ) =>
+  ) => {
+    // Close the frontend perf-trace span on any terminal state and flush to the gateway.
+    clientTrace.endChatSend(terminalRunId, state.client);
     reconcileChatRunLifecycle(state as unknown as Parameters<typeof reconcileChatRunLifecycle>[0], {
       outcome,
       sessionStatus,
@@ -745,6 +750,7 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
       clearLocalRun: true,
       clearChatStream: true,
     });
+  };
 
   if (payload.state === "delta") {
     const next = extractText(payload.message);

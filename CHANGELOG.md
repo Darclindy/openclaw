@@ -6,10 +6,12 @@ Docs: https://docs.openclaw.ai
 
 ### Changes
 
+- Diagnostics: add a dev-mode end-to-end performance trace that correlates frontend, gateway, agent, and provider spans by runId and exports a Perfetto/Chrome flame graph via `openclaw diagnostics trace-export`; opt-in via `OPENCLAW_DIAGNOSTICS=timeline` plus the desktop `openclaw:perf-trace` flag, with optional V8 CPU profiles. See docs/diagnostics/perf-trace.
 - Control UI: add an ephemeral Activity tab for sanitized live tool activity summaries without persisting raw telemetry. Fixes #12831. Thanks @BunsDev.
 
 ### Fixes
 
+- Plugins/perf: memoize derived plugin metadata snapshots (process-stable) instead of re-deriving on every lookup, so a single chat request no longer triggers hundreds of full filesystem scans (~40s observed on a no-persisted-index setup); new plugins are still discovered after install/reload, which rewrites the index and forces a rescan.
 - Agents/commitments: serialize commitment store load-modify-save writes so concurrent heartbeat and CLI updates no longer lose dismissal, sent, or attempt state. (#81153) Thanks @ai-hpc.
 - Gateway/perf: tighten restart and startup benchmark failure handling so long profiling runs, failed probes, and fresh Linux runners no longer produce false passing or `n/a` results.
 - Checks: keep intentional Knip unused-file findings optional so full CI and sparse proof workspaces stay aligned.

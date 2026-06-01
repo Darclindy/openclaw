@@ -2339,6 +2339,9 @@ export const chatHandlers: GatewayRequestHandlers = {
       systemProvenanceReceipt?: string;
       idempotencyKey: string;
     };
+    // Correlates every gateway/agent/provider timeline span for this request so
+    // the diagnostics trace export groups them into one flame graph (perf-trace).
+    const clientRunId = p.idempotencyKey;
     const explicitOriginResult = normalizeExplicitChatSendOrigin({
       originatingChannel: p.originatingChannel,
       originatingTo: p.originatingTo,
@@ -2403,7 +2406,9 @@ export const chatHandlers: GatewayRequestHandlers = {
       () => loadSessionEntry(rawSessionKey),
       {
         phase: "agent-turn",
+        runId: clientRunId,
         attributes: {
+          layer: "gateway",
           hasAttachments: normalizedAttachments.length > 0,
           hasExplicitOrigin: explicitOriginResult.value !== undefined,
         },
@@ -2443,7 +2448,6 @@ export const chatHandlers: GatewayRequestHandlers = {
       overrideMs: p.timeoutMs,
     });
     const now = Date.now();
-    const clientRunId = p.idempotencyKey;
 
     const sendPolicy = resolveSendPolicy({
       cfg,
@@ -2585,7 +2589,9 @@ export const chatHandlers: GatewayRequestHandlers = {
           {
             phase: "agent-turn",
             config: cfg,
+            runId: clientRunId,
             attributes: {
+              layer: "gateway",
               attachmentCount: normalizedAttachments.length,
               hasExplicitOrigin: explicitOriginResult.value !== undefined,
             },
@@ -2737,6 +2743,7 @@ export const chatHandlers: GatewayRequestHandlers = {
         channel: INTERNAL_MESSAGE_CHANNEL,
       });
       const chatSendTraceAttributes = {
+        layer: "gateway",
         hasAttachments: normalizedAttachments.length > 0,
         hasExplicitOrigin: explicitOriginResult.value !== undefined,
         hasConnectedClient: client?.connect !== undefined,
@@ -2994,6 +3001,7 @@ export const chatHandlers: GatewayRequestHandlers = {
         {
           phase: "agent-turn",
           config: cfg,
+          runId: clientRunId,
           attributes: chatSendTraceAttributes,
         },
       )
