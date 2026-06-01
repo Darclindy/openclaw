@@ -41,6 +41,11 @@ const coreCliCommandCatalog = defineCommandDescriptorCatalog([
     hasSubcommands: true,
   },
   {
+    name: "diagnostics",
+    description: "Inspect and export diagnostics traces and performance data",
+    hasSubcommands: true,
+  },
+  {
     name: "doctor",
     description: "Diagnose and repair config, Gateway, plugin, and channel problems",
     hasSubcommands: false,

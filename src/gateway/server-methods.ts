@@ -310,7 +310,7 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
     loadHandlers: loadDeviceHandlers,
   }),
   ...createLazyCoreHandlers({
-    methods: ["diagnostics.stability"],
+    methods: ["diagnostics.stability", "diagnostics.clientTrace"],
     loadHandlers: loadDiagnosticsHandlers,
   }),
   ...createLazyCoreHandlers({

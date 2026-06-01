@@ -1520,6 +1520,7 @@
                       "gateway/prometheus",
                       "gateway/logging",
                       "gateway/diagnostics",
+                      "diagnostics/perf-trace",
                       "gateway/troubleshooting"
                     ]
                   },

@@ -3,6 +3,7 @@ import {
   normalizeDiagnosticStabilityQuery,
 } from "../../logging/diagnostic-stability.js";
 import { ErrorCodes, errorShape } from "../protocol/index.js";
+import { recordClientTraceEvents } from "./diagnostics-client-trace.js";
 import type { GatewayRequestHandlers } from "./types.js";
 
 export const diagnosticsHandlers: GatewayRequestHandlers = {
@@ -20,5 +21,11 @@ export const diagnosticsHandlers: GatewayRequestHandlers = {
         ),
       );
     }
+  },
+  // Fire-and-forget ingestion of frontend timeline spans (perf-trace). Always
+  // acks; emits into the diagnostics timeline only when it is enabled.
+  "diagnostics.clientTrace": async ({ params, respond }) => {
+    const accepted = recordClientTraceEvents(params);
+    respond(true, { accepted }, undefined);
   },
 };
