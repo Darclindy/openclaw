@@ -24,9 +24,14 @@ export function resolvePluginMetadataControlPlaneFingerprint(
 }
 
 export function isReusableCurrentPluginMetadataSnapshot(
-  snapshot: PluginMetadataSnapshot,
+  _snapshot: PluginMetadataSnapshot,
 ): boolean {
-  return snapshot.registrySource !== "derived";
+  // Plugin metadata is process-stable, so derived snapshots are reusable as the
+  // current snapshot too (previously excluded). Lifecycle hooks (index writes,
+  // reload, doctor) clear it via clearCurrentPluginMetadataSnapshotState, so
+  // installs are still picked up without restart. See the caching note in
+  // plugin-metadata-snapshot.ts.
+  return true;
 }
 
 // Single-slot Gateway-owned handoff. Replace or clear it at lifecycle boundaries;

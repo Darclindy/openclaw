@@ -44,7 +44,11 @@ type PersistedRegistryMemoState = {
   fingerprint: unknown;
 };
 
-const MAX_PLUGIN_METADATA_SNAPSHOT_MEMOS = 8;
+// One chat request fans out ~30-45 distinct memo keys across subsystems (config
+// validation, provider/secrets/auth resolution, status, auto-enable), each with
+// slightly different params. An 8-slot cache cannot hold a single request's
+// working set, so a warm gateway re-scans evicted keys. Hold the full set.
+const MAX_PLUGIN_METADATA_SNAPSHOT_MEMOS = 64;
 
 let pluginMetadataSnapshotMemos: PluginMetadataSnapshotMemo[] = [];
 
@@ -565,7 +569,13 @@ function canMemoizePluginMetadataSnapshotResult(result: {
   registrySource: PluginRegistrySnapshotSource;
   snapshot: PluginMetadataSnapshot;
 }): boolean {
-  return result.registrySource !== "derived" && result.snapshot.index.plugins.length > 0;
+  // Plugin metadata is process-stable (AGENTS.md), so derived snapshots are
+  // memoized too. Excluding "derived" here (added to find file-drops without a
+  // restart) meant a full filesystem scan on every loadPluginMetadataSnapshot
+  // call — hundreds per request when no persisted index exists. Installs/reloads
+  // rewrite the index, which changes the memo's registry fingerprint and forces
+  // a fresh scan, so the supported "rescan after install" path still works.
+  return result.snapshot.index.plugins.length > 0;
 }
 
 export function resolvePluginMetadataSnapshot(
